@@ -109,3 +109,4 @@ liste kalan/ince ayar isleridir.
       gercekten calistirilip ekran goruntusuyle dogrulandi.
 - [x] `pytest` (tag_map, cycle_state) 8/8 yesil.
 - [x] Git deposu baslatildi, ilk commit atildi (lokal).
+- [x] GitHub'a (`YucelGedik/kolektif_360`, `master` branch) push edildi.

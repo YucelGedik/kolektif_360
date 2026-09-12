@@ -93,7 +93,7 @@ sinyallerini dinler.
 |-------------|-------|-----|
 | OPC UA / MAT LC-C07 PLC | Config hazir, gercek PLC ile test edilmedi | Ilk test tagi: `ns=4;s=\|var\|MAT LC-C07.Application.GVL.IPC_Y_POS` |
 | VisionCut (harici uygulama) | Entegrasyon YOK, sadece teslim planlaniyor | Kaynak kod paylasilmiyor; bkz. `INTEGRATION.md` |
-| GitHub (`YucelGedik/kolektif_360`) | Bu oturumda baglaniyor | Uzak repo aciklamasi: "Camera-assisted curtain cutting project" |
+| GitHub (`YucelGedik/kolektif_360`) | Push edildi (`master`) | Uzak repo aciklamasi: "Camera-assisted curtain cutting project" |
 
 ## Riskli Alanlar
 

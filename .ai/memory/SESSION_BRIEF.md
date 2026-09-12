@@ -14,8 +14,8 @@ bu repo VisionCut'a sonradan entegre edilecek bagimsiz bir teslim paketi.
 
 ## Siradaki Gorevler
 
-- [ ] `.ai/hooks/session_brief_inject.ps1` hook'unun calistigini bir sonraki
-      oturumda dogrula.
+- [ ] `.ai/hooks/session_brief_inject.ps1` hook'unun (`.claude/settings.local.json`
+      icinde, bu makineye ozel) yeni bir oturumda otomatik calistigini dogrula.
 - [ ] Gercek PLC GVL tag adlari geldiginde `config/opcua.example.json`
       guncelle.
 - [ ] VisionCut'i yapan sirkete teslim oncesi `INTEGRATION.md` gozden gecir.
@@ -28,7 +28,10 @@ bu repo VisionCut'a sonradan entegre edilecek bagimsiz bir teslim paketi.
 
 ## Son Degisiklikler
 
-- 2026-09-12 - `ai-starter-kit` hafiza sistemi projeye uyarlandi (`CLAUDE.md`, `.ai/`).
+- 2026-09-12 - Repo GitHub'a (`YucelGedik/kolektif_360`, `master`) push edildi.
+- 2026-09-12 - `ai-starter-kit` hafiza sistemi projeye uyarlandi (`CLAUDE.md`, `.ai/`),
+  SESSION_BRIEF hook'u `.claude/settings.local.json` ile baglandi (OPC_UA01_SCR/
+  OPC_UA02_SCR_LNX projelerindeki ayni desen).
 - 2026-09-12 - Iki gercek hata bulundu ve duzeltildi: (1) alt sayfalardaki
   "Ana Ekran" geri butonu yanlis navigasyon anahtari gonderiyordu, (2) Demo
   mod durumu ilk acilista status bar'da gorunmuyordu (sinyal sira hatasi).
