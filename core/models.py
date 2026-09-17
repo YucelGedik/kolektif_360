@@ -31,12 +31,12 @@ class MachineSnapshot:
     auto_mode: bool = False
     manual_mode: bool = False
     cycle_active: bool = False
+    cut_active: bool = False
     cycle_state: int = 0
     cycle_progress: float = 0.0
     start_permitted: bool = False
-
-    estop_ok: bool = False
-    safety_ok: bool = False
+    emergency_active: bool = False
+    trajectory_fault: bool = False
 
     x_servo_ready: bool = False
     x_fault: bool = False
@@ -44,6 +44,7 @@ class MachineSnapshot:
     x_actual_pos: float = 0.0
     x_actual_vel: float = 0.0
     x_cut_velocity: float = 175.0
+    x_at_start: bool = False
 
     y_servo_ready: bool = False
     y_fault: bool = False
@@ -51,6 +52,7 @@ class MachineSnapshot:
     y_actual_pos: float = 0.0
     y_set_pos: float = 0.0
     y_set_vel: float = 0.0
+    y_at_center: bool = False
 
     clamp_down: bool = False
     clamp_up: bool = True
@@ -60,6 +62,7 @@ class MachineSnapshot:
     feed_forward_input: bool = False
     feed_reverse_input: bool = False
     feed_running: bool = False
+    feed_complete: bool = False
     feed_manual_allowed: bool = True
 
     vision_ready: bool = False

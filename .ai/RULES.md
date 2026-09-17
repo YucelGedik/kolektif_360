@@ -83,16 +83,30 @@ liste kalan/ince ayar isleridir.
 
 ### Aktif Faz
 
-**Faz 7 - Gercek PLC entegrasyonuna hazirlik**
+**Faz 8 - HMI/PLC entegrasyonu (docs/BUFERA_HMI_PLC_ENTEGRASYON_GOREV_PLANI.md)**
 
-- [ ] Gercek CODESYS GVL tag adlari netlesince `config/opcua.example.json`
-      guncellenecek (brif SS28 acik nokta).
+Faz 1 (Ana Ekran PLC->HMI read binding) tamamlandi ve onaylandi (2026-09-16).
+Detay: `.ai/memory/CHANGELOG_MEMORY.md`. Sirada plan dosyasinin SS12
+"Uygulama sirasi" adimlari:
+
+- [x] Faz 2 - START/STOP/RESET pulse write + Jog X/Y press-hold + Manual/Auto
+      write (2026-09-16, kullanici gercek PLC'de dogruladi: "ayarlar haric
+      her sey tamam"). Detay `.ai/memory/CHANGELOG_MEMORY.md`.
+- [x] Faz 4 - Ayarlar ekrani gercek `lr*`/`t*` GVL parametreleriyle
+      eslestirildi (2026-09-16, kod onaylandi; gercek PLC read/write testi
+      kullanicida). Pnomatik gecikmeler + Vision Zaman Asimi listeden
+      cikarildi (GVL'de karsiligi yok). Detay `CHANGELOG_MEMORY.md`.
+- [ ] Faz 3: Blade/Clamp manuel *Request tag'leri + Y merkez (plan SS6:
+      `xManualBladeDownRequest`/`xManualClampDownRequest`/`xY_CenterRequest`
+      PLC'de acilana kadar ilgili butonlar pasif kalacak).
+- [ ] Faz 5: Alarm engine'i edge-based yap (plan SS8 - su an AlarmCount
+      PLC tagi yok, aktif alarm kosullarindan turetilmeli).
+- [ ] Faz 6: Vision Simulator ekrani ekle (plan SS9).
 - [ ] Gercek PLC ile `BadTypeMismatch` gorulursen `plc/opcua_client.py`
       icinde ilgili tag icin acik `ua.VariantType` eklenecek.
-- [ ] JOG Yavas/Hizli icin PLC tarafinda tag netlesince
-      `services/machine_service.py::jog_x/jog_y` guncellenecek.
-- [ ] `.ai/hooks/session_brief_inject.ps1` hook'unun `.claude/settings.json`
-      icinde dogru calistigi bir sonraki oturumda dogrulanacak.
+- [ ] Diger ekranlarda (Ayarlar, Alarmlar) benzer hizalama/sabit-yukseklik
+      kontrolu yap (Manuel/Servis ve Operator'de bulunan sorunlar duzeltildi,
+      ayni desen digerlerinde de kontrol edilmeli).
 
 ### Bekleyen Isler
 
@@ -110,3 +124,27 @@ liste kalan/ince ayar isleridir.
 - [x] `pytest` (tag_map, cycle_state) 8/8 yesil.
 - [x] Git deposu baslatildi, ilk commit atildi (lokal).
 - [x] GitHub'a (`YucelGedik/kolektif_360`, `master` branch) push edildi.
+- [x] `.ai/hooks/session_brief_inject.ps1` hook'unun oturum basinda otomatik
+      calistigi dogrulandi (2026-09-12, ayni oturumda SESSION_BRIEF context'e
+      enjekte edildigi gozlemlendi).
+- [x] Kullanici gercek UI uzerinde bulunan 3 gorsel kusuru bildirdi, ucu de
+      duzeltildi (2026-09-12): Manuel/Servis X/Y ekseni kartlari hizasizligi,
+      Operator ekrani ust durum cubugu (StatusChip) pencere buyuyunce asiri
+      dikey gerilmesi, alt navigasyon sekmelerinin ekranin altina sabitlenmesi
+      (CNC tarzi sayfa gecisi).
+- [x] Faz 1 - Ana Ekran PLC->HMI read binding (2026-09-16, onayli): gercek
+      `eMachineState`/`ActualX_mm`/`xX_PowerStatus` vb. 23 tag `config/
+      opcua.example.json`'a islendi; `core/cycle_state.py` plan SS5'teki
+      kesin degerlerle yeniden yazildi; `core/models.py`+
+      `services/machine_service.py`'de servo-ready/cycle_active/
+      start_permitted/kesim ilerlemesi turetmeleri eklendi; demo simulasyonu
+      yeni state numaralarina tasindi, davranisi bozulmadi (17/17 pytest).
+
+### 2026-09-17 — Kullanıcı önceliği: geçici Vision simülatörü
+- [ ] .ai/HMI_TEMP_VISION_SIMULATOR_TASK.md Faz 0: sözleşme/kaynak farkları.
+- [ ] Faz 1: varsayılan kapalı özellik, mühendislik erişimi, yazıcı sahipliği.
+- [ ] Faz 2: sıralı paket ve bağımsız heartbeat.
+- [ ] Faz 3: ana HMI'yi değiştirmeyen geçici diagnostic sayfa.
+- [ ] Faz 4: kapanış/reconnect ve gerçek kameraya çakışmasız geçiş.
+- [ ] Faz 5: izole testler, regresyon ve kullanıcı test rehberi.
+Bu alt fazlar mevcut Vision Simulator işinin ayrıntısıdır; ayrı kalıcı operatör işlevi değildir.

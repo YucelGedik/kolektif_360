@@ -87,6 +87,7 @@ class StatusChip(QFrame):
     def __init__(self, label: str, parent: QWidget | None = None):
         super().__init__(parent)
         self.setMinimumHeight(32)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(10, 4, 10, 4)
         layout.setSpacing(6)

@@ -35,10 +35,15 @@ logger = logging.getLogger(__name__)
 UI_TICK_MS = 50
 
 
+PARAM_WRITE_CONFIRM_TIMEOUT_S = 2.0
+
+
 class MachineService(QObject):
     snapshotUpdated = Signal(MachineSnapshot)
     connectionStateChanged = Signal(str)
     alarmsChanged = Signal()
+    parameterWriteConfirmed = Signal(str)
+    parameterWriteFailed = Signal(str)
 
     def __init__(self, config_path=None, parent=None):
         super().__init__(parent)
@@ -56,6 +61,22 @@ class MachineService(QObject):
         self._param_cache: dict[str, float] = {
             spec.key: float(stored_params.get(spec.key, spec.default)) for spec in PARAMETER_SPECS
         }
+        # Ayarlar ekranı, gerçek PLC değeri gelene kadar bu default/yerel
+        # önbellek değerlerini "PLC'den okundu" gibi göstermemeli (2026-09-16
+        # düzeltmesi). Demo modda gerçek PLC olmadığı için hepsi baştan
+        # "onaylı" sayılır; gerçek modda yalnızca _on_raw_snapshot'ta bir
+        # tag fiilen raw içinde görüldüğünde onaylanır.
+        self._param_confirmed: set[str] = (
+            {spec.key for spec in PARAMETER_SPECS} if self.demo_mode else set()
+        )
+        # key -> (written_value, monotonic_time_written). A write is only
+        # "confirmed" once a later read of the SAME tag actually reports the
+        # written value back - not just because we set our own local cache
+        # optimistically. Without this, the continuous 100ms read loop can
+        # silently overwrite a just-sent value with a stale PLC read that
+        # arrived before the PLC processed the write, making a failed write
+        # look identical to a slow one (2026-09-16, real-PLC bug report).
+        self._param_pending: dict[str, tuple[float, float]] = {}
 
         from services.demo_simulator import DemoSimulator
 
@@ -123,37 +144,57 @@ class MachineService(QObject):
             return int(v) if v is not None else default
 
         snap.machine_ready = b("machine_ready", snap.machine_ready)
-        snap.auto_mode = b("auto_mode", snap.auto_mode)
         snap.manual_mode = b("manual_mode", snap.manual_mode)
-        snap.cycle_active = b("cycle_active", snap.cycle_active)
+        snap.auto_mode = not snap.manual_mode
         snap.cycle_state = i("cycle_state", snap.cycle_state)
-        snap.cycle_progress = f("cycle_progress", snap.cycle_progress)
+        snap.cut_active = b("cut_active", snap.cut_active)
+        snap.emergency_active = b("emergency_active", snap.emergency_active)
+
+        # xCycleActive and xStartPermitted are real, authoritative PLC tags
+        # (2026-09-16 duzeltmesi) - HMI reads them, it does not recompute
+        # them. PLC's xStartPermitted formula (for reference only, NOT
+        # duplicated here): MachineReady AND NOT xManualMode AND NOT
+        # xCycleActive AND xX_AtStart AND xY_AtCenter.
+        snap.cycle_active = b("cycle_active", snap.cycle_active)
         snap.start_permitted = b("start_permitted", snap.start_permitted)
-        snap.estop_ok = b("estop_ok", snap.estop_ok)
-        snap.safety_ok = b("safety_ok", snap.safety_ok)
-        snap.x_servo_ready = b("x_servo_ready", snap.x_servo_ready)
-        snap.x_fault = b("x_fault", snap.x_fault)
+
+        # X/Y servo ready is derived from two separate PLC bits (görev planı §3).
+        x_power_status = b("x_power_status", snap.x_servo_ready)
+        x_power_error = b("x_power_error", snap.x_fault)
+        snap.x_servo_ready = x_power_status and not x_power_error
+        snap.x_fault = x_power_error
         snap.x_fault_code = i("x_fault_code", snap.x_fault_code)
         snap.x_actual_pos = f("x_actual_pos", snap.x_actual_pos)
         snap.x_actual_vel = f("x_actual_vel", snap.x_actual_vel)
-        snap.y_servo_ready = b("y_servo_ready", snap.y_servo_ready)
-        snap.y_fault = b("y_fault", snap.y_fault)
+        snap.x_at_start = b("x_at_start", snap.x_at_start)  # diagnostic only
+
+        y_power_status = b("y_power_status", snap.y_servo_ready)
+        y_power_error = b("y_power_error", snap.y_fault)
+        snap.y_servo_ready = y_power_status and not y_power_error
+        snap.y_fault = y_power_error
         snap.y_fault_code = i("y_fault_code", snap.y_fault_code)
         snap.y_actual_pos = f("y_actual_pos", snap.y_actual_pos)
         snap.y_set_pos = f("y_set_pos", snap.y_set_pos)
         snap.y_set_vel = f("y_set_vel", snap.y_set_vel)
+        snap.y_at_center = b("y_at_center", snap.y_at_center)  # diagnostic only
+
+        # ClampDown/BladeZDown are single PLC bits now; the "up" counterpart
+        # is derived, not a separate sensor tag.
         snap.clamp_down = b("clamp_down", snap.clamp_down)
-        snap.clamp_up = b("clamp_up", snap.clamp_up)
+        snap.clamp_up = not snap.clamp_down
         snap.blade_down = b("blade_down", snap.blade_down)
-        snap.blade_up = b("blade_up", snap.blade_up)
+        snap.blade_up = not snap.blade_down
+
         snap.feed_forward_input = b("feed_forward_input", snap.feed_forward_input)
         snap.feed_reverse_input = b("feed_reverse_input", snap.feed_reverse_input)
-        snap.feed_running = b("feed_running", snap.feed_running)
+        snap.feed_running = b("feed_active", snap.feed_running)
+        snap.feed_complete = b("feed_complete", snap.feed_complete)
         snap.feed_manual_allowed = b("feed_manual_allowed", snap.feed_manual_allowed)
         snap.vision_ready = b("vision_ready", snap.vision_ready)
         snap.line_valid = b("line_valid", snap.line_valid)
         snap.vision_fault = b("vision_fault", snap.vision_fault)
         snap.vision_heartbeat_ok = b("vision_heartbeat_ok", snap.vision_heartbeat_ok)
+        snap.trajectory_fault = b("trajectory_fault", snap.trajectory_fault)
         snap.vision_target_x = f("vision_target_x", snap.vision_target_x)
         snap.vision_target_y = f("vision_target_y", snap.vision_target_y)
         snap.vision_confidence = f("vision_confidence", snap.vision_confidence)
@@ -162,9 +203,44 @@ class MachineService(QObject):
         snap.alarm_code = i("alarm_code", snap.alarm_code)
         snap.alarm_count = i("alarm_count", snap.alarm_count)
 
+        # Kesim ilerlemesi ayrı bir PLC tagı değil; 2026-09-16'da onaylanan
+        # kesin formülle türetiliyor: (ActualX_mm - lrX_CutStartPos) /
+        # (CutEndX_mm - lrX_CutStartPos), %0-100 clamp. CutEndX_mm çalışma
+        # zamanı (Vision) değeridir; lrX_CutStartPos ayarlar parametresidir
+        # ("lr_x_cut_start_pos" anahtarıyla okunur).
+        cut_start = raw.get("lr_x_cut_start_pos")
+        cut_end = raw.get("cut_end_x")
+        if cut_start is not None and cut_end is not None:
+            span = float(cut_end) - float(cut_start)
+            if span:
+                progress = 100.0 * (snap.x_actual_pos - float(cut_start)) / span
+                snap.cycle_progress = max(0.0, min(100.0, progress))
+
         for spec in PARAMETER_SPECS:
-            if spec.key in raw:
-                self._param_cache[spec.key] = float(raw[spec.key])
+            if spec.key not in raw:
+                continue
+            read_value = float(raw[spec.key])
+            self._param_confirmed.add(spec.key)
+
+            pending = self._param_pending.get(spec.key)
+            if pending is None:
+                self._param_cache[spec.key] = read_value
+                continue
+            written_value, written_at = pending
+            if abs(read_value - written_value) < 1e-6:
+                self._param_cache[spec.key] = read_value
+                del self._param_pending[spec.key]
+                self.parameterWriteConfirmed.emit(spec.key)
+            elif time.monotonic() - written_at > PARAM_WRITE_CONFIRM_TIMEOUT_S:
+                # PLC never echoed the written value back - treat as a
+                # failed write and trust what the PLC actually reports,
+                # rather than keep showing our own optimistic guess.
+                self._param_cache[spec.key] = read_value
+                del self._param_pending[spec.key]
+                self.parameterWriteFailed.emit(spec.key)
+            # else: still within the confirmation window - keep the
+            # optimistic value in _param_cache (set by set_parameter) so the
+            # UI doesn't flicker back to the old value while we wait.
 
     def _on_tick(self) -> None:
         if self.demo_mode and self._demo is not None:
@@ -190,12 +266,16 @@ class MachineService(QObject):
             self._worker.request_pulse("cmd_start")
 
     def request_stop(self) -> None:
+        # Yalnizca GVL.Stop'a pulse gonderir; baska hicbir state/motion
+        # tagina dokunmaz (Faz 2, 2026-09-16).
         if self.demo_mode and self._demo is not None:
             self._demo.request_stop()
         elif self._worker is not None:
             self._worker.request_pulse("cmd_stop")
 
     def request_reset(self) -> None:
+        # Yalnizca GVL.Reset'e pulse gonderir; xAxisReset/xMotionStop/
+        # eMachineState gibi internal taglara HMI dokunmaz (Faz 2).
         if self.demo_mode and self._demo is not None:
             self._demo.request_reset()
             return
@@ -204,11 +284,13 @@ class MachineService(QObject):
         self._alarms.clear_active()
         self.alarmsChanged.emit()
 
-    def set_auto_mode(self, auto: bool) -> None:
+    def set_manual_mode(self, manual: bool) -> None:
+        """xManualMode: TRUE=MANUAL, FALSE=AUTO. Duz yazma, pulse degil -
+        PLC bunu bir R_TRIG ile degil dogrudan mod biti olarak okuyor."""
         if self.demo_mode and self._demo is not None:
-            self._demo.set_mode(auto)
+            self._demo.set_mode(not manual)
         elif self._worker is not None:
-            self._worker.request_pulse("cmd_auto_mode" if auto else "cmd_manual_mode")
+            self._worker.request_write("manual_mode", manual)
 
     def jog_x(self, direction: int, active: bool, fast: bool = False) -> None:
         if active and not self._manual_allowed():
@@ -218,8 +300,8 @@ class MachineService(QObject):
         elif self._worker is not None:
             # NOTE (brief section 28, open point): no PLC tag for jog speed
             # select is defined yet; both speeds currently map to the same
-            # HMI_CmdXJog* tag until a fast/slow contract is agreed.
-            tag = "cmd_x_jog_plus" if direction > 0 else "cmd_x_jog_minus"
+            # *Request tag until a fast/slow contract is agreed.
+            tag = "jog_x_plus_request" if direction > 0 else "jog_x_minus_request"
             self._worker.request_write(tag, active)
 
     def jog_y(self, direction: int, active: bool, fast: bool = False) -> None:
@@ -228,8 +310,27 @@ class MachineService(QObject):
         if self.demo_mode and self._demo is not None:
             self._demo.set_jog_y(direction, active, fast)
         elif self._worker is not None:
-            tag = "cmd_y_jog_plus" if direction > 0 else "cmd_y_jog_minus"
+            tag = "jog_y_plus_request" if direction > 0 else "jog_y_minus_request"
             self._worker.request_write(tag, active)
+
+    def release_all_jog(self) -> None:
+        """Guvenlik: buton birakildiginda, pencere odagi kaybedildiginde
+        veya Manuel sayfasindan cikildiginda tum jog request tag'lerini
+        FALSE'a ceker. manual_allowed kontrolune tabi degildir - birakma
+        her zaman calismalidir."""
+        if self.demo_mode and self._demo is not None:
+            self._demo.set_jog_x(0, False)
+            self._demo.set_jog_y(0, False)
+            return
+        if self._worker is None:
+            return
+        for tag in (
+            "jog_x_plus_request",
+            "jog_x_minus_request",
+            "jog_y_plus_request",
+            "jog_y_minus_request",
+        ):
+            self._worker.request_write(tag, False)
 
     def y_center(self) -> None:
         if not self._manual_allowed():
@@ -262,6 +363,12 @@ class MachineService(QObject):
     def get_parameter_value(self, key: str) -> float:
         return self._param_cache.get(key, 0.0)
 
+    def is_parameter_confirmed(self, key: str) -> bool:
+        """True once a real value has come back from the PLC for this
+        parameter (always True in Demo mode). Settings screen must not
+        present a value as real until this is True (2026-09-16)."""
+        return key in self._param_confirmed
+
     def set_parameter(self, key: str, value: float) -> None:
         spec = next((s for s in PARAMETER_SPECS if s.key == key), None)
         if spec is None:
@@ -270,12 +377,60 @@ class MachineService(QObject):
             raise ValueError(
                 f"{spec.label_tr} aralık dışı ({spec.min_value:g}-{spec.max_value:g} {spec.unit})"
             )
+        cross_error = self._validate_cross_field(key, value)
+        if cross_error:
+            raise ValueError(cross_error)
         self._settings_store.set(key, str(value))
         self._param_cache[key] = value
         if self.demo_mode and self._demo is not None:
             self._demo.params[key] = value
+            self.parameterWriteConfirmed.emit(key)  # no real PLC round-trip to wait for
         elif self._worker is not None:
+            self._param_pending[key] = (value, time.monotonic())
             self._worker.request_write(key, value)
+        else:
+            self.parameterWriteFailed.emit(key)
+
+    def _validate_cross_field(self, key: str, value: float) -> str | None:
+        """Cross-parameter sanity rules (2026-09-16, user requirement):
+        these can never hold at the PLC without breaking motion, so an
+        OPC UA write must never be attempted if they would be violated.
+        Checked against the OTHER field's current (last-known) value - each
+        row is applied independently, so changing a pair (e.g. widening both
+        Y Yazılım Min and Max) may need to be done in the order that keeps
+        every intermediate step valid too."""
+        g = self.get_parameter_value
+        if key == "lr_x_cut_start_pos":
+            end = g("lr_x_cut_end_pos")
+            if not value < end:
+                return f"X Kesim Başlangıç ({value:g}) değeri X Kesim Bitiş ({end:g}) değerinden küçük olmalı."
+        elif key == "lr_x_cut_end_pos":
+            start = g("lr_x_cut_start_pos")
+            if not start < value:
+                return f"X Kesim Bitiş ({value:g}) değeri X Kesim Başlangıç ({start:g}) değerinden büyük olmalı."
+        elif key == "lr_y_software_min":
+            center = g("lr_y_center_position")
+            y_max = g("lr_y_software_max")
+            if not value < y_max:
+                return f"Y Yazılım Min ({value:g}) değeri Y Yazılım Max ({y_max:g}) değerinden küçük olmalı."
+            if not value < center:
+                return f"Y Yazılım Min ({value:g}) değeri Y Merkez Konum ({center:g}) değerinden küçük olmalı."
+        elif key == "lr_y_software_max":
+            center = g("lr_y_center_position")
+            y_min = g("lr_y_software_min")
+            if not y_min < value:
+                return f"Y Yazılım Max ({value:g}) değeri Y Yazılım Min ({y_min:g}) değerinden büyük olmalı."
+            if not center < value:
+                return f"Y Yazılım Max ({value:g}) değeri Y Merkez Konum ({center:g}) değerinden büyük olmalı."
+        elif key == "lr_y_center_position":
+            y_min = g("lr_y_software_min")
+            y_max = g("lr_y_software_max")
+            if not y_min < value < y_max:
+                return (
+                    f"Y Merkez Konum ({value:g}) değeri Y Yazılım Min ({y_min:g}) ile "
+                    f"Y Yazılım Max ({y_max:g}) arasında olmalı."
+                )
+        return None
 
     def update_endpoint(self, endpoint: str) -> None:
         """Persists a new OPC UA endpoint to config; takes effect on restart."""

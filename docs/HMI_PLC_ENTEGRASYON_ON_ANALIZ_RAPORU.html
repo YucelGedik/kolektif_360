@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bufera Makine Ekranı — HMI/PLC Entegrasyon Ön Analiz Raporu</title>
+<style>
+:root{
+  --bg:#eef1f5; --surface:#fff; --surface2:#f6f8fa; --ink:#141b28; --ink2:#3d4a5c;
+  --muted:#68758a; --rule:#d6dce5; --rule2:#b9c3d0; --navy:#1c2536; --accent:#c25c07;
+  --accent-soft:#fdf0e4; --ok:#256b4e; --ok-soft:#e7f4ee; --danger:#a92222; --danger-soft:#fbeaea;
+  --sans:"Segoe UI",Arial,sans-serif; --mono:Consolas,"Cascadia Mono",Menlo,monospace;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.6;margin:0}
+.wrap{max-width:1000px;margin:0 auto;padding:0 24px 80px}
+code,.mono{font-family:var(--mono)}
+header{background:var(--navy);border-bottom:3px solid var(--accent);color:#fff;margin-bottom:36px}
+header .wrap{padding:32px 24px 26px}
+.eyebrow{font:600 11px/1.2 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:#f89040;margin:0 0 10px}
+h1{font-size:1.8rem;margin:0;font-weight:700;line-height:1.2}
+header p{color:#b9c4d6;max-width:70ch;margin:12px 0 0}
+.meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+.pill{display:inline-flex;align-items:center;gap:6px;border:1px solid #3b4860;background:#202b3e;color:#dce5f4;padding:4px 9px;border-radius:999px;font:600 11px var(--mono)}
+section{margin-top:38px}
+h2{font-size:1.25rem;font-weight:700;padding-bottom:8px;border-bottom:2px solid var(--rule2);margin:0 0 14px}
+h3{font-size:1.02rem;font-weight:700;margin:20px 0 8px}
+p{margin:10px 0;max-width:78ch}
+ul,ol{max-width:78ch;padding-left:22px}
+li{margin:6px 0;color:var(--ink2)}
+.callout{border-left:4px solid var(--accent);background:var(--accent-soft);padding:12px 16px;border-radius:0 6px 6px 0;margin:14px 0}
+.callout.ok{border-color:var(--ok);background:var(--ok-soft)}
+.callout.bad{border-color:var(--danger);background:var(--danger-soft)}
+.callout p{margin:4px 0;font-size:.94rem;color:var(--ink2)}
+.callout b{color:var(--ink)}
+.scroll{overflow-x:auto;border:1px solid var(--rule);border-radius:6px;background:var(--surface);margin:12px 0}
+table{border-collapse:collapse;width:100%;font-size:.87rem}
+th,td{text-align:left;padding:8px 11px;border-bottom:1px solid var(--rule);vertical-align:top}
+th{background:var(--surface2);font:700 10.5px var(--mono);letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+tr:last-child td{border-bottom:none}
+td.file{font-family:var(--mono);font-weight:700;white-space:nowrap;color:var(--ink)}
+code{background:var(--surface2);border:1px solid var(--rule);border-radius:3px;padding:1px 5px;font-size:.86em}
+.badge{display:inline-block;border-radius:999px;padding:2px 8px;font:700 10px var(--mono);text-transform:uppercase}
+.badge.now{background:var(--danger-soft);color:var(--danger)}
+.badge.next{background:var(--accent-soft);color:#8a4200}
+.badge.ready{background:var(--ok-soft);color:var(--ok)}
+footer{margin-top:44px;padding-top:16px;border-top:2px solid var(--rule2);font-size:.85rem;color:var(--muted)}
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <p class="eyebrow">Bufera Makine Ekranı · Ön Analiz</p>
+  <h1>HMI ↔ PLC Entegrasyon — Ön Analiz Raporu</h1>
+  <p>Kaynak görev tanımı: <code>docs/BUFERA_HMI_PLC_ENTEGRASYON_GOREV_PLANI.md</code>. Bu rapor kod
+    değiştirmeden yapılan bir keşif çalışmasının çıktısıdır — hiçbir dosya değiştirilmedi.</p>
+  <div class="meta">
+    <span class="pill">Durum: kod değişikliği yok</span>
+    <span class="pill">Stack: PySide6 + asyncua</span>
+    <span class="pill">16 Eylül 2026</span>
+  </div>
+</div></header>
+
+<div class="wrap">
+
+<section>
+  <h2>Özet</h2>
+  <p>Katman ayrımı (<code>core/</code>, <code>plc/</code>, <code>services/</code>, <code>ui/</code>,
+    <code>config/</code>) görev planının istediği mimariyle zaten uyumlu; merkezi tag registry ve
+    demo/gerçek PLC ayrımı da zaten kurulu. Asıl iş, mevcut kodun <b>eski/varsayımsal PLC tag adları
+    ve sayı kodlarıyla</b> yazılmış olması ve birkaç yerde HMI'nin PLC-internal komut taglarına
+    <b>doğrudan</b> yazmasıdır — bu ikisi görev planının kurallarıyla çelişiyor ve düzeltilmesi
+    gerekiyor.</p>
+</section>
+
+<section>
+  <h2>1 · PLC entegrasyonu için değiştirilmesi gereken dosyalar</h2>
+  <div class="scroll"><table>
+    <tr><th>Dosya</th><th>Öncelik</th><th>Neden</th></tr>
+    <tr><td class="file">config/opcua.example.json</td><td><span class="badge now">Faz 1</span></td>
+        <td>Tüm NodeId'ler eski <code>HMI_*</code> isimlerine göre (örn. <code>HMI_X_ActualPos</code>).
+        Yeni sözleşmedeki gerçek tag adlarıyla (<code>ActualX_mm</code>, <code>xX_PowerStatus</code>,
+        <code>eMachineState</code>…) yeniden yazılmalı.</td></tr>
+    <tr><td class="file">core/models.py</td><td><span class="badge now">Faz 1</span></td>
+        <td><code>MachineSnapshot</code> alanları eski sözleşmeye göre (<code>x_servo_ready</code> tek
+        bool, ama gerçekte <code>xX_PowerStatus</code> + <code>xX_PowerError</code> iki ayrı tag).
+        Yeni alanlar gerekiyor: <code>cut_active</code>, <code>trajectory_fault</code>, ayrı
+        power_status/power_error çiftleri.</td></tr>
+    <tr><td class="file">core/cycle_state.py</td><td><span class="badge now">Faz 1 — kritik</span></td>
+        <td>Mevcut <code>CycleState</code> enum'u (IDLE=10, CLAMP_DOWN=50, BLADE_UP=100…) plandaki
+        gerçek <code>eMachineState</code> haritasıyla (MANUAL=10, CLAMP_DOWN=30, BLADE_UP=90…)
+        <b>çakışıyor</b> — aynı sayı farklı anlama geliyor. Plan §5 tablosuna göre tamamen
+        yeniden yazılmalı; ayrıca yeni <code>ALIGN_Y</code> / <code>WAIT_BLADE_REQUEST</code>
+        durumları eklenmeli.</td></tr>
+    <tr><td class="file">services/machine_service.py</td><td><span class="badge now">Faz 1 ve 5-6</span></td>
+        <td><code>_on_raw_snapshot</code> eski alan adlarını okuyor (satır 125-163). Ayrıca
+        <code>jog_x/jog_y/y_center/set_blade/set_clamp</code> <b>doğrudan</b> PLC-internal tarzı
+        taglara yazıyor (satır 213-258) — plan §10'a göre bunların yerine <code>*Request</code>
+        tagları yazılmalı.</td></tr>
+    <tr><td class="file">core/parameters.py</td><td><span class="badge next">Faz 7</span></td>
+        <td>Ayrı <code>par_x_acceleration</code>/<code>par_x_deceleration</code> var ama PLC'de tek
+        <code>lrX_CutAccDec</code>; <code>par_vision_timeout_ms</code> plan gereği kaldırılmalı;
+        gecikme parametreleri (<code>par_*_delay_ms</code>) PLC'de henüz GVL'de yok.</td></tr>
+    <tr><td class="file">ui/machine/machine_page.py</td><td><span class="badge now">Faz 1</span></td>
+        <td><code>VISION: HAZIR</code> koşulunda <code>vision_heartbeat_ok</code> eksik
+        (satır 153-156) — plan §2'nin istediği
+        <code>VisionReady AND xVisionHeartbeatOK AND NOT VisionFault</code> değil, sadece ilk ve
+        üçüncü koşul var.</td></tr>
+    <tr><td class="file">ui/machine/manual_page.py</td><td><span class="badge next">Faz 6</span></td>
+        <td>Bıçak/baskı/Y-merkez butonları <code>service.set_blade/set_clamp/y_center</code>'a bağlı —
+        bunlar yeni request tag'leri (<code>xManualBladeDownRequest</code> vb.) eklenene kadar plan
+        gereği <b>pasif</b> tutulmalı.</td></tr>
+    <tr><td class="file">plc/opcua_client.py</td><td><span class="badge ready">Değişiklik gerekmiyor</span></td>
+        <td>Yapısal olarak hazır (reconnect, async read/write, pulse). Sadece
+        <code>VariantType</code> netleşince (dosya içi not, satır 12-17) dokunulacak.</td></tr>
+  </table></div>
+</section>
+
+<section>
+  <h2>2 · Demo/mock yapısının yeri</h2>
+  <p>Tamamen izole ve tek noktada: <code>services/demo_simulator.py</code>.
+    <code>MachineService.__init__</code> içinde
+    <code>self.demo_mode = not self._config.is_configured</code> (config'te endpoint boşsa) ile
+    devreye giriyor; <code>_on_tick</code>'te ya <code>self._demo.tick(...)</code> ya da gerçek PLC
+    yolu çalışıyor (<code>services/machine_service.py</code> satır 169-175).</p>
+  <div class="callout ok">
+    <p><b>UI hiçbir yerde demo'ya özel kod içermiyor</b> — sadece <code>MachineSnapshot</code>'a
+      bakıyor. Bu ayrım zaten plan §10'un istediği "demo ile real PLC aynı UI, farklı data
+      provider" mimarisiyle birebir uyumlu; dokunmaya gerek yok, sadece gerçek tarafın alan
+      eşlemesi düzelecek.</p>
+  </div>
+</section>
+
+<section>
+  <h2>3 · Merkezi OPC UA tag registry nereye eklenmeli</h2>
+  <p>Zaten var: <code>plc/tag_map.py</code> (<code>TagMap.resolve/try_resolve</code>, config'ten
+    <code>nodes: {mantıksal_ad: NodeId}</code> okuyor) + <code>plc/models.py</code>
+    (<code>OpcUaConfig</code>).</p>
+  <div class="callout">
+    <p><b>"Nereye eklenmeli" sorusunun cevabı yeni bir yer değil</b> — mevcut
+      <code>config/opcua.json</code> / <code>opcua.example.json</code>'daki <code>nodes</code>
+      sözlüğünün içeriği plandaki gerçek tag adlarıyla değiştirilecek. Namespace/prefix zaten
+      koddan ayrı, sadece config'te (<code>ns=4;s=|var|...</code> kalıbı) — plan §1'in istediği
+      gibi.</p>
+  </div>
+</section>
+
+<section>
+  <h2>4 · Faz 1 uygulama planı — Ana Ekran PLC read binding</h2>
+  <ol>
+    <li><b><code>config/opcua.example.json</code>'ı yeniden yaz</b>: plan §3 tablosundaki 15 read
+      tag'i gerçek isimleriyle ekle (<code>ActualX_mm</code>, <code>ActualY_mm</code>,
+      <code>xX_PowerStatus</code>, <code>xX_PowerError</code>, <code>xY_PowerStatus</code>,
+      <code>xY_PowerError</code>, <code>xManualMode</code>, <code>eMachineState</code>,
+      <code>ClampDown</code>, <code>BladeZDown</code>, <code>LineValid</code>,
+      <code>FeedActive</code>, <code>FeedManualAllowed</code>, <code>FeedComplete</code>,
+      <code>CutActive</code>, <code>EmergencyState</code>, <code>MachineReady</code>,
+      <code>xVisionHeartbeatOK</code>, <code>xTrajectoryFault</code>). Komut taglarına (START/STOP/
+      RESET) henüz dokunulmuyor — bu faz sadece okuma.</li>
+    <li><b><code>core/cycle_state.py</code>'ı plan §5'e göre yeniden yaz</b> (numaralar çakıştığı
+      için bu adım atlanamaz — atlanırsa ekranda yanlış durum metni gösterilir).</li>
+    <li><b><code>core/models.py</code>'a eksik alanları ekle</b>: <code>cut_active</code>,
+      <code>trajectory_fault</code>, X/Y için ayrı <code>power_status</code>/<code>power_error</code>
+      (veya servis katmanında ikisinden tek <code>x_servo_ready</code> türetilebilir — tercih
+      onay bekliyor).</li>
+    <li><b><code>services/machine_service.py::_on_raw_snapshot</code>'ı yeni alan adlarına göre
+      güncelle</b>; <code>x_servo_ready = power_status AND NOT power_error</code> gibi türetmeleri
+      burada yap (core modelini kirletmemek için).</li>
+    <li><b><code>ui/machine/machine_page.py</code></b>: <code>_on_snapshot</code> içindeki
+      <code>VISION: HAZIR</code> koşuluna <code>vision_heartbeat_ok</code>'u ekle; kesim
+      ilerlemesini plan §3'teki formülle
+      (<code>(ActualX-CutStart)/(CutEnd-CutStart)</code>) hesapla — şu an
+      <code>snap.cycle_progress</code> PLC'den geliyormuş gibi okunuyor ama plan "ayrı yüzde tagı
+      gerekmiyor" diyor, bu servis katmanında türetilmeli.</li>
+    <li><b>Test</b>: <code>config/opcua.json</code>'da endpoint boş bırakılıp demo mod korunur;
+      gerçek PLC bağlanana kadar sadece <code>pytest</code> + manuel demo-mode kontrolü ile
+      doğrulanır.</li>
+  </ol>
+  <div class="callout bad">
+    <p><b>Bu fazda hiçbir write/command tag'ine dokunulmuyor</b> (START/STOP/RESET/JOG/manuel
+      butonlar plan gereği ayrı fazlar — 5 ve 6). PLC motion/internal taglarına doğrudan HMI
+      write eklenmeyecek; görev planındaki request/command ayrımına bu ve sonraki fazlarda
+      kesinlikle uyulacak.</p>
+  </div>
+</section>
+
+<footer>
+  Bufera Makine Ekranı · kod değişikliği yapılmadan hazırlanan keşif raporu · 16 Eylül 2026
+</footer>
+
+</div>
+</body>
+</html>

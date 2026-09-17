@@ -47,6 +47,7 @@ class OpcUaWorker(QThread):
         self._client: Client | None = None
         self._nodes: dict[str, Any] = {}
         self._running = True
+        self._pulses_in_flight: set[str] = set()
 
     # -- lifecycle -----------------------------------------------------
 
@@ -144,6 +145,13 @@ class OpcUaWorker(QThread):
     def request_pulse(self, name: str) -> None:
         if self._loop is None:
             return
+        if name in self._pulses_in_flight:
+            # Same command already mid-pulse (e.g. double-click) - ignore
+            # rather than stacking a second TRUE/FALSE edge. Marked here,
+            # synchronously, so two request_pulse() calls made back-to-back
+            # (no await between them) still see each other.
+            return
+        self._pulses_in_flight.add(name)
         asyncio.run_coroutine_threadsafe(self._pulse(name), self._loop)
 
     async def _write(self, name: str, value: Any) -> None:
@@ -157,6 +165,9 @@ class OpcUaWorker(QThread):
             self.errorOccurred.emit(f"Write failed for '{name}': {exc}")
 
     async def _pulse(self, name: str) -> None:
-        await self._write(name, True)
-        await asyncio.sleep(self._config.command_pulse_ms / 1000)
-        await self._write(name, False)
+        try:
+            await self._write(name, True)
+            await asyncio.sleep(self._config.command_pulse_ms / 1000)
+            await self._write(name, False)
+        finally:
+            self._pulses_in_flight.discard(name)

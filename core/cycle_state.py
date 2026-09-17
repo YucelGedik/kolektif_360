@@ -1,8 +1,11 @@
-"""Single source of truth for PLC CycleState codes and their Turkish labels.
+"""Single source of truth for PLC `eMachineState` codes and their Turkish
+labels.
 
-Numeric codes come from the integration brief (section 14) and are provisional
-until the PLC state machine is finalized (brief section 28). UI code must never
-display a raw integer; it must always go through `cycle_state_label`.
+Codes and labels come from the confirmed HMI/PLC integration task plan
+(`docs/BUFERA_HMI_PLC_ENTEGRASYON_GOREV_PLANI.md`, section 5) and the
+2026-09-16 approval that fixed them exactly as below — these are no longer
+provisional. UI code must never display a raw integer; it must always go
+through `cycle_state_label`.
 """
 
 from __future__ import annotations
@@ -12,80 +15,67 @@ from enum import IntEnum
 
 class CycleState(IntEnum):
     INIT = 0
-    IDLE = 10
-    MANUAL_READY = 20
-    WAIT_FOR_MATERIAL = 30
-    AUTO_START_CHECK = 40
-    CLAMP_DOWN = 50
-    WAIT_VISION_LINE = 60
+    MANUAL = 10
+    WAIT_FOR_MATERIAL = 20
+    CLAMP_DOWN = 30
+    WAIT_VISION = 40
+    ALIGN_Y = 50
+    WAIT_BLADE_REQUEST = 60
     BLADE_DOWN = 70
     CUTTING = 80
-    CUT_FINISH = 90
-    BLADE_UP = 100
-    RETURN_X_Y = 110
-    CLAMP_UP = 120
-    CYCLE_COMPLETE = 130
+    BLADE_UP = 90
+    RETURN_AXES = 100
+    CLAMP_UP = 110
+    CYCLE_COMPLETE = 120
 
-    CONTROLLED_STOP = 500
-    CUT_INTERRUPTED = 510
-    RECOVERY = 520
-    RECOVERY_BLADE_UP = 530
-    RECOVERY_RETURN_X = 540
-    RECOVERY_CENTER_Y = 550
-    RECOVERY_CLAMP_UP = 560
+    STOPPING = 500
+    RECOVERY = 510
 
     FAULT = 900
 
 
 CYCLE_STATE_LABELS_TR: dict[CycleState, str] = {
     CycleState.INIT: "Başlatılıyor",
-    CycleState.IDLE: "Bekliyor",
-    CycleState.MANUAL_READY: "Manuel Hazır",
-    CycleState.WAIT_FOR_MATERIAL: "Perde Bekleniyor",
-    CycleState.AUTO_START_CHECK: "Start Kontrolü",
-    CycleState.CLAMP_DOWN: "Perde Baskısı İniyor",
-    CycleState.WAIT_VISION_LINE: "Kamera Çizgi Bekleniyor",
+    CycleState.MANUAL: "Manuel",
+    CycleState.WAIT_FOR_MATERIAL: "Perde Bekliyor",
+    CycleState.CLAMP_DOWN: "Baskı İniyor",
+    CycleState.WAIT_VISION: "Kamera Bekleniyor",
+    CycleState.ALIGN_Y: "Y Hizalanıyor",
+    CycleState.WAIT_BLADE_REQUEST: "Bıçak Talebi Bekleniyor",
     CycleState.BLADE_DOWN: "Bıçak İniyor",
     CycleState.CUTTING: "Kesim",
-    CycleState.CUT_FINISH: "Kesim Tamamlanıyor",
     CycleState.BLADE_UP: "Bıçak Kalkıyor",
-    CycleState.RETURN_X_Y: "Eksenler Dönüyor",
+    CycleState.RETURN_AXES: "Eksenler Dönüyor",
     CycleState.CLAMP_UP: "Baskı Kalkıyor",
-    CycleState.CYCLE_COMPLETE: "Çevrim Tamam",
-    CycleState.CONTROLLED_STOP: "Kontrollü Duruş",
-    CycleState.CUT_INTERRUPTED: "Kesim Yarıda Kaldı",
-    CycleState.RECOVERY: "Toparlanma",
-    CycleState.RECOVERY_BLADE_UP: "Toparlanma: Bıçak Kalkıyor",
-    CycleState.RECOVERY_RETURN_X: "Toparlanma: X Dönüyor",
-    CycleState.RECOVERY_CENTER_Y: "Toparlanma: Y Merkezleniyor",
-    CycleState.RECOVERY_CLAMP_UP: "Toparlanma: Baskı Kalkıyor",
+    CycleState.CYCLE_COMPLETE: "Çevrim Tamamlandı",
+    CycleState.STOPPING: "Durduruluyor",
+    CycleState.RECOVERY: "Recovery",
     CycleState.FAULT: "Arıza",
 }
 
 # Cycle states in which manual jog / feed commands must be refused client-side
 # (the real interlock lives in the PLC; this only drives UI enable/disable).
+# NOTE: membership here is provisional pending Faz 6 (manual/jog write handshake);
+# this set only needs to stay referentially valid for Faz 1 (read binding).
 AUTO_CYCLE_ACTIVE_STATES = frozenset(
     {
-        CycleState.AUTO_START_CHECK,
+        CycleState.WAIT_FOR_MATERIAL,
         CycleState.CLAMP_DOWN,
-        CycleState.WAIT_VISION_LINE,
+        CycleState.WAIT_VISION,
+        CycleState.ALIGN_Y,
+        CycleState.WAIT_BLADE_REQUEST,
         CycleState.BLADE_DOWN,
         CycleState.CUTTING,
-        CycleState.CUT_FINISH,
         CycleState.BLADE_UP,
-        CycleState.RETURN_X_Y,
+        CycleState.RETURN_AXES,
         CycleState.CLAMP_UP,
     }
 )
 
 RECOVERY_STATES = frozenset(
     {
-        CycleState.CUT_INTERRUPTED,
+        CycleState.STOPPING,
         CycleState.RECOVERY,
-        CycleState.RECOVERY_BLADE_UP,
-        CycleState.RECOVERY_RETURN_X,
-        CycleState.RECOVERY_CENTER_Y,
-        CycleState.RECOVERY_CLAMP_UP,
     }
 )
 

@@ -3,6 +3,10 @@
 Bu klasor, AI ajaninin projede az token ile calismasi icin hafiza, karar ve
 calisma kurallarini tutar. Kaynak kod burada degildir.
 
+##Debug Run için Power Shell
+cd D:\work\GitProjects\Bufera_Tekstil_Project
+.\.venv\Scripts\python.exe -m app.main
+
 ## Yapi
 
 ```text

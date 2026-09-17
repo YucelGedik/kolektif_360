@@ -7,13 +7,13 @@ brief section 6 & 26)."""
 
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import QApplication, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from core.cycle_state import AUTO_CYCLE_ACTIVE_STATES, CycleState
 from core.models import MachineSnapshot
 from services.machine_service import MachineService
-from ui.machine.theme import base_font
+from ui.machine.theme import MIN_TOUCH_HEIGHT, base_font
 from ui.machine.widgets import Card, HoldButton, ProcessStatusCard, Readout, touch_button
 
 
@@ -28,6 +28,20 @@ class ManualPage(QWidget):
         self._build_ui()
         service.snapshotUpdated.connect(self._on_snapshot)
 
+        app = QApplication.instance()
+        if app is not None:
+            app.applicationStateChanged.connect(self._on_application_state_changed)
+
+    # -- safety: never leave a jog request stuck TRUE --------------------
+
+    def _on_application_state_changed(self, state: Qt.ApplicationState) -> None:
+        if state != Qt.ApplicationState.ApplicationActive:
+            self._service.release_all_jog()
+
+    def hideEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        self._service.release_all_jog()
+        super().hideEvent(event)
+
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
         root.setContentsMargins(12, 8, 12, 12)
@@ -36,10 +50,15 @@ class ManualPage(QWidget):
         header = QHBoxLayout()
         title = QLabel("MANUEL / SERVİS")
         title.setFont(base_font(14, bold=True))
+        self._manual_mode_btn = touch_button(
+            "MANUEL MODU ETKİNLEŞTİR", object_name="navButton", checkable=True
+        )
+        self._manual_mode_btn.clicked.connect(self._service.set_manual_mode)
         back_btn = touch_button("◀ ANA EKRAN", object_name="navButton")
         back_btn.clicked.connect(lambda: self.navigateRequested.emit("machine_main"))
         header.addWidget(title)
         header.addStretch(1)
+        header.addWidget(self._manual_mode_btn)
         header.addWidget(back_btn)
         root.addLayout(header)
 
@@ -69,6 +88,13 @@ class ManualPage(QWidget):
         row.addWidget(self._x_plus)
         card.body_layout().addLayout(row)
         card.body_layout().addLayout(self._build_jog_speed_row(lambda fast: setattr(self, "_x_jog_fast", fast)))
+
+        # X ekseninde Y'deki "MERKEZE GİT" gibi bir referans komutu yok (brif
+        # bölüm 8); alttaki Actual Position/Servo satırlarının Y kartıyla
+        # aynı hizada kalması için o butonun yüksekliğinde boş alan bırakılır.
+        spacer = QWidget()
+        spacer.setFixedHeight(MIN_TOUCH_HEIGHT)
+        card.body_layout().addWidget(spacer)
 
         self._x_pos_readout = Readout("Actual Position", "0.0", "mm")
         card.body_layout().addWidget(self._x_pos_readout)
@@ -157,6 +183,10 @@ class ManualPage(QWidget):
         except ValueError:
             state = None
         manual_allowed = snap.manual_mode and state not in AUTO_CYCLE_ACTIVE_STATES and not snap.stale
+
+        self._manual_mode_btn.blockSignals(True)
+        self._manual_mode_btn.setChecked(snap.manual_mode)
+        self._manual_mode_btn.blockSignals(False)
 
         for btn in (
             self._x_minus,

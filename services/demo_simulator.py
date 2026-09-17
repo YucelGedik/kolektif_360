@@ -43,8 +43,6 @@ class DemoSimulator:
 
     def apply_initial(self, snap: MachineSnapshot) -> None:
         snap.machine_ready = True
-        snap.estop_ok = True
-        snap.safety_ok = True
         snap.x_servo_ready = True
         snap.y_servo_ready = True
         snap.vision_ready = True
@@ -56,7 +54,7 @@ class DemoSimulator:
         snap.clamp_up = True
         snap.blade_up = True
         snap.feed_manual_allowed = True
-        snap.cycle_state = int(CycleState.IDLE)
+        snap.cycle_state = int(CycleState.MANUAL)
 
     # -- commands from MachineService (UI thread) ------------------------
 
@@ -107,11 +105,22 @@ class DemoSimulator:
         try:
             phase = CycleState(snap.cycle_state)
         except ValueError:
-            phase = CycleState.IDLE
+            phase = CycleState.MANUAL if self.manual_mode else CycleState.WAIT_FOR_MATERIAL
+
+        # MANUAL is only ever shown while xManualMode is TRUE (gorev plani
+        # duzeltmesi, 2026-09-16); the auto-mode resting/idle state is
+        # WAIT_FOR_MATERIAL instead.
+        if phase == CycleState.MANUAL and not self.manual_mode:
+            phase = CycleState.WAIT_FOR_MATERIAL
+            self._enter(snap, phase)
+        elif phase == CycleState.WAIT_FOR_MATERIAL and self.manual_mode:
+            phase = CycleState.MANUAL
+            self._enter(snap, phase)
 
         self._apply_manual_controls(snap, phase)
 
-        if phase == CycleState.IDLE and not snap.alarm_active and not self.alarm_fired_once:
+        idle = phase in (CycleState.MANUAL, CycleState.WAIT_FOR_MATERIAL)
+        if idle and not snap.alarm_active and not self.alarm_fired_once:
             self.idle_alarm_timer += dt
             if self.idle_alarm_timer >= IDLE_ALARM_DELAY_S:
                 self._raise_demo_alarm(snap, alarms, notify_alarms)
@@ -129,15 +138,14 @@ class DemoSimulator:
         if self.stop_requested:
             self.stop_requested = False
             if phase in AUTO_CYCLE_ACTIVE_STATES:
-                interrupted = phase == CycleState.CUTTING
-                self._enter(snap, CycleState.CUT_INTERRUPTED if interrupted else CycleState.CONTROLLED_STOP)
+                self._enter(snap, CycleState.STOPPING)
                 return
 
         if self.start_requested:
             self.start_requested = False
-            if phase == CycleState.IDLE and snap.start_permitted:
+            if phase == CycleState.WAIT_FOR_MATERIAL and snap.start_permitted:
                 snap.cycle_active = True
-                self._enter(snap, CycleState.AUTO_START_CHECK)
+                self._enter(snap, CycleState.CLAMP_DOWN)
                 return
 
         self.phase_elapsed += dt
@@ -146,17 +154,17 @@ class DemoSimulator:
     def _apply_manual_controls(self, snap: MachineSnapshot, phase: CycleState) -> None:
         if not (self.manual_mode and phase not in AUTO_CYCLE_ACTIVE_STATES):
             return
-        cut_end = self.params["par_x_cut_end_pos"]
+        cut_end = self.params["lr_x_cut_end_pos"]
         if self.jog_x_dir:
             x_speed = 90.0 if self.jog_x_fast else 30.0
             snap.x_actual_pos = max(0.0, min(cut_end, snap.x_actual_pos + self.jog_x_dir * x_speed * 0.05))
         if self.jog_y_dir:
-            lo, hi = self.params["par_y_software_min"], self.params["par_y_software_max"]
+            lo, hi = self.params["lr_y_software_min"], self.params["lr_y_software_max"]
             y_speed = 30.0 if self.jog_y_fast else 10.0
             snap.y_actual_pos = max(lo, min(hi, snap.y_actual_pos + self.jog_y_dir * y_speed * 0.05))
             snap.y_set_pos = snap.y_actual_pos
         if self.y_center_requested:
-            snap.y_actual_pos = self.params["par_y_center_pos"]
+            snap.y_actual_pos = self.params["lr_y_center_position"]
             snap.y_set_pos = snap.y_actual_pos
             self.y_center_requested = False
         if self.blade_cmd == "down":
@@ -171,13 +179,17 @@ class DemoSimulator:
     def _advance_phase(self, dt: float, snap: MachineSnapshot, phase: CycleState) -> None:
         p = self.params
 
-        if phase == CycleState.AUTO_START_CHECK and self.phase_elapsed >= 0.3:
-            self._enter(snap, CycleState.CLAMP_DOWN)
-        elif phase == CycleState.CLAMP_DOWN and self.phase_elapsed >= 0.4:
+        # WAIT_FOR_MATERIAL is a resting state; it only leaves on an explicit
+        # start request (handled in tick()), never on a timer.
+        if phase == CycleState.CLAMP_DOWN and self.phase_elapsed >= 0.4:
             snap.clamp_down, snap.clamp_up = True, False
-            self._enter(snap, CycleState.WAIT_VISION_LINE)
-        elif phase == CycleState.WAIT_VISION_LINE and self.phase_elapsed >= 0.3:
+            self._enter(snap, CycleState.WAIT_VISION)
+        elif phase == CycleState.WAIT_VISION and self.phase_elapsed >= 0.3:
             snap.line_valid = True
+            self._enter(snap, CycleState.ALIGN_Y)
+        elif phase == CycleState.ALIGN_Y and self.phase_elapsed >= 0.2:
+            self._enter(snap, CycleState.WAIT_BLADE_REQUEST)
+        elif phase == CycleState.WAIT_BLADE_REQUEST and self.phase_elapsed >= 0.15:
             self._enter(snap, CycleState.BLADE_DOWN)
         elif phase == CycleState.BLADE_DOWN and self.phase_elapsed >= 0.4:
             snap.blade_down, snap.blade_up = True, False
@@ -185,35 +197,38 @@ class DemoSimulator:
             self._enter(snap, CycleState.CUTTING)
 
         elif phase == CycleState.CUTTING:
-            cut_end = p["par_x_cut_end_pos"]
-            vel = p["par_x_cut_velocity"]
+            cut_start = p["lr_x_cut_start_pos"]
+            cut_end = p["lr_x_cut_end_pos"]
+            vel = p["lr_x_cut_velocity"]
             snap.x_actual_vel = vel
             snap.x_actual_pos = min(cut_end, snap.x_actual_pos + vel * dt)
-            t = snap.x_actual_pos / cut_end if cut_end else 1.0
+            span = cut_end - cut_start
+            t = (snap.x_actual_pos - cut_start) / span if span else 1.0
             target_y = -12.0 + 24.0 * t + random.uniform(-0.3, 0.3)
             snap.y_set_pos = target_y
             snap.y_actual_pos = target_y
-            snap.y_set_vel = (24.0 / cut_end * vel) if cut_end else 0.0
+            snap.y_set_vel = (24.0 / span * vel) if span else 0.0
             snap.vision_target_x = min(cut_end, snap.x_actual_pos + 50.0)
             snap.vision_target_y = target_y
-            snap.vision_slope = (24.0 / cut_end) if cut_end else 0.0
+            snap.vision_slope = (24.0 / span) if span else 0.0
             snap.vision_confidence = random.uniform(0.93, 0.99)
-            snap.cycle_progress = t * 100.0
+            # Gorev plani duzeltmesi (2026-09-16): ilerleme kesin olarak
+            # (ActualX_mm - lrX_CutStartPos) / (CutEndX_mm - lrX_CutStartPos),
+            # %0-100 clamp.
+            snap.cycle_progress = max(0.0, min(100.0, t * 100.0))
             if snap.x_actual_pos >= cut_end:
-                self._enter(snap, CycleState.CUT_FINISH)
+                snap.x_actual_vel = 0.0
+                self._enter(snap, CycleState.BLADE_UP)
 
-        elif phase == CycleState.CUT_FINISH and self.phase_elapsed >= 0.2:
-            snap.x_actual_vel = 0.0
-            self._enter(snap, CycleState.BLADE_UP)
         elif phase == CycleState.BLADE_UP and self.phase_elapsed >= 0.4:
             snap.blade_down, snap.blade_up = False, True
-            self._enter(snap, CycleState.RETURN_X_Y)
+            self._enter(snap, CycleState.RETURN_AXES)
 
-        elif phase == CycleState.RETURN_X_Y:
+        elif phase == CycleState.RETURN_AXES:
             self._return_axes(dt, snap)
-            if snap.x_actual_pos <= 0.001 and abs(snap.y_actual_pos - p["par_y_center_pos"]) < 0.05:
+            if snap.x_actual_pos <= 0.001 and abs(snap.y_actual_pos - p["lr_y_center_position"]) < 0.05:
                 snap.x_actual_pos, snap.x_actual_vel = 0.0, 0.0
-                snap.y_actual_pos = p["par_y_center_pos"]
+                snap.y_actual_pos = p["lr_y_center_position"]
                 snap.line_valid = False
                 self._enter(snap, CycleState.CLAMP_UP)
 
@@ -223,40 +238,24 @@ class DemoSimulator:
         elif phase == CycleState.CYCLE_COMPLETE and self.phase_elapsed >= 0.3:
             snap.cycle_active = False
             snap.cycle_progress = 0.0
-            self._enter(snap, CycleState.IDLE)
+            self._enter(snap, CycleState.WAIT_FOR_MATERIAL)
 
-        elif phase in (CycleState.CONTROLLED_STOP, CycleState.CUT_INTERRUPTED) and self.phase_elapsed >= 0.3:
-            self._enter(snap, CycleState.RECOVERY)
+        # Normal STOP: STOPPING -> BLADE_UP -> RETURN_AXES -> CLAMP_UP ->
+        # CYCLE_COMPLETE -> WAIT_FOR_MATERIAL (shares the same tail as a
+        # completed cycle - no separate recovery sub-machine).
+        elif phase == CycleState.STOPPING and self.phase_elapsed >= 0.3:
+            self._enter(snap, CycleState.BLADE_UP)
+
+        # Fault reset: FAULT -> RECOVERY -> BLADE_UP -> ... -> WAIT_FOR_MATERIAL
+        # (same shared tail, entered only after an operator Reset).
         elif phase == CycleState.RECOVERY and self.phase_elapsed >= 0.2:
-            self._enter(snap, CycleState.RECOVERY_BLADE_UP)
-        elif phase == CycleState.RECOVERY_BLADE_UP:
-            snap.blade_down, snap.blade_up = False, True
-            if self.phase_elapsed >= 0.4:
-                self._enter(snap, CycleState.RECOVERY_RETURN_X)
-        elif phase == CycleState.RECOVERY_RETURN_X:
-            snap.x_actual_pos = max(0.0, snap.x_actual_pos - p["par_x_return_velocity"] * dt)
-            if snap.x_actual_pos <= 0.001:
-                snap.x_actual_pos = 0.0
-                self._enter(snap, CycleState.RECOVERY_CENTER_Y)
-        elif phase == CycleState.RECOVERY_CENTER_Y:
-            center = p["par_y_center_pos"]
-            snap.y_actual_pos += (center - snap.y_actual_pos) * min(1.0, dt * 3.0)
-            snap.y_set_pos = snap.y_actual_pos
-            if abs(snap.y_actual_pos - center) < 0.05:
-                snap.y_actual_pos = center
-                self._enter(snap, CycleState.RECOVERY_CLAMP_UP)
-        elif phase == CycleState.RECOVERY_CLAMP_UP:
-            snap.clamp_down, snap.clamp_up = False, True
-            if self.phase_elapsed >= 0.4:
-                snap.cycle_active = False
-                snap.cycle_progress = 0.0
-                self._enter(snap, CycleState.IDLE)
+            self._enter(snap, CycleState.BLADE_UP)
 
     def _return_axes(self, dt: float, snap: MachineSnapshot) -> None:
-        ret_vel = self.params["par_x_return_velocity"]
+        ret_vel = self.params["lr_x_return_velocity"]
         snap.x_actual_vel = -ret_vel
         snap.x_actual_pos = max(0.0, snap.x_actual_pos - ret_vel * dt)
-        center = self.params["par_y_center_pos"]
+        center = self.params["lr_y_center_position"]
         snap.y_actual_pos += (center - snap.y_actual_pos) * min(1.0, dt * 3.0)
         snap.y_set_pos = snap.y_actual_pos
         snap.cycle_progress = 0.0
@@ -283,5 +282,10 @@ class DemoSimulator:
         snap.alarm_count = 0
         snap.vision_heartbeat_ok = True
         snap.start_permitted = True
-        snap.cycle_state = int(CycleState.IDLE)
+        # Fault reset: FAULT -> RECOVERY -> BLADE_UP -> RETURN_AXES ->
+        # CLAMP_UP -> CYCLE_COMPLETE -> WAIT_FOR_MATERIAL (gorev plani
+        # duzeltmesi, 2026-09-16). cycle_active stays True through the tail
+        # even though this demo alarm only fires from idle.
+        snap.cycle_active = True
+        self._enter(snap, CycleState.RECOVERY)
         notify_alarms()

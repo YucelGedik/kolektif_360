@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QProgressBar, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QProgressBar, QSizePolicy, QVBoxLayout, QWidget
 
 from core.cycle_state import cycle_state_label
 from core.models import ConnectionState, MachineSnapshot
@@ -95,6 +95,10 @@ class MachinePage(QWidget):
         command_row.addWidget(self._reset_btn)
         root.addLayout(command_row)
 
+        root.addStretch(1)
+
+        # CNC kontrolcülerinde alışıldığı gibi sayfa geçiş sekmeleri ekranın
+        # en altına sabitlenir; boşluk üstteki stretch'e gider.
         self._nav = SectionTabs(
             [
                 ("manual", "MANUEL"),
@@ -110,6 +114,7 @@ class MachinePage(QWidget):
     def _build_status_bar(self) -> QFrame:
         bar = QFrame()
         bar.setObjectName("statusBar")
+        bar.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         layout = QHBoxLayout(bar)
         layout.setContentsMargins(10, 6, 10, 6)
         layout.setSpacing(8)
@@ -150,10 +155,16 @@ class MachinePage(QWidget):
 
         self._progress.setValue(0 if stale else int(round(snap.cycle_progress)))
 
-        self._vision_chip.set_state(
-            "ok" if snap.vision_ready and not snap.vision_fault else ("fault" if snap.vision_fault else "inactive"),
-            "VISION: HAZIR" if snap.vision_ready and not snap.vision_fault else "VISION: HATA" if snap.vision_fault else "VISION: --",
-        )
+        vision_ok = snap.vision_ready and snap.vision_heartbeat_ok and not snap.vision_fault
+        if snap.vision_fault:
+            vision_state, vision_text = "fault", "VISION: HATA"
+        elif not snap.vision_heartbeat_ok:
+            vision_state, vision_text = "fault", "VISION: YANIT YOK"
+        elif vision_ok:
+            vision_state, vision_text = "ok", "VISION: HAZIR"
+        else:
+            vision_state, vision_text = "inactive", "VISION: --"
+        self._vision_chip.set_state(vision_state, vision_text)
         self._x_servo_chip.set_state(
             "fault" if snap.x_fault else ("ok" if snap.x_servo_ready else "inactive"),
             "X SERVO: HATA" if snap.x_fault else ("X SERVO: HAZIR" if snap.x_servo_ready else "X SERVO: --"),

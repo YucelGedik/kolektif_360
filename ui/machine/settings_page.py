@@ -2,7 +2,20 @@
 13, 24). Kept separate from the operator screen; parameter edits require an
 explicit "Mühendislik Erişimi" unlock plus a confirmation dialog per edit,
 since these are mechanical/motion limits (brief section 8: "Kritik mekanik
-parametrelerin yanlışlıkla değiştirilmemesi için confirmation ...")."""
+parametrelerin yanlışlıkla değiştirilmemesi için confirmation ...").
+
+2026-09-16: the parameter list itself must never show a fabricated
+default as if it were the real PLC value — every row starts disabled and
+shows "Okunuyor…" until `MachineService.is_parameter_confirmed()` says a
+real read has come back (always true instantly in Demo mode); after that,
+the row stays live-synced from the snapshot tick unless the user has
+edited it (tracked via a "dirty" flag, NOT `spin.hasFocus()`): clicking
+"Uygula" moves keyboard focus to the button on mouse-press, before the
+click even fires, so a focus-based guard let the 50ms live-sync tick win
+that race and silently revert the just-typed value before Apply ever saw
+it (real-PLC bug report). The dirty flag is set only by genuine user edits
+(`valueChanged`, disabled while we set the value ourselves) and is only
+cleared once a write is confirmed or fails."""
 
 from __future__ import annotations
 
@@ -16,11 +29,13 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
+    QPushButton,
     QScrollArea,
     QVBoxLayout,
     QWidget,
 )
 
+from core.models import MachineSnapshot
 from core.parameters import PARAMETER_SPECS
 from services.machine_service import MachineService
 from ui.machine.theme import COLORS, base_font
@@ -33,8 +48,15 @@ class SettingsPage(QWidget):
     def __init__(self, service: MachineService, parent: QWidget | None = None):
         super().__init__(parent)
         self._service = service
-        self._rows: dict[str, tuple[QDoubleSpinBox, QLabel]] = {}
+        self._unlocked = False
+        self._confirmed_shown: set[str] = set()
+        self._dirty: set[str] = set()  # keys with a genuine unsaved user edit
+        # key -> (spin, apply_btn, status_label)
+        self._rows: dict[str, tuple[QDoubleSpinBox, QPushButton, QLabel]] = {}
         self._build_ui()
+        service.snapshotUpdated.connect(self._on_snapshot)
+        service.parameterWriteConfirmed.connect(self._on_write_confirmed)
+        service.parameterWriteFailed.connect(self._on_write_failed)
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
@@ -81,7 +103,6 @@ class SettingsPage(QWidget):
         grid.addWidget(self._header_label(""), 0, 3)
         grid.addWidget(self._header_label("Durum"), 0, 4)
 
-        self._apply_buttons: list[tuple[QDoubleSpinBox, QWidget]] = []
         for row_index, spec in enumerate(PARAMETER_SPECS, start=1):
             name_label = QLabel(spec.label_tr)
             spin = QDoubleSpinBox()
@@ -89,6 +110,9 @@ class SettingsPage(QWidget):
             spin.setDecimals(2)
             spin.setValue(self._service.get_parameter_value(spec.key))
             spin.setEnabled(False)
+            # Only fires for a genuine user edit: our own live-sync/initial
+            # setValue calls below are wrapped in blockSignals().
+            spin.valueChanged.connect(lambda _v, key=spec.key: self._dirty.add(key))
             unit_label = QLabel(spec.unit)
             unit_label.setStyleSheet(f"color: {COLORS['text_secondary']};")
             apply_btn = touch_button("Uygula")
@@ -107,8 +131,12 @@ class SettingsPage(QWidget):
             grid.addWidget(apply_btn, row_index, 3)
             grid.addWidget(status_label, row_index, 4)
 
-            self._rows[spec.key] = (spin, status_label)
-            self._apply_buttons.append((spin, apply_btn))
+            self._rows[spec.key] = (spin, apply_btn, status_label)
+            if not self._service.is_parameter_confirmed(spec.key):
+                status_label.setText("Okunuyor…")
+                status_label.setStyleSheet(f"color: {COLORS['text_muted']};")
+            else:
+                self._confirmed_shown.add(spec.key)
 
         scroll.setWidget(param_widget)
         root.addWidget(scroll, stretch=1)
@@ -133,12 +161,74 @@ class SettingsPage(QWidget):
         layout.addWidget(self._endpoint_save_btn)
         return card
 
+    # -- data binding ---------------------------------------------------------
+
+    def _on_snapshot(self, snap: MachineSnapshot) -> None:
+        # Güvenlik (2026-09-16, kullanıcı isteği): makine xCycleActive iken
+        # (otomatik çevrimde) Mühendislik erişimi açık kalamaz - çevrim
+        # ortasında biri unlock alip devam ederse zorla kilitlenir.
+        # `self._unlocked` HEMEN False yapılıyor ki bloklayan uyarı
+        # penceresi sırasında gelecek bir sonraki tick tekrar tetiklemesin.
+        if snap.cycle_active and self._unlocked:
+            self._unlocked = False
+            self._unlock_checkbox.blockSignals(True)
+            self._unlock_checkbox.setChecked(False)
+            self._unlock_checkbox.blockSignals(False)
+            for key in self._rows:
+                self._update_row_enabled(key)
+            self._endpoint_edit.setEnabled(False)
+            self._endpoint_save_btn.setEnabled(False)
+            QMessageBox.warning(
+                self,
+                "Erişim Kapatıldı",
+                "Makine otomatik çevrime girdi. Mühendislik erişimi güvenlik "
+                "nedeniyle kapatıldı.",
+            )
+
+        for spec in PARAMETER_SPECS:
+            spin, _apply_btn, status_label = self._rows[spec.key]
+
+            if spec.key not in self._confirmed_shown and self._service.is_parameter_confirmed(spec.key):
+                self._confirmed_shown.add(spec.key)
+                status_label.setText("")
+                status_label.setStyleSheet("")
+                self._update_row_enabled(spec.key)
+
+            # Live-sync from the PLC; never fight a genuine unsaved user
+            # edit (dirty flag, not hasFocus() - see module docstring).
+            if spec.key in self._confirmed_shown and spec.key not in self._dirty:
+                value = self._service.get_parameter_value(spec.key)
+                if abs(spin.value() - value) > 1e-9:
+                    spin.blockSignals(True)
+                    spin.setValue(value)
+                    spin.blockSignals(False)
+
     # -- interactions ---------------------------------------------------------
 
+    def _row_enabled(self, key: str) -> bool:
+        return self._unlocked and key in self._confirmed_shown
+
+    def _update_row_enabled(self, key: str) -> None:
+        spin, apply_btn, _status_label = self._rows[key]
+        enabled = self._row_enabled(key)
+        spin.setEnabled(enabled)
+        apply_btn.setEnabled(enabled)
+
     def _on_unlock_toggled(self, checked: bool) -> None:
-        for spin, apply_btn in self._apply_buttons:
-            spin.setEnabled(checked)
-            apply_btn.setEnabled(checked)
+        if checked and self._service.snapshot.cycle_active:
+            self._unlock_checkbox.blockSignals(True)
+            self._unlock_checkbox.setChecked(False)
+            self._unlock_checkbox.blockSignals(False)
+            QMessageBox.warning(
+                self,
+                "Erişim Reddedildi",
+                "Makine otomatik çevrimde çalışırken Mühendislik ayarlarına "
+                "erişilemez.\nAyarları değiştirmek için önce çevrimi durdurun.",
+            )
+            return
+        self._unlocked = checked
+        for key in self._rows:
+            self._update_row_enabled(key)
         self._endpoint_edit.setEnabled(checked)
         self._endpoint_save_btn.setEnabled(checked)
 
@@ -158,12 +248,31 @@ class SettingsPage(QWidget):
             status_label.setText("HATA")
             status_label.setStyleSheet(f"color: {COLORS['danger']};")
             return
-        # Best-effort verification: re-read what the service now reports.
-        # Against a real PLC this reflects the last write until the next
-        # OPC UA read tick confirms it round-tripped through the tag.
-        confirmed = abs(self._service.get_parameter_value(key) - value) < 1e-6
-        status_label.setText("✓ UYGULANDI" if confirmed else "?")
-        status_label.setStyleSheet(f"color: {COLORS['success'] if confirmed else COLORS['warning']};")
+        # Do NOT claim success yet - wait for the PLC to actually echo the
+        # written value back (or time out). A premature "✓ UYGULANDI" here
+        # was masking real write failures (2026-09-16 real-PLC bug report):
+        # the next 100ms read tick would silently revert the value while the
+        # status label kept saying it worked.
+        status_label.setText("Yazılıyor…")
+        status_label.setStyleSheet(f"color: {COLORS['text_muted']};")
+
+    def _on_write_confirmed(self, key: str) -> None:
+        row = self._rows.get(key)
+        if row is None:
+            return
+        _spin, _apply_btn, status_label = row
+        self._dirty.discard(key)
+        status_label.setText("✓ UYGULANDI")
+        status_label.setStyleSheet(f"color: {COLORS['success']};")
+
+    def _on_write_failed(self, key: str) -> None:
+        row = self._rows.get(key)
+        if row is None:
+            return
+        _spin, _apply_btn, status_label = row
+        self._dirty.discard(key)
+        status_label.setText("HATA — PLC onaylamadı")
+        status_label.setStyleSheet(f"color: {COLORS['danger']};")
 
     def _save_endpoint(self) -> None:
         endpoint = self._endpoint_edit.text().strip()
