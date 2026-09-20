@@ -37,6 +37,8 @@ class MachineSnapshot:
     start_permitted: bool = False
     emergency_active: bool = False
     trajectory_fault: bool = False
+    trajectory_valid: bool = False
+    lr_max_allowed_slope: float = 0.0
 
     x_servo_ready: bool = False
     x_fault: bool = False
@@ -50,6 +52,7 @@ class MachineSnapshot:
     y_fault: bool = False
     y_fault_code: int = 0
     y_actual_pos: float = 0.0
+    y_actual_vel: float = 0.0
     y_set_pos: float = 0.0
     y_set_vel: float = 0.0
     y_at_center: bool = False
@@ -58,6 +61,10 @@ class MachineSnapshot:
     clamp_up: bool = True
     blade_down: bool = False
     blade_up: bool = True
+    # PLC-HMI-20260918-06: PLC-üretimli, salt okunur "kabul" bitleri - HMI
+    # bunları hiç yazmaz, yalnız gösterir. FAULT'ta PLC tarafından sıfırlanır.
+    blade_retract_accepted: bool = False
+    clamp_retract_accepted: bool = False
 
     feed_forward_input: bool = False
     feed_reverse_input: bool = False
@@ -73,6 +80,10 @@ class MachineSnapshot:
     vision_target_y: float = 0.0
     vision_confidence: float = 0.0
     vision_slope: float = 0.0
+    vision_cut_permit: bool = False
+    vision_z_down_request: bool = False
+    vision_heartbeat: int = 0
+    vision_sequence: int = 0
 
     alarm_active: bool = False
     alarm_code: int = 0

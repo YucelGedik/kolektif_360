@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QGridLayout,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QMessageBox,
@@ -38,8 +39,18 @@ from PySide6.QtWidgets import (
 from core.models import MachineSnapshot
 from core.parameters import PARAMETER_SPECS
 from services.machine_service import MachineService
+from services.vision_simulator import VisionSimulatorService
 from ui.machine.theme import COLORS, base_font
+from ui.machine.vision_simulator_page import VisionSimulatorDialog
 from ui.machine.widgets import touch_button
+
+# Kullanıcı talebi (2026-09-18): Vision simülatörü butonuna ek bir şifre
+# kapısı - Mühendislik Erişimi zaten açık olsa bile, HER açılışta (pencere
+# kapatılıp tekrar açılsa dahi) yeniden sorulur; hiçbir yerde önbelleğe
+# alınmaz. Kaynak kodda düz metin - gerçek bir güvenlik sınırı değil, kazara
+# tıklamaya karşı ek bir engel (görev notu: hard-coded parola tek başına
+# "yetki" sayılmaz, bu yüzden Mühendislik Erişimi kapısı da korunuyor).
+VISION_SIM_PASSWORD = "90327"
 
 
 class SettingsPage(QWidget):
@@ -53,10 +64,20 @@ class SettingsPage(QWidget):
         self._dirty: set[str] = set()  # keys with a genuine unsaved user edit
         # key -> (spin, apply_btn, status_label)
         self._rows: dict[str, tuple[QDoubleSpinBox, QPushButton, QLabel]] = {}
+        # Geçici Vision simülatörü (PLC-HMI-20260917-02): tembel oluşturulur,
+        # tekil (aynı pencere tekrar açılıp getirilir - "aynı HMI içinde iki
+        # simülatör oturumunu önle" görev notu).
+        self._vision_sim: VisionSimulatorService | None = None
+        self._vision_dialog: VisionSimulatorDialog | None = None
+        # 2026-09-18 bug report: "HATA — PLC onaylamadı" gerçek OPC UA
+        # sebebini gizliyordu. Bir yazma gerçekten reddedilirse (BadXxx),
+        # gerçek sebep burada tutulup _on_write_failed'de gösterilir.
+        self._param_last_error: dict[str, str] = {}
         self._build_ui()
         service.snapshotUpdated.connect(self._on_snapshot)
         service.parameterWriteConfirmed.connect(self._on_write_confirmed)
         service.parameterWriteFailed.connect(self._on_write_failed)
+        service.parameterWriteError.connect(self._on_write_error)
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
@@ -70,6 +91,14 @@ class SettingsPage(QWidget):
         back_btn.clicked.connect(lambda: self.navigateRequested.emit("machine_main"))
         header.addWidget(title)
         header.addStretch(1)
+        # Geçici Vision simülatörü giriş noktası: yalnız feature flag açık
+        # VE Mühendislik Erişimi açıkken görünür - ayrı gizli menü/parola
+        # değil, mevcut yetki kapısı yeniden kullanılıyor (görev, Faz 1).
+        self._vision_sim_btn = touch_button("VISION SİMÜLATÖR ⚙", object_name="navButton")
+        self._vision_sim_btn.setVisible(self._service.vision_simulator_enabled)
+        self._vision_sim_btn.setEnabled(False)
+        self._vision_sim_btn.clicked.connect(self._open_vision_simulator)
+        header.addWidget(self._vision_sim_btn)
         header.addWidget(back_btn)
         root.addLayout(header)
 
@@ -100,8 +129,9 @@ class SettingsPage(QWidget):
         grid.addWidget(self._header_label("Parametre"), 0, 0)
         grid.addWidget(self._header_label("Değer"), 0, 1)
         grid.addWidget(self._header_label("Birim"), 0, 2)
-        grid.addWidget(self._header_label(""), 0, 3)
-        grid.addWidget(self._header_label("Durum"), 0, 4)
+        grid.addWidget(self._header_label("Sınır"), 0, 3)
+        grid.addWidget(self._header_label(""), 0, 4)
+        grid.addWidget(self._header_label("Durum"), 0, 5)
 
         for row_index, spec in enumerate(PARAMETER_SPECS, start=1):
             name_label = QLabel(spec.label_tr)
@@ -115,6 +145,8 @@ class SettingsPage(QWidget):
             spin.valueChanged.connect(lambda _v, key=spec.key: self._dirty.add(key))
             unit_label = QLabel(spec.unit)
             unit_label.setStyleSheet(f"color: {COLORS['text_secondary']};")
+            limit_label = QLabel(f"{spec.min_value:g} — {spec.max_value:g}")
+            limit_label.setStyleSheet(f"color: {COLORS['text_secondary']};")
             apply_btn = touch_button("Uygula")
             apply_btn.setEnabled(False)
             status_label = QLabel("")
@@ -128,8 +160,9 @@ class SettingsPage(QWidget):
             grid.addWidget(name_label, row_index, 0)
             grid.addWidget(spin, row_index, 1)
             grid.addWidget(unit_label, row_index, 2)
-            grid.addWidget(apply_btn, row_index, 3)
-            grid.addWidget(status_label, row_index, 4)
+            grid.addWidget(limit_label, row_index, 3)
+            grid.addWidget(apply_btn, row_index, 4)
+            grid.addWidget(status_label, row_index, 5)
 
             self._rows[spec.key] = (spin, apply_btn, status_label)
             if not self._service.is_parameter_confirmed(spec.key):
@@ -169,6 +202,15 @@ class SettingsPage(QWidget):
         # ortasında biri unlock alip devam ederse zorla kilitlenir.
         # `self._unlocked` HEMEN False yapılıyor ki bloklayan uyarı
         # penceresi sırasında gelecek bir sonraki tick tekrar tetiklemesin.
+        #
+        # ÖNEMLİ (2026-09-17, kullanıcı düzeltmesi): bu kilit yalnız
+        # MEKANİK PARAMETRE düzenlemesini (yukarıdaki satırlar) kapatır.
+        # Zaten ARMED olan Vision simülatörü penceresini KAPATMAZ/disarm
+        # ETMEZ - aracın tüm amacı, operatör otomatik çevrimi başlattığında
+        # (tam olarak bu an: cycle_active TRUE olduğu an) kamera verisini
+        # PLC'ye beslemeye devam etmesidir ("otomatik programı
+        # başlattığımda kameradan gerekli veriler gelecek"). Yalnız YENİ
+        # bir simülatör penceresi açmayı engeller (buton devre dışı).
         if snap.cycle_active and self._unlocked:
             self._unlocked = False
             self._unlock_checkbox.blockSignals(True)
@@ -178,11 +220,18 @@ class SettingsPage(QWidget):
                 self._update_row_enabled(key)
             self._endpoint_edit.setEnabled(False)
             self._endpoint_save_btn.setEnabled(False)
+            self._vision_sim_btn.setEnabled(False)
+            vision_note = (
+                " Açık olan Vision simülatör penceresi kapanmadı, beslemeye "
+                "devam edebilirsiniz."
+                if self._vision_dialog is not None and self._vision_dialog.isVisible()
+                else ""
+            )
             QMessageBox.warning(
                 self,
                 "Erişim Kapatıldı",
-                "Makine otomatik çevrime girdi. Mühendislik erişimi güvenlik "
-                "nedeniyle kapatıldı.",
+                "Makine otomatik çevrime girdi. Mühendislik erişimi (parametre "
+                "düzenleme) güvenlik nedeniyle kapatıldı." + vision_note,
             )
 
         for spec in PARAMETER_SPECS:
@@ -231,6 +280,9 @@ class SettingsPage(QWidget):
             self._update_row_enabled(key)
         self._endpoint_edit.setEnabled(checked)
         self._endpoint_save_btn.setEnabled(checked)
+        self._vision_sim_btn.setEnabled(checked and self._service.vision_simulator_enabled)
+        if not checked:
+            self._close_vision_simulator()
 
     def _apply_parameter(self, key: str, spin: QDoubleSpinBox, status_label: QLabel, spec) -> None:
         value = spin.value()
@@ -241,6 +293,7 @@ class SettingsPage(QWidget):
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
+        self._param_last_error.pop(key, None)
         try:
             self._service.set_parameter(key, value)
         except ValueError as exc:
@@ -262,8 +315,16 @@ class SettingsPage(QWidget):
             return
         _spin, _apply_btn, status_label = row
         self._dirty.discard(key)
+        self._param_last_error.pop(key, None)
         status_label.setText("✓ UYGULANDI")
         status_label.setStyleSheet(f"color: {COLORS['success']};")
+
+    def _on_write_error(self, key: str, reason: str) -> None:
+        """2026-09-18 bug report: jenerik "PLC onaylamadı" mesajı gerçek OPC
+        UA reddini gizliyordu. `MachineService._on_error`, bekleyen bir
+        parametre yazmasıyla eşleşen gerçek bir OPC UA hatası görürse bunu
+        buraya taşır - `_on_write_failed` (timeout sonrası) bunu gösterir."""
+        self._param_last_error[key] = reason
 
     def _on_write_failed(self, key: str) -> None:
         row = self._rows.get(key)
@@ -271,8 +332,66 @@ class SettingsPage(QWidget):
             return
         _spin, _apply_btn, status_label = row
         self._dirty.discard(key)
-        status_label.setText("HATA — PLC onaylamadı")
+        reason = self._param_last_error.pop(key, None)
+        if reason:
+            # Gerçek bir OPC UA yazma hatası vardı (örn. BadUserAccessDenied,
+            # BadOutOfRange) - bunu göster, salt "onaylamadı" değil.
+            status_label.setText("HATA — PLC yazmayı reddetti")
+            status_label.setToolTip(reason)
+            QMessageBox.warning(
+                self,
+                "Yazma Reddedildi",
+                f"PLC bu değeri kabul etmedi.\n\nGerçek OPC UA hatası:\n{reason}",
+            )
+        else:
+            # Gerçek bir OPC UA hatası görülmedi - yazma muhtemelen kabul
+            # edildi ama okuma hiç yazılan değeri yansıtmadı (örn. PLC
+            # mantığı değeri kendi hesabıyla geri yazıyor olabilir).
+            status_label.setText("HATA — PLC onaylamadı")
+            status_label.setToolTip(
+                "Yazma sırasında OPC UA hatası görülmedi; olası neden: PLC "
+                "değeri kendi mantığıyla geri değiştiriyor."
+            )
         status_label.setStyleSheet(f"color: {COLORS['danger']};")
+
+    def _open_vision_simulator(self) -> None:
+        if not self._unlocked or not self._service.vision_simulator_enabled:
+            return
+        if not self._prompt_vision_sim_password():
+            return
+        if self._vision_sim is None:
+            self._vision_sim = VisionSimulatorService(self._service, self)
+        if self._vision_dialog is None:
+            self._vision_dialog = VisionSimulatorDialog(self._vision_sim, self._service, self)
+        # Aynı HMI içinde iki simülatör penceresi açılmasını önle: var olanı
+        # öne getir (görev notu, Faz 1).
+        self._vision_dialog.show()
+        self._vision_dialog.raise_()
+        self._vision_dialog.activateWindow()
+
+    def _prompt_vision_sim_password(self) -> bool:
+        """Her açılışta sorulur - pencere kapatılıp tekrar açılsa, hatta
+        aynı oturumda birden fazla kez açılsa dahi (kullanıcı talebi,
+        2026-09-18); hiçbir yerde "bu oturumda zaten girildi" önbelleği
+        tutulmaz."""
+        text, ok = QInputDialog.getText(
+            self,
+            "Mühendislik Şifresi",
+            "Vision simülatörünü açmak için 5 haneli şifreyi girin:",
+            QLineEdit.EchoMode.Password,
+        )
+        if not ok:
+            return False
+        if text != VISION_SIM_PASSWORD:
+            QMessageBox.warning(self, "Şifre Hatalı", "Girilen şifre yanlış.")
+            return False
+        return True
+
+    def _close_vision_simulator(self) -> None:
+        if self._vision_dialog is not None:
+            self._vision_dialog.close()  # closeEvent() zaten disarm() çağırır
+        elif self._vision_sim is not None:
+            self._vision_sim.disarm()
 
     def _save_endpoint(self) -> None:
         endpoint = self._endpoint_edit.text().strip()

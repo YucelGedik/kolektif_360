@@ -1,48 +1,73 @@
-# SESSION_BRIEF - Son guncelleme: 2026-09-16
+# SESSION_BRIEF - Son guncelleme: 2026-09-18
 
 > Bu dosya AI protokolunun birincil giris noktasidir.
 > Her anlamli kod degisikliginden sonra guncellenir. 40 satiri gecirme.
 
 ## Aktif Durum
 
-**Faz 8 - HMI/PLC entegrasyonu (docs/BUFERA_HMI_PLC_ENTEGRASYON_GOREV_PLANI.md)**
+**Manuel Bıçak/Baskı Yukarı artık gerçek PLC request'lerine bağlı**
+(`xBladeRetractRequest`/`xClampRetractRequest` pulse-write,
+`xBladeRetractAccepted`/`xClampRetractAccepted` salt-okunur). Eski 4 buton
+(Aşağı+Yukarı, hayali/hiç eşlenmemiş `cmd_blade_down/up` taglarına yazan)
+kaldırıldı; artık 2 pulse buton ("...Geri Çek") + kalıcı devre dışı "Aşağı"
+(PLC görevi açık, tag uydurulmadı) + Sensör/Yukarı Talebi durum kartları.
+H4 (alarm mapping)/operatör mesaj akışı/H5 (Başlangıca Git) henüz YAPILMADI
+- ayrı, zaten `.ai/HMI_PNEUMATIC_ALARM_CONTRACT_20260918.md` ve `.ai/HMI_
+OPERATOR_RECOVERY_MESSAGES_20260918.md`'de tam sözleşmesi hazır iş.
 
-Kullanici gercek PLC'ye bagli; Faz 2 (Start/Stop/Reset/Jog/Manual-Auto) ve
-Faz 4 (Ayarlar, gercek `lr*`/`t*` parametreleri, gercek default'lar) dogrulandi.
-Bu turda 2 guvenlik onlemi eklendi: xCycleActive iken Muhendislik erisimi
-kapatildi + cross-parameter validation (X/Y limit tutarliligi).
+**Ana ekrana Alarm/Uyarı/Mesaj panosu eklendi** (kullanıcı isteği, H4'ün
+canlı-tag-bağımsız kısmı): 3 filtre kutusu (Hata/Uyarı/Mesaj, varsayılan
+hepsi açık) + tablo, artık yalnız AKTİF (temizlenmemiş) kayıtları gösteriyor
+(düzeltme: önce hepsini gösteriyordu). ALARMLAR sayfası "Güncel Alarmlar"/
+"Geçmiş Alarmlar" iki sekmeye bölündü. `AlarmEvent.severity` alanı eklendi,
+eski DB otomatik migrate edildi (veri kaybı yok). Canlı PLC alarm tagı YOK -
+satırlar manuel/ileride doldurulacak.
+
+**PLC-HMI-20260918-04 (H1/H2/H3/H6) tamamlandı**, kullanıcı onaylı liste
+üzerinden. H4/H5/H7 PLC C2/C5/C4 sözleşmesini bekliyor - BAŞLANMADI.
+- H1: "MANUEL AKTİF"->"OPERATÖR KONTROLÜ" (ÇEVRİM DURUMU'yla karışıklık).
+- H2: Manuel mod butonu artık cycle_active/stale'de UI+servis seviyesinde
+  fail-closed kilitli.
+- H3: Start engeli nedenleri (`compute_start_inhibit_reasons`) operatöre
+  gösteriliyor - xStartPermitted yeniden hesaplanmıyor, sadece açıklanıyor.
+- H6: Otomatik kamerada ikinci, seçilebilir "Eğimli Çizgi" senaryosu
+  (varsayılan düz çizgi korunuyor); slope/lrMaxAllowedSlope/lrY_MaxVelocity/
+  Y yazılım sınırları birlikte doğrulanıyor, sabit çevrim-başlangıç referansı.
+
+**Yan bulgu (kullanıcıya soruldu):** `data/bufera.db` (SettingsStore) testler
+arasında izole değil - her `pytest` çalıştırma gerçek yerel DB'yi kirletiyor.
+Şimdilik temizlendi; kalıcı çözüm `MachineService`'e `settings_db_path`
+enjeksiyonu ister (H1-H6 kapsamı dışında, onay bekliyor).
 
 ## Siradaki Gorevler
 
-- [ ] Kullanici bu 2 guvenlik onlemini gercek PLC'de test edip bildirecek.
-- [ ] Faz 3: Blade/Clamp manuel *Request tag'leri + Y merkez (plan SS6).
-- [ ] Faz 5-6: Alarm engine (edge-based) + Vision Simulator ekrani.
-- [ ] Pnomatik gecikmeler + Vision Zaman Asimi: Logic_Control'da hala hard-
-      coded, GVL parametresi yok - Settings listesine hic alinmadi (kasitli).
+- [ ] Kullanıcı gerçek PLC'de doğrulayacak: H1/H2/H3/H6 (özellikle eğimli
+      kamera senaryosunu masa testinde deneyip PLC Follow davranışını
+      gözlemlemek).
+- [ ] H4/H5/H7: PLC C2 (alarm sözleşmesi)/C5 (Başlangıç Konumuna Git
+      request/result)/C4 (timeout tag/tip) kararları gelince başlanacak.
+- [ ] SettingsStore test-izolasyonu kararı (yukarıda) kullanıcıdan bekliyor.
+- [ ] Gerçek kamera devrede: `vision_simulator_enabled` kapalı tutulmalı.
 
 ## Son Build/Test
 
-- `pytest`: 46/46 gecti (2026-09-16, guvenlik onlemleri sonrasi).
+- `pytest`: 178/178 (2026-09-18).
 
 ## Son Degisiklikler
 
-- 2026-09-16 - 2 guvenlik onlemi eklendi (kullanici istegi):
-  (1) `SettingsPage`: `snap.cycle_active` iken Muhendislik Erisimini Ac hem
-  acilamiyor hem de zaten acikken devreye girerse zorla kapatilip uyari
-  gosteriliyor. (2) `MachineService._validate_cross_field`: lrX_CutStartPos
-  < lrX_CutEndPos, lrY_SoftwareMin < lrY_CenterPosition < lrY_SoftwareMax,
-  lrY_SoftwareMin < lrY_SoftwareMax - ihlal varsa `set_parameter` OPC UA
-  write'a hic gitmeden ValueError firlatir (UI zaten bunu gosteriyordu).
-- 2026-09-16 - Ayarlar ekrani ust uste 3 gercek PLC hatasi bulup duzeltti:
-  yazma sessizce eski degere donuyordu (write-confirm mekanizmasi), Uygula
-  tiklaminda odak kaymasi degeri siliyordu (dirty-flag, hasFocus() degil),
-  Y Yazılım Max spinbox araligi gercek degeri (30) 24'e kirpiyordu.
-- 2026-09-16 - Faz 2 + Faz 4 kullanici tarafindan gercek PLC'de dogrulandi.
+- 2026-09-18 - H1/H2/H3/H6 uygulandı (detay: CHANGELOG_MEMORY.md, aynı
+  tarihli ilk giriş). Ayarlar tablosuna "Sınır" sütunu, Vision Simülatör
+  butonuna şifre kapısı (90327) eklendi - kullanıcı istekleri.
+- 2026-09-18 - OPC UA yazımı sunucudan gerçek DataType soruyor
+  (BadTypeMismatch kalıcı çözümü); `parameterWriteError` gerçek hatayı
+  Settings UI'ya taşıyor.
+- 2026-09-17 - Otomatik kamera modu + heartbeat-auto-start fix + gerçek
+  iptal (`cancel_pending_sequence`) + cycle_active kilidi düzeltmesi.
 
 ## Kisa Notlar
 
-- Oturum basinda sadece bu dosya okunur; detay gerekirse `RULES.md` okunur.
-- `config/opcua.json` GERCEK PLC endpoint'i tutuyor - testler bu dosyaya
-  guvenmemeli, izole config ile test edin (`tests/test_tag_map.py` ornegi).
-- `visioncut_message/` = paylasilan public kanalin yerel aynasi; kural 3'e
-  (musteri/makine adi paylasilmaz) dikkat.
+- Oturum basinda sadece bu dosya okunur; detay gerekirse `RULES.md`.
+- `config/opcua.json` GERCEK PLC endpoint'i tutuyor - testler izole config
+  kullanmali. `data/bufera.db` PAYLAŞIMLI - testler bunu izole ETMİYOR
+  (bilinen, yukarıda not edilen sorun).
+- Vision simülatörü PLC state/sensör/motion/valf taglarına ASLA yazmaz.

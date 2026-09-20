@@ -3,6 +3,570 @@
 Yeni girisleri en uste ekle. Eski ve uzun detaylari `CHANGELOG_ARCHIVE.md`
 dosyasina tasi.
 
+## 2026-09-18 - Manuel Bıçak/Baskı Yukarı gerçek PLC request'lerine bağlandı (PLC-HMI-20260918-06)
+
+Kullanıcı, PLC notlarında `xBladeRetractRequest`/`xClampRetractRequest`
+GVL değişkenlerini gördüğünü bildirdi. Araştırma (subagent, PLC koordinasyon
+paketi + `.ai/HMI_PNEUMATIC_ALARM_CONTRACT_20260918.md` ve `.ai/HMI_
+OPERATOR_RECOVERY_MESSAGES_20260918.md` - zaten mirror'lanmış, önceden
+uygulanmamış tam bir sözleşme) doğruladı: 4 gerçek tag - `xBladeRetractRequest`/
+`xClampRetractRequest` (HMI pulse-write) + `xBladeRetractAccepted`/
+`xClampRetractAccepted` (PLC-üretimli, salt okunur). Manuel "Aşağı" için
+PLC'de HENÜZ bir request tanımlı değil - ayrı, açık bir PLC görevi; tag adı
+uydurulmadı.
+
+### Kök sorun
+`ui/machine/manual_page.py`'deki 4 Bıçak/Baskı butonu (Aşağı+Yukarı, HoldButton,
+hold-to-run) `MachineService.set_blade/set_clamp` üzerinden `cmd_blade_down/up`,
+`cmd_clamp_down/up` diye TAMAMEN HAYALİ, config'de hiç eşlenmemiş tag'lere
+yazıyordu - gerçek modda bu yazılar hiçbir yere gitmiyordu (yalnız demo modda
+görünür bir etkisi vardı).
+
+### Düzeltme
+- `config/opcua.json`/`.example.json`: 4 yeni NodeId - `cmd_blade_retract`,
+  `cmd_clamp_retract` (yazma), `blade_retract_accepted`, `clamp_retract_
+  accepted` (okuma).
+- `core/models.py`: `MachineSnapshot.blade_retract_accepted/clamp_retract_
+  accepted` (salt okunur).
+- `services/machine_service.py`: `set_blade`/`set_clamp` (hayali, hold-to-run)
+  TAMAMEN KALDIRILDI; yerine `request_blade_retract()`/`request_clamp_
+  retract()` - `_manual_allowed()` ile kapılı, gerçek `request_pulse` (TRUE~
+  150ms~FALSE) ile yazıyor. `_on_raw_snapshot` iki accepted bitini okuyor.
+- `services/demo_simulator.py`: hold-based `blade_cmd`/`clamp_cmd` kaldırıldı;
+  `request_blade_retract()`/`request_clamp_retract()` bir sonraki tick'te
+  ilgili ekseni "yukarı/açık" yapıp `*_retract_accepted=True` yapıyor - PLC'nin
+  gerçek FAULT'ta bu bitleri sıfırlama davranışı da taklit edildi.
+- `ui/machine/manual_page.py`: 4 buton yerine 2 buton ("Bıçağı/Baskıyı Geri
+  Çek (Yukarı)", pulse-click) + kalıcı DEVRE DIŞI "Aşağı" butonu (tooltip:
+  "PLC tarafında henüz tanımlı değil") + 2 durum kartı (Sensör: AŞAĞI/AÇIK -
+  "YUKARI" değil, çünkü ayrı bir yukarı sensörü yok, görev notu; Yukarı
+  Talebi: BEKLENİYOR/KABUL EDİLDİ, PLC'nin accepted bitinden).
+- `tests/test_blade_clamp_retract.py` (10 test): pulse gönderimi + manual/
+  cycle-active gating, accepted bitlerinin direkt okunması, demo simülatörün
+  tick sonrası doğru state'e geçmesi, iki talebin bağımsızlığı, FAULT'ta
+  accepted sıfırlanması. Widget-seviyesi smoke test ile de doğrulandı. Tam
+  suite: **178/178 yeşil**. Gerçek PLC'ye kendi kendine yazılmadı.
+- `.ai/Codex_Codesys.md`'ye HMI->PLC yanıtı eklendi.
+
+### Kapsam dışı (bilinçli, bu turda yapılmadı)
+H4 (4 alarm BOOL mapping + tarihçe), operatör state-mesaj akışı (doc 05),
+Başlangıca Git (H5) - hepsi ayrı, daha büyük iş; kullanıcı isterse sıradaki
+adım olarak yapılabilir.
+
+### Düzeltme (aynı gün): "AÇIK" -> "YUKARI"
+Kullanıcı "AÇIK" yerine "YUKARI" istedi (ekran görüntüsüyle). Sensör
+mantığı/okunan tag değişmedi - `manual_page.py`'deki metin geri alındı.
+
+## 2026-09-18 - Düzeltme: temizlenen alarm ana ekrandan gitmiyordu + Alarmlar sayfası 2 sekme
+
+Kullanıcı ekran görüntüsüyle bildirdi: Reset sonrası "TEMİZLENDİ" durumundaki
+kayıtlar hâlâ ana ekran panosunda görünüyordu (panoyu sadece severity'e göre
+filtreliyordum, `active` durumuna bakmıyordum). Ayrıca ayrı ALARMLAR
+sayfasının tek, karışık bir tablo yerine "Güncel Alarmlar" (aktif) / "Geçmiş
+Alarmlar" (tümü) şeklinde iki sekme olmasını istedi.
+
+- `ui/machine/machine_page.py::_refresh_alarm_table`: artık önce
+  `event.active` (cleared_at yok) ile filtreleyip SONRA severity filtresini
+  uyguluyor - temizlenen bir kayıt Reset'ten sonra panoda kalmıyor.
+- `ui/machine/alarm_page.py`: `QTabWidget` ile iki sekme - "Güncel Alarmlar"
+  (yalnız aktif) ve "Geçmiş Alarmlar" (tümü, temizlenmiş dahil - tam
+  denetim izi). Aynı `alarmsChanged` sinyalinde her ikisi birlikte yenilenir.
+- Widget-seviyesi smoke test: clear_active() sonrası ana ekran panosu VE
+  "Güncel Alarmlar" sekmesi 2->0 satıra düşüyor, "Geçmiş Alarmlar" sekmesi
+  2 satırda (TEMİZLENDİ etiketiyle) kalıyor - beklendiği gibi. Tam suite
+  değişmedi (168/168, bu saf UI/görüntüleme mantığı, yeni pytest gerekmedi
+  - mevcut `filter_alarm_events`/severity testleri davranışı zaten kapsıyor).
+
+## 2026-09-18 - Ana ekrana Alarm/Uyarı/Mesaj panosu (H4'ün canlı-tag-
+bağımsız kısmı, kullanıcı isteği)
+
+Kullanıcı ana ekranda Start/Stop/Reset altındaki boş alana filtre edilebilir
+bir Alarm/Uyarı/Mesaj tablosu istedi ("sadece uyarı/mesaj/hata gibi ama
+defaultda hepsi gözüksün, onları dolduracağız"). Bu, H4'ün zaten onaylanmış
+"ekran/tarihçe modeli hazırlanabilir; canlı alarm tagları tahmin edilmez"
+kapsamına giriyor - canlı PLC alarm bağlanmadı, sadece ekran+veri modeli.
+
+- `persistence/alarms.py`: `AlarmEvent.severity` alanı (ALARM/UYARI/MESAJ,
+  varsayılan ALARM - geriye uyumlu). `code` artık nullable (Uyarı/Mesaj'ın
+  sabit bir kod tablosu olmak zorunda değil). Yeni `log_event(severity,
+  source, message, code=None)`; `raise_alarm` davranışı değişmeden buna
+  delege ediyor.
+- `persistence/db.py::_migrate_alarm_events_severity`: `create_all()`
+  yalnız EKSİK TABLOLARI oluşturur, mevcut tabloya sütun eklemez - kullanıcının
+  gerçek `data/bufera.db`'sindeki 10 eski satır `severity` sütunu olmadan
+  duruyordu. `ALTER TABLE ... ADD COLUMN severity DEFAULT 'ALARM'` ile
+  otomatik yükseltildi; gerçek dosya üzerinde doğrulandı, veri kaybı yok.
+- `ui/machine/machine_page.py`: `_build_alarm_panel` - 3 checkbox (Hata/
+  Uyarı/Mesaj, hepsi varsayılan işaretli) + 4 sütunlu (Saat/Tür/Kaynak/
+  Mesaj) tablo, `alarmsChanged` sinyalinde yenileniyor. Saf `filter_alarm_
+  events()` fonksiyonu Qt'siz test edilebilir.
+- `ui/machine/alarm_page.py`: ayrı tam-ekran Alarmlar sayfasına da "Tür"
+  sütunu eklendi (filtre eklenmedi, istenmedi).
+- `tests/test_alarm_severity.py` (8 test): filtre fonksiyonu, log_event/
+  raise_alarm severity davranışı, migration'ın eski şemalı bir tabloyu
+  veri kaybetmeden yükselttiği - hepsi İZOLE bir tmp_path DB'sinde (test
+  sonunda global engine varsayılana geri döndürülüyor - bkz. bilinen
+  SettingsStore izolasyon sorunu, henüz kalıcı çözülmedi).
+- Widget-seviyesi smoke test: filtre kutuları gerçekten satır sayısını
+  değiştiriyor (3 -> 1 -> 3). Tam suite: **168/168 yeşil**.
+
+## 2026-09-18 - H1/H2/H3/H6 (PLC-HMI-20260918-04, kullanıcı onaylı liste)
+
+Kaynak: `.ai/HMI_TEST_FINDINGS_TASKS_20260918.md` + `docs/18_PLC_HMI_TASK_
+PLAN.md` (PLC tarafı koordinasyon paketinde). Kullanıcı H1/H2/H3/H6'yı onayladı;
+H4/H5/H7 PLC C2/C5/C4 sözleşmesini bekliyor, DOKUNULMADI.
+
+### H1 - Metin/state tutarlılığı
+`ui/machine/machine_page.py`: "MANUEL AKTİF" -> "OPERATÖR KONTROLÜ" (ÇEVRİM
+DURUMU kartındaki "Manuel" ile karışıklık yaratıyordu). Gösterge artık
+`snap.feed_manual_allowed`'a tek başına güveniyor (`cycle_active` ile ikinci
+kez kapatılmıyor) - PLC "Auto çevrimde FALSE olacak" diyor, MANUAL modda VEYA
+WAIT_FOR_MATERIAL'da (cycle_active öncesi) izinli olabilmesi gerekiyordu.
+ÇEVRİM DURUMU zaten doğrudan `eMachineState`'ten geliyordu (doğrulandı,
+değişiklik gerekmedi).
+
+### H2 - Mod değiştirme kilidi
+`ui/machine/manual_page.py`: "Manuel Modu Etkinleştir" butonu `cycle_active`
+VEYA stale iken disable (yalnız CUTTING değil, hazırlık/dönüş dahil tüm
+çevrim - `cycle_active` zaten çevrimin tamamını kapsıyor).
+`services/machine_service.py::_mode_change_allowed`/`set_manual_mode`: aynı
+engel SERVİS seviyesinde de var - UI dışından çağrı da yazı üretmez;
+stale/disconnected/bilinmeyen durumda fail-closed. `tests/
+test_mode_change_guard.py` (8 test).
+
+### H3 - Başlatma engeli bilgisi
+`ui/machine/machine_page.py::compute_start_inhibit_reasons` (yeni, saf
+fonksiyon): StartPermitted=FALSE nedenini PLC'nin zaten yayınladığı alt
+bileşenlerden (emergency/servo/vision/x_at_start/y_at_center, manual_mode,
+cycle_active) açıklar - `xStartPermitted`'i yeniden hesaplamaz, sadece
+bilgilendirir. X/Y nedenlerinde sıfır yerine gerçek `lrX_CutStartPos`/
+`lrY_CenterPosition` değeri gösterilir, ikisi birlikte gösterilebilir.
+"Stop basılı" nedeni YOK - gerçek bir "şu an basılı" tagı yayınlanmıyor,
+bulunmayan tag için tahmin yapılmadı (görev notu). `tests/
+test_start_inhibit_reasons.py` (12 test).
+
+### H6 - Eğimli otomatik kamera senaryosu
+`services/vision_simulator.py`: varsayılan "straight" (düz çizgi, TargetY=
+canlı lrY_CenterPosition) değişmedi. Yeni "tilted" senaryosu:
+`set_camera_scenario("tilted", slope)` - yalnız auto_camera PASİFKEN
+değiştirilebilir (referans cycle ortasında sıçramasın, görev notu). Üç
+katmanlı ön-kontrol: `abs(slope) <= lrMaxAllowedSlope` (gerçek PLC okuması),
+türetilen Y feed-forward hızı (`|slope|*lrX_CutVelocity <= lrY_MaxVelocity`,
+PLC decision log formülü), kesim sonunda (`lrX_CutEndPos`) hedef Y'nin
+Y yazılım sınırları içinde kalması. Referans (x0,y0) `start_auto_camera`'da
+BİR KEZ yakalanır (`_tilt_reference`), tick'lerde TargetY = y0+m*(TargetX-x0)
+olarak üretilir - sabit artış YOK. `send_packet`'e AYRICA, senaryo bağımsız,
+gerçek zamanlı bir Y-sınır kontrolü eklendi ("sınır dışı yolun reddi" -
+referans kabul edilse de anlık hedef sınır dışına çıkarsa paket reddedilir).
+Diagnostic panelde senaryo + son hedef X/Y gösteriliyor. `tests/
+test_tilted_camera_scenario.py` (15 test): pozitif/negatif/sıfır eğim,
+3 ayrı red senaryosu, son nokta ileri hedefi, referansın sıçramaması,
+disarm/reconnect'in referansı temizlemesi, düz çizginin etkilenmemesi.
+
+### Yan bulgu: paylaşımlı SettingsStore testleri kirletiyor
+`persistence/settings_store.py`/`db.py` tek bir sabit dosyaya
+(`data/bufera.db`) yazıyor - `config_path` gibi izole edilebilir değil.
+Bu oturumdaki testler (ve smoke script'ler) gerçek yerel DB'ye `lr_x_cut_
+end_pos=300`, `t_vision_heartbeat_timeout=900` gibi değerler yazmış; DEMO
+modda gerçek PLC yokken bunlar "gerçek" gibi görünebilirdi. `data/bufera.db`
+içindeki `engineering_settings` tablosu TEMİZLENDİ (alarm_events'e
+dokunulmadı). **Kalıcı düzeltme yapılmadı** - `MachineService`'e
+`config_path` gibi bir `settings_db_path` enjeksiyonu + ~10 test dosyasının
+güncellenmesi gerekir; bu H1-H6 kapsamı dışında, kullanıcıya soruldu.
+
+Tam suite: **160/160 yeşil** (test çalıştırma DB'yi tekrar kirletir - bilinen,
+zararsız/kozmetik bir yan etki, gerçek PLC bağlıyken ~100ms içinde ezilir).
+
+## 2026-09-18 - Ayarlar tablosuna "Sınır" sütunu (kullanıcı isteği)
+
+Kullanıcı: "Ayarlar ekranına bir sütun koyarak sınırları gösterelim...
+adam hızı 20000 yapamaz sonuçta." `ui/machine/settings_page.py`: grid'e
+Birim ile Uygula arasına `spec.min_value`/`max_value`'dan üretilen bir
+"Sınır" sütunu eklendi (örn. "1 — 500"). Sadece görüntüleme; spinbox
+`setRange` zaten aynı sınırı uyguluyordu (davranış değişmedi, sadece artık
+görünür). Demo modda tüm 16 parametrenin gösterdiği aralık gerçek
+`PARAMETER_SPECS` değerleriyle karşılaştırılıp doğrulandı. Tam suite
+etkilenmedi (125/125).
+
+## 2026-09-18 - Vision simülatörü butonuna şifre kapısı (kullanıcı isteği)
+
+Kullanıcı: "kamera sim butonuna bir şifre koyabilir misin? şifre 90327
+olsun. 5 haneli. sim tarafını açmak için şifre istesin... kapattım tekrar
+girdim yine şifre istesin."
+
+- `ui/machine/settings_page.py`: `VISION_SIM_PASSWORD = "90327"` (kaynak
+  kodda düz metin - kullanıcı bilerek istedi; gerçek güvenlik sınırı değil,
+  önceki görev notunun da belirttiği gibi hard-coded parola "yetki" sayılmaz
+  - bu yüzden mevcut Mühendislik Erişimi kapısı KALDIRILMADI, üzerine
+  eklendi). `_open_vision_simulator`, dialog'u oluşturmadan/göstermeden
+  önce her çağrıda `_prompt_vision_sim_password()` çağırır - hiçbir yerde
+  "bu oturumda zaten girildi" önbelleği yok, pencere kapatılıp tekrar
+  açılsa (hatta aynı SettingsPage örneğinde defalarca) her seferinde sorar.
+  Yanlış/iptal → dialog açılmaz.
+- `tests/test_settings_vision_sim_password.py` (5 test, demo mod): yanlış
+  şifre reddediyor, iptal reddediyor, doğru şifre açıyor, kapat-aç tekrar
+  soruyor (call_count ile doğrulandı), kapat sonrası yanlış şifreyle tekrar
+  açılamıyor. Tam suite: **125/125 yeşil**.
+
+Not: repo public (`kolektif_360`), şifre commit edilirse kaynak kodda düz
+metin olarak herkese görünür olacak - bu turda kullanıcıya ayrıca iletildi.
+
+## 2026-09-18 - Kullanıcı güncel GVL kaynağını paylaştı - kayıt edildi
+
+Kullanıcı, sorunu çözüldükten sonra ek bilgi olarak PLC'nin TAM güncel GVL
+kaynağını paylaştı. Ham kaynak + doğrulanan bulgular:
+`.ai/PLC_GVL_REFERENCE_2026-09-18.md`. Öne çıkanlar:
+- Kalıcı makine parametreleri gerçekten `REAL` (32-bit) - `LREAL` değil.
+  Bu, aynı gün düzeltilen `BadTypeMismatch` hatasının kesin kök nedenini
+  doğruluyor (bkz. `.ai/memory/DECISIONS.md` 2026-09-18 girişi).
+- `tVisionHeartbeatTimeout` tipi `TIME` (`T#2s`) - HMI bunu düz ms `float`
+  olarak okuyor/gösteriyor; şimdiye kadar bir hata bildirilmedi ama
+  izlenmesi gereken bir alan olarak not edildi.
+- PLC'nin GÜNCEL varsayılanları `core/parameters.py`'deki 3 alanla
+  (lrX_CutVelocity, lrX_ReturnVelocity, lrX_CutEndPos) farklı - muhtemelen
+  motorlar mekanikten ayrıyken masa testi için düşürülmüş. Kod tarafı
+  BİLEREK değiştirilmedi (Ayarlar ekranı zaten bu local varsayılanları
+  gerçek değer gibi göstermiyor, gerçek PLC okumasıyla ezilir); kullanıcı
+  netleştirirse güncellenebilir.
+Kod değişikliği yapılmadı - bu tamamen referans/kayıt amaçlı bir giriştir.
+
+## 2026-09-18 - Kalıcı çözüm: OPC UA yazımı sunucudan gerçek tipi soruyor
+
+Önceki turda eklediğimiz `parameterWriteError` sayesinde kullanıcı gerçek
+hatayı gördü: **BadTypeMismatch** - X Kesim Hızı (LREAL/float, doğru şekilde
+Double'a çıkarılıyordu) ve X Kesim Bitiş için de. Bu, `EXPLICIT_VARIANT_
+TYPES` yaklaşımının (tag başına tahmin) ölçeklenmediğini kanıtladı: Python
+float'ın Double'a çıkarılması TEKNİK OLARAK DOĞRU olduğu halde sunucu
+reddetti - yani bu node'un gerçek advertised DataType'ı Double değil
+(muhtemelen Float/Single). Tag bazında tahmin etmek yerine kalıcı çözüm.
+
+### Düzeltme (`plc/opcua_client.py`)
+- `_write_checked` artık `EXPLICIT_VARIANT_TYPES`'ta olmayan HER tag için
+  sunucuya SORUYOR: `Node.read_data_type_as_variant_type()` (asyncua 2.0.1'de
+  mevcut bir helper) - node'un gerçek advertised DataType'ını okur, tag
+  başına bir kez, sonucu bağlantı ömrü boyunca cache'ler (reconnect'te
+  temizlenir). Sunucu farklı bir tip bildirirse (örn. Float, Double değil)
+  ONUNLA yazılır - artık HER LREAL/Double parametre, jog/manual_mode BOOL'u,
+  ileride eklenecek her yeni tag için otomatik doğru; tag bazında tahmin/
+  liste büyütme gerekmiyor.
+- Sunucu sorgusu başarısız olursa (ör. okuma da reddedilirse) eski davranışa
+  (asyncua'nın Python tipinden çıkarımı) düşülür - regresyon riski yok.
+- `EXPLICIT_VARIANT_TYPES` (vision_sequence/heartbeat) öncelik olarak kalıyor
+  - kaynak kodundan zaten kesin bilinen 2 tag için sıfır-round-trip hızlı yol.
+- `tests/test_opcua_variant_types.py`'ye 3 yeni test: sunucu farklı tip
+  bildirince o kazanıyor, sonuç tag başına cache'leniyor (tekrar sorgu yok),
+  sorgu hatası eski davranışa düşüyor. Tam suite: **120/120 yeşil**.
+
+Gerçek PLC'ye kendi kendine yazılmadı; kullanıcı bir sonraki denemede
+sonucu bildirecek.
+
+## 2026-09-18 - Settings "HATA — PLC onaylamadı" gerçek sebebi gizliyordu
+
+Kullanıcı gerçek PLC'de X Kesim Hızı ve X Kesim Bitiş için Uygula'ya bastı,
+her ikisi de 2s sonra "HATA — PLC onaylamadı" verdi - gerçek sebep hiçbir
+yerde görünmüyordu (aynı sınıf sorun Vision paket yazımı için zaten
+düzeltilmişti, Settings parametre yazımı yolu için ATLANMIŞTI).
+
+### Düzeltme
+- `services/machine_service.py`: yeni `parameterWriteError(key, reason)`
+  sinyali. `_on_error`, worker'ın `"Write failed for '<tag>': <sebep>"`
+  mesajını regex ile ayrıştırır; `<tag>` o an `_param_pending` içindeyse
+  gerçek OPC UA sebebini bu sinyalle taşır (örn. BadUserAccessDenied,
+  BadOutOfRange).
+- `ui/machine/settings_page.py`: `_on_write_error` bu gerçek sebebi
+  `_param_last_error` içinde tutar; 2s timeout sonrası `_on_write_failed`
+  bunu görürse status "HATA — PLC yazmayı reddetti" + tooltip + bir
+  `QMessageBox.warning` ile GERÇEK OPC UA hatasını gösterir. Gerçek bir
+  hata görülmediyse (yazma OPC UA seviyesinde başarılı ama PLC değeri geri
+  değiştiriyor olabilir) eski jenerik mesaj + açıklayıcı tooltip kalır -
+  iki durum artık ayırt edilebiliyor.
+- `tests/test_parameter_write_confirmation.py`'ye 3 yeni test: pending
+  yazmayla eşleşen hata doğru sinyale dönüşüyor, eşleşmeyen tag/mesaj yok
+  sayılıyor. Tam suite: 117/117.
+
+Not: Bu düzeltme "neden" sorusuna GERÇEK bir OPC UA reddi varsa cevap verir.
+Kullanıcı tekrar denediğinde gerçek mesaj gelirse kök nedeni netleştirir;
+hiçbir OPC UA hatası görülmüyorsa (yazma kabul edilip PLC mantığı değeri
+geri değiştiriyor olabilir) bu, PLC tarafında ayrıca araştırılmalı.
+
+## 2026-09-17 - Bug: otomatik kamera heartbeat üretmiyordu (kullanıcı ekran görüntüsü)
+
+Kullanıcı gerçek PLC'de otomatik kamerayı başlattı; ekran görüntüsünde
+`xVisionHeartbeatOK: False` kalıcı görünüyordu ve PLC'nin `MachineReady`
+formülü (`... AND GVL.xVisionHeartbeatOK ...`) bu yüzden hiç sağlanamıyordu.
+
+### Kök neden
+İki ayrı mekanizma yanlışlıkla birbirinden bağımsız kalmıştı: manuel
+"Heartbeat Otomatik Üret" kutusu `auto_camera_active` iken UI'da devre dışı
+bırakılıyordu (doğru - tek arbiter kuralı), AMA `VisionSimulatorService.
+start_auto_camera()` heartbeat'i **hiçbir zaman kendisi başlatmıyordu**.
+Sonuç: otomatik kamera modunda heartbeat üretimi tamamen duruyordu, kutu da
+kilitli olduğu için kullanıcı bunu manuel de açamıyordu.
+
+### Düzeltme (`services/vision_simulator.py`)
+- `start_auto_camera()` artık `self.set_heartbeat_enabled(True)` çağırıyor -
+  heartbeat, otomatik kameranın kendisi tarafından başlatılıyor.
+- `_stop_auto_camera_internal()` (stop/disarm/force_disarm'ın hepsinin ortak
+  yolu) artık `_heartbeat_timer.stop()` da yapıyor - tutarlı kapanış.
+- `ui/machine/vision_simulator_page.py`: heartbeat kutusu artık otomatik
+  kamera aktifken gerçek `heartbeat_active` durumunu senkron gösteriyor
+  (salt-gösterge); etiket ve açıklama metni güncellendi.
+
+### Test
+- `tests/test_auto_camera.py`'ye 3 yeni test: `start_auto_camera` heartbeat'i
+  gerçekten başlatıyor (manuel tick ile write doğrulandı), `stop_auto_camera`
+  ve `disarm` heartbeat'i durduruyor.
+- Bu testlerin `isActive()` doğru çalışması için modül başına bir
+  `QApplication` eklendi - QTimer.isActive() bir QCoreApplication olmadan
+  hep False dönüyor (deneyerek doğrulandı), bu mevcut testleri etkilemedi.
+- Ekstra: gerçek dönen bir Qt event loop ile (900ms `app.exec()`) elle
+  doğrulama - heartbeat değeri 0'dan 2'ye çıktı, mock değil gerçek zamanlayıcı
+  ateşlemesiyle. Tam suite: **114/114 yeşil**.
+
+## 2026-09-17 - Tam otomatik masa testi kamera emülatörü (PLC-HMI-20260917-03)
+
+Görev: `.ai/HMI_AUTO_CAMERA_BENCH_TEST_TASK.md`. Kullanıcı: motorlar
+mekanikten ayrı, sensörler masada mıknatısla tetikleniyor, manuel paket/
+CutPermit/ZDownRequest tıklamak istemiyor - ARM edip "otomatik kamerayı
+başlat" dedikten sonra PLC state + actual X'e göre her şeyin kendiliğinden
+üretilmesini istiyor.
+
+### Faz A (tekrar teyit)
+Önceki turda yapılan UInt32 tip düzeltmesi bu görevin de ilk şartıydı;
+değişiklik yok, sadece doğrulandı.
+
+### Faz B/C - `services/vision_simulator.py::start_auto_camera/
+_on_auto_camera_tick`
+- `start_auto_camera()`: VisionReady=True/VisionFault=False/LineValid=True
+  oturum başında BİR KEZ yazılır (her tick'te değil - gereksiz pulse yok).
+- Her ~100ms tick'te (yapılandırılabilir, `AUTO_CAMERA_MIN/MAX_PERIOD_MS`
+  arası, sadece durmuşken değiştirilebilir): PLC `cycle_state` okunur,
+  CutPermit `_CUT_PERMIT_STATES` (WAIT_VISION..CUTTING) kümesine göre,
+  ZDownRequest WAIT_BLADE_REQUEST'te `xTrajectoryValid AND NOT
+  xTrajectoryFault` koşuluyla TRUE'ya döner, BLADE_DOWN/CUTTING'de sticky
+  (flicker'sız) TRUE kalır - hepsi yalnız DEĞİŞTİĞİNDE yazılır.
+- Paket (TargetX/TargetY/Ready/LineValid/Fault→Sequence) yalnız
+  `_PACKET_STATES` (WAIT_VISION..CUTTING) içinde ve (state değiştiyse VEYA
+  actual X ≥0.5mm ilerlediyse) üretilir - dönüş/idle state'lerinde
+  ("kesim dışı") yeni ileri hedef paketi üretilmez (görev notu).
+- TargetY_mm = canlı `lr_y_center_position` parametresi. TargetX = actual X +
+  ileri bakış mesafesi (`lr_x_cut_velocity * paket_periyodu * 5`, alt sınır
+  5mm) - BİLEREK `lrX_CutEndPos`'a kırpılmıyor: TargetX bir trajectory
+  referansıdır, gerçek X motion hedefi `lrX_CutEndPos`'tur ve bu paketten
+  etkilenmez (görev notunun açıkça izin verdiği/istediği davranış).
+- Stale/disconnected snapshot'tan hiçbir şey üretilmez (booleans dahil).
+- Manuel paket/CutPermit/ZDownRequest/Heartbeat kontrolleri otomatik kamera
+  aktifken UI'da devre dışı ("tek arbiter" - aynı tag'e zıt yazı gitmesin).
+
+### Faz D - yaşam döngüsü sıkılaştırması
+- **Gerçek iptal** (önceden sadece "sonucu yok say" idi):
+  `OpcUaWorker.cancel_pending_sequence()` bekleyen `request_write_sequence`
+  coroutine'ini fiilen `Future.cancel()` ile keser - kalan alanlar (özellikle
+  sequence) artık PLC'ye hiç yazılmaz. `MachineService.
+  request_vision_cancel_pending()` üzerinden `VisionSimulatorService.disarm()`
+  ve `_force_disarm()` içinde çağrılıyor.
+- `disarm()`/`_force_disarm()` artık otomatik kamerayı da durduruyor
+  (`_stop_auto_camera_internal`), `autoCameraChanged` sinyaliyle UI senkron
+  tutuluyor (kullanıcı tıklamadan da kapanabilir - disarm/reconnect).
+- disarm() uyarı metni güncellendi: PLC'nin 1635 exportunda heartbeat
+  bypass'ı kaldırıldığı için (orijinal hesaba dönüldü) heartbeat'i durdurmak
+  artık GERÇEK bir STOPPING/dönüş hareketi riski - "bool cleanup atlamak
+  güvenli kapanış değildir" açıkça belirtiliyor.
+- `can_arm()`: "Y actual velocity tagı yok" notu YANLIŞTI (PLC teyidi) -
+  `GVL.lrY_ActualVelocity` zaten mevcut, `core/models.py::y_actual_vel` +
+  config `y_actual_vel` node'u eklendi, "eksenler durmuş" kontrolü artık
+  HER İKİ eksene bakıyor.
+
+### Faz E - test
+- `tests/test_auto_camera.py` (20 test): Faz C tablosunun her satırı,
+  happy-path booleanların bir kez yazılması, CUTTING'de actual X'e göre
+  gerçek paket/sequence artışı, BLADE_DOWN sticky/flicker'sız ZDownRequest,
+  stale'den üretim yapılmaması, disarm/reconnect'in auto camera'yı
+  durdurması, periyodun aktifken değiştirilememesi, lead mesafesi hesabı.
+- `tests/test_opcua_cancel_pending.py` (3 test): gerçek iptal - kalan alan
+  hiç yazılmıyor, iptal edilen işlem sonuç sinyali göndermiyor, tamamlanmış
+  bir yazı iptalden etkilenmiyor.
+- Tam suite: **111/111 yeşil**. Ayrıca demo modda tam widget-seviyesi smoke
+  script ile doğrulandı (ARM→auto camera başlat→state dizisi→manuel
+  kontroller pasif→durdur→kapat→disarm), sıfır beklenmeyen uyarı popup'ı.
+- Gerçek PLC'ye kendi kendine bağlanılmadı/yazılmadı (görev notu).
+
+## 2026-09-17 - Gerçek PLC bug: udiVisionSequence/Heartbeat UDINT tip uyumsuzluğu
+
+Kullanıcı gerçek PLC testinde: TargetX/TargetY yazılıyor ama
+`udiVisionSequence`/`Heartbeat` 0 kalıyor, "Yazma başarısız: vision_sequence"
+hatası (neden görünmüyor). Kullanıcının kendi teşhisi doğru: bu iki tag
+PLC'de UDINT, asyncua Python `int`'i varsayılan olarak `Int64` VariantType
+ile gönderiyor, PLC `BadTypeMismatch` ile reddediyor.
+
+### Düzeltme (`plc/opcua_client.py`)
+
+- `EXPLICIT_VARIANT_TYPES = {"vision_sequence": UInt32, "vision_heartbeat":
+  UInt32}` - yalnız bu iki doğrulanmış tag için `ua.Variant(int(value),
+  ua.VariantType.UInt32)` ile açık tipli yazım; her şey (BOOL/Double
+  yazımları, `cmd_start` gibi mevcut HMI komutları, Settings parametreleri)
+  eskisi gibi örtük (inferred) tiple gidiyor - dokunulmadı.
+- `_write_checked` artık `tuple[bool, str]` döndürüyor (gerçek OPC UA hata
+  metnini de taşıyor); `_write_sequence` bunu `sequentialWriteResult`
+  mesajına ekliyor: `"Yazma başarısız: vision_sequence (<gerçek sebep>)"` -
+  artık hangi tag değil, NEDEN başarısız olduğu da görünür.
+- `tests/test_opcua_sequential_write.py`: mock `_write_checked` artık
+  `(bool, str)` döndürüyor (imza değişikliği nedeniyle güncellendi).
+- `tests/test_opcua_variant_types.py` (yeni, 6 test): vision_sequence/
+  vision_heartbeat açık UInt32 `ua.Variant` ile yazılıyor; vision_target_x/
+  vision_ready/cmd_start/lr_x_cut_velocity DEĞİŞMEDEN (plain value, Variant
+  sarmalanmadan) gidiyor; gerçek OPC UA hata metni (`UaStatusCodeError`
+  içeriği) çağırana döndürülüyor; sıralı yazma hata mesajı gerçek sebebi
+  içeriyor. Tam suite 88/88 yeşil. Gerçek PLC'ye kendiliğinden yazılmadı.
+
+## 2026-09-17 - Düzeltme: cycle_active kilidi ARMED Vision simülatörünü kapatıyordu
+
+Kullanıcı geçici Vision simülatörünü ilk denemesinde: "otomatik çevrimi
+başlattığımda kameradan veri almam gerekiyor... şu an oto moda geçtiğim an
+kapanıyor" diye bildirdi. Amaç: motorlar fiziksel olarak boşta, gerçek kamera
+entegre değil - operatör ARM edip Start'a bastığında simülatörün TAM OLARAK
+o andan (cycle_active=TRUE) itibaren veri beslemeye devam etmesi bekleniyor
+(gerçek kamera entegre olunca bu araç tamamen silinecek, geçici test amaçlı).
+
+### Kök neden
+
+`SettingsPage._on_snapshot`'taki 2026-09-16 tarihli "cycle_active iken
+Mühendislik erişimi zorla kilitlenir" güvenlik kuralı, `_close_vision_
+simulator()` çağrısını da içeriyordu - yani zaten ARMED olan, aktif paket
+gönderen bir Vision simülatör penceresini, tam olarak operatörün Start'a
+bastığı an (cycle_active TRUE olduğu an) otomatik olarak kapatıp disarm
+ediyordu. Bu, mekanik PARAMETRE düzenlemesi için doğru bir kural ama Vision
+simülatörünün asıl kullanım amacıyla (arm ET, sonra cycle boyunca besle)
+doğrudan çelişiyordu - iki farklı endişe yanlışlıkla aynı tetikleyiciye
+bağlanmıştı.
+
+### Düzeltme
+
+`ui/machine/settings_page.py::_on_snapshot`: cycle_active kilidi artık
+yalnız parametre satırlarını/endpoint alanını kilitler ve YENİ bir Vision
+simülatör penceresi açılmasını engeller (`_vision_sim_btn.setEnabled(False)`).
+Zaten açık/ARMED olan pencereye artık dokunmuyor - `_close_vision_
+simulator()` çağrısı buradan kaldırıldı. Uyarı mesajına, pencere açıksa
+"beslemeye devam edebilirsiniz" notu eklendi. `VisionSimulatorService`'in
+kendi disarm/reconnect mantığı (bağlantı kaybında zorla disarm, kullanıcının
+DISARM butonu veya pencereyi kapatması) değişmedi - hâlâ tek gerçek kapanış
+yolları bunlar.
+
+Not: Ayarlar sayfasındaki "Mühendislik Erişimini Aç" kutusunun kullanıcı
+tarafından MANUEL olarak kapatılması (`_on_unlock_toggled(False)`) hâlâ
+Vision simülatörünü kapatıyor - bu kasıtlı bir erişim iptali, otomatik bir
+yan etki değil, o davranış korunuyor.
+
+### Doğrulama
+
+Elle yazılan bir smoke script ile (QMessageBox.warning mock'lanarak):
+ARM edildi -> `cycle_active=True` simüle edildi -> pencere `isVisible()`
+True, `sim.armed` True, buton disabled, tek bir uyarı popup'ı gösterildi,
+ve mid-cycle `send_packet` başarıyla dispatch edildi. `pytest` 79/79
+(mevcut testler bu senaryoyu zaten kapsamıyordu - Settings<->VisionSim UI
+entegrasyonu, servis seviyesi testlerin kapsamı dışında).
+
+## 2026-09-17 - Geçici mühendislik Vision veri simülatörü (PLC-HMI-20260917-02)
+
+Görev: `.ai/HMI_TEMP_VISION_SIMULATOR_TASK.md`, Faz 0-5, kullanıcı talebiyle
+uçtan uca uygulandı. Koordinasyon notu: `.ai/Codex_Codesys.md`.
+
+### Kapsam ve amaç
+
+Gerçek kamera uygulaması gelene kadar, mühendisin gerçek Vision->PLC
+alanlarını elle tetiklediği GEÇİCİ bir diagnostic/simülatör aracı. Ana HMI
+dinamiklerini (Start/Stop/Reset/Jog/Settings/Alarm/DemoSimulator) değiştirmez;
+`DemoSimulator` ile karıştırılmaz (o PLC yokken TÜM snapshot'ın sahte
+kaynağıdır, bu servis armed iken sadece Vision alanlarını gerçek PLC'ye
+yazar). Varsayılan KAPALI ve kaldırılabilir.
+
+### Faz 0 - inceleme bulguları
+
+- `config/opcua.json` / `opcua.example.json`'da `vision_target_x/y`,
+  `vision_confidence` zaten `MachineService._on_raw_snapshot` tarafından
+  okunuyordu ama NodeId eşlemesi hiç eklenmemişti (her zaman 0.0 kalıyordu) -
+  bu görevle birlikte eklendi.
+- `CutPermit`, `ZDownRequest`, `Heartbeat`, `udiVisionSequence`, `xTrajectoryValid`,
+  `lrMaxAllowedSlope` HMI tarafında hiç yoktu. Tüm tag adları tahmin edilmedi;
+  kullanıcının yerel PLC koordinasyon paketindeki (`C:/Users/agedik/Documents/
+  ChatGPT/Bufera Tekstil PLC/.../plc_reference/GVL_LAST_SHARED_REFERENCE.st`
+  ve `docs/05_VISION_PLC_CONTRACT_SUMMARY.md`) GVL kaynağıyla teyit edildi.
+- Vision paket sırası (TargetX/TargetY önce, sequence en son) ve
+  "hedefX-actualX>0.001 + eğim limiti" trajectory kuralı aynı pakette
+  `docs/reports/2026-09-17_06_PARTIAL_AUTO_TEST.md`'den doğrulandı.
+- Communication_Control'da `xVisionHeartbeatOK` kaynağında GEÇİCİ olarak
+  TRUE'ya sabitlenmiş durumda (kullanıcı saha testi için); bu HMI'nin değil
+  PLC'nin bilinen, ayrı bir geçici durumu - HMI dokunmadı, sadece not edildi.
+
+### Faz 1-4 - mimari
+
+- `plc/models.py`: `OpcUaConfig.vision_simulator_enabled: bool = False`
+  (config'de yoksa varsayılan False - "normal dağıtımda kapalı" gereksinimi
+  ayrı kod değişikliği gerektirmeden sağlanıyor).
+- `config/opcua.json` + `.example.json`: 9 yeni NodeId (`trajectory_valid`,
+  `lr_max_allowed_slope`, `vision_target_x/y`, `vision_confidence`,
+  `vision_cut_permit`, `vision_z_down_request`, `vision_heartbeat`,
+  `vision_sequence`) + `vision_simulator_enabled: false`. Gerçek endpoint
+  değiştirilmedi.
+- `services/machine_service.py`: `VISION_SIM_WRITABLE_TAGS` kapalı izin
+  listesi (yalnız gerçek Vision->PLC alanları - PLC-hesaplı state/sensör/
+  motion/valf tagları asla değil) + `request_vision_write`/
+  `request_vision_sequential_write` gateway metodları (izin listesi dışı tag
+  için `ValueError`). `visionSequentialWriteResult` sinyali worker'a bağlandı.
+- `plc/opcua_client.py`: `request_write_sequence` - tek bir coroutine
+  içinde her alanı SIRAYLA `await` ederek yazar (back-to-back
+  fire-and-forget `request_write()` çağrılarının OPC UA seviyesinde sıralama
+  garantisi OLMADIĞI için - görev notu); ilk başarısızlıkta durur, kalan
+  alanları (özellikle sequence'i) yazmaz.
+- `services/vision_simulator.py` (yeni): `VisionSimulatorService`. Sahiplik
+  modeli: `armed=False, source="REAL"` varsayılan/her bağlantı değişiminde
+  zorunlu (`_force_disarm`, temizlik yazısı denemez); `arm()` yalnız
+  `cycle_active=False` ve X ekseni durmuşken izin verir (Y actual velocity
+  tagı yok - bilinen sınırlama, raporlandı); `disarm()` çevrim pasifken
+  VisionReady/LineValid/VisionFault/CutPermit/ZDownRequest'i FALSE'a geri
+  çeker, çevrim aktifken bu yazıları ATLAR ve kullanıcıyı uyarır (hareket
+  ortasında izin çekmek STOPPING/dönüş hareketi doğurabilir). `generation`
+  sayacı eski/gecikmiş paket sonuçlarını sessizce yok sayar. `send_packet`
+  NaN/Inf ve confidence 0..1 doğrular, hedefX-actualX>0.001 kontrolü yapar,
+  aynı anda tek paket (in-flight guard). Heartbeat periyodu
+  `t_vision_heartbeat_timeout/3`'ten türetilir, sabit 2s değil.
+- `ui/machine/vision_simulator_page.py` (yeni): `VisionSimulatorDialog`,
+  modeless (`show()`, `exec()` değil) - kullanıcı isteği: ana ekran paralel
+  kullanılabilsin. Açılışta hiçbir yazı yok; ZDownRequest ayrı onay ister.
+- `ui/machine/settings_page.py`: "VISION SİMÜLATÖR ⚙" butonu yalnız
+  `vision_simulator_enabled` VE Mühendislik Erişimi açıkken görünür/aktif -
+  ayrı gizli menü/parola yerine mevcut yetki kapısı yeniden kullanıldı.
+  Erişim kapanınca (kullanıcı kilitler veya cycle_active nedeniyle zorla
+  kilitlenir) pencere kapatılır ve simülatör disarm edilir.
+
+### Faz 5 - test ve doğrulama
+
+- `tests/test_opcua_sequential_write.py` (4): sıralı yazma, ilk hatada
+  durma, gerçek await sırası (yavaş yazı hızlıdan önce tamamlanır), loop yok.
+- `tests/test_vision_simulator.py` (27): feature flag, varsayılan disarmed,
+  arm reddi (cycle_active/eksen hareketli/flag kapalı), reconnect/disconnect
+  zorla disarm, izin listesi dışı tag reddi, paket alan sırası, NaN/Inf/
+  confidence sınır reddi, çift paket serileştirme, stale generation göz ardı,
+  UInt32 wrap (sequence + heartbeat), heartbeat periyot hesap, disarm
+  cycle-pasif/aktif davranışı, demo mod. Tümü sahte/mock worker ile - gerçek
+  PLC'ye yazma yok.
+- Tam suite: 79/79 yeşil (46 eski + 33 yeni).
+- `python -m app.main` (gerçek config, endpoint dolu) 6s smoke-run: sadece
+  read-only bağlantı/okuma döngüsü çalıştı, hata yok (flag false olduğu için
+  buton hiç görünmedi).
+- Demo modda widget seviyesinde el ile doğrulama (ayrı script): kilitliyken
+  buton gizli/disabled, unlock ile aktif, popup açılıyor, arm+paket
+  gönderimi başarılı, tekrar kilitlenince popup kapanıp simülatör disarm
+  oluyor - hepsi beklenen davranış.
+
+### Kapsam dışı bırakılanlar (bilinçli, görev notunda da işaretli)
+
+- Periyodik "düz çizgi" otomatik paket üretimi (yalnız tek-paket modu
+  yapıldı; görev notu bunu ayrı/opsiyonel bıraktı).
+- Gerçek kameraya devreye alma adımının PLC tarafı (Communication_Control
+  heartbeat bypass'ının geri alınması) - PLC/kullanıcı tarafı iş.
+- Gerçek PLC üzerinde uçtan uca doğrulama - kullanıcı yapacak.
+
 ## 2026-09-16 - Parametre yazma "sessiz geri donme" hatasi (gercek PLC bug report)
 
 Kullanici Faz 4'u gercek PLC'de test ederken: X Kesim Hızı'nı 175'ten

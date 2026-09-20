@@ -37,6 +37,8 @@ cd D:\work\GitProjects\Bufera_Tekstil_Project
 | `memory/CHANGELOG_MEMORY.md` | Kronolojik degisiklik kaydi | Son degisiklikleri ararken |
 | `memory/DECISIONS.md` | Karar gecmisi | Teknik karar oncesi |
 | `skills/design/DESIGN.tr.md` | UI tasarim kurallari | UI degisikligi oncesi |
+| `PLC_GVL_REFERENCE_2026-09-18.md` | Kullanicinin paylastigi tam guncel GVL kaynagi (tag tipleri/varsayilanlari) | OPC UA tag/tip sorusu oncesi |
+| `Codex_Codesys.md` | PLC tarafi AI ajaniyla HMI<->PLC koordinasyon mesajlari | PLC'ye bagimli is baslarken/biterken |
 
 ## Bakim Kurali
 

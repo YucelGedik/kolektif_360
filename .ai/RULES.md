@@ -44,8 +44,10 @@ docs/         orijinal 32 bolumluk entegrasyon brifi
 - Build: `python -m venv .venv` + `.venv\Scripts\pip install -r requirements.txt`
 - Run: `.venv\Scripts\python.exe -m app.main` (Demo modda calisir)
 - Test: `.venv\Scripts\python.exe -m pytest`
-- Son build/test: 2026-09-12 - `pytest` 8/8 gecti, uygulama gercekten
-  calistirilip ekran goruntuleriyle dogrulandi (bkz. CHANGELOG_MEMORY.md).
+- Son build/test: 2026-09-18 - `pytest` 160/160 gecti (H1/H2/H3/H6 +
+  eğimli kamera senaryosu + sunucu-tabanlı DataType çözümleme dahil); demo
+  modda `python -m app.main` + widget testiyle dogrulandi (bkz.
+  CHANGELOG_MEMORY.md).
 
 Her anlamli degisiklikten sonra `pytest` calistir. UI degisikligi yapildiysa
 mumkunse `python -m app.main` ile gercekten ac ve gez (bkz. DESIGN.tr.md).
@@ -140,11 +142,76 @@ Detay: `.ai/memory/CHANGELOG_MEMORY.md`. Sirada plan dosyasinin SS12
       start_permitted/kesim ilerlemesi turetmeleri eklendi; demo simulasyonu
       yeni state numaralarina tasindi, davranisi bozulmadi (17/17 pytest).
 
-### 2026-09-17 — Kullanıcı önceliği: geçici Vision simülatörü
-- [ ] .ai/HMI_TEMP_VISION_SIMULATOR_TASK.md Faz 0: sözleşme/kaynak farkları.
-- [ ] Faz 1: varsayılan kapalı özellik, mühendislik erişimi, yazıcı sahipliği.
-- [ ] Faz 2: sıralı paket ve bağımsız heartbeat.
-- [ ] Faz 3: ana HMI'yi değiştirmeyen geçici diagnostic sayfa.
-- [ ] Faz 4: kapanış/reconnect ve gerçek kameraya çakışmasız geçiş.
-- [ ] Faz 5: izole testler, regresyon ve kullanıcı test rehberi.
-Bu alt fazlar mevcut Vision Simulator işinin ayrıntısıdır; ayrı kalıcı operatör işlevi değildir.
+### 2026-09-17 — Kullanıcı önceliği: geçici Vision simülatörü (tamamlandı)
+- [x] Faz 0: sözleşme/kaynak farkları raporlandı (bkz. CHANGELOG_MEMORY.md
+      ve .ai/Codex_Codesys.md yanıtı - eksik NodeId'ler GVL_LAST_SHARED_
+      REFERENCE.st ve 05_VISION_PLC_CONTRACT_SUMMARY.md ile doğrulandı).
+- [x] Faz 1: `vision_simulator_enabled` (varsayılan false, config bayrağı),
+      giriş noktası yalnız Mühendislik Erişimi açıkken görünür/aktif, her
+      bağlantı durumu değişiminde zorla disarm, generation sayacıyla eski
+      kuyruk/sonuç yok sayılır.
+- [x] Faz 2: `OpcUaWorker.request_write_sequence` gerçek sıralı (await'li)
+      yazma; `VisionSimulatorService.send_packet` TargetX/TargetY/Ready/
+      LineValid/Fault/Confidence sonra Sequence sırasıyla, tek seferde bir
+      paket; heartbeat periyodu `t_vision_heartbeat_timeout`/3'ten türetilir.
+- [x] Faz 3: `ui/machine/vision_simulator_page.py` - modeless popup
+      (`show()`, `exec()` degil - ana ekran paralel kullanılabilir, kullanıcı
+      isteği); varsayılanlar FALSE, açılışta hiçbir yazı yok, ZDownRequest
+      ayrı onay istiyor.
+- [x] Faz 4: sayfa kapanışı/yetki kaybı/bağlantı kaybı/app kapanışında
+      disarm; çevrim aktifken disarm izin alanlarını geri ÇEKMEZ (uyarır).
+- [x] Faz 5: `tests/test_vision_simulator.py` (27) + `tests/
+      test_opcua_sequential_write.py` (4) - hepsi fake/mock worker ile,
+      gerçek PLC'ye yazma yok. Tam suite 79/79 yeşil.
+Bu alt fazlar GEÇİCİ mühendislik aracının ayrıntısıdır; yukarıdaki kalıcı
+"Faz 6: Vision Simulator ekrani" (plan SS9) ile karıştırılmasın - o ayrı,
+kalıcı bir operatör özelliğidir ve henüz başlanmadı.
+
+### 2026-09-17 — PLC-HMI-20260917-03: tam otomatik masa testi (tamamlandı)
+- [x] Faz A: UInt32 tip hatası (vision_sequence/vision_heartbeat) düzeltildi
+      - `ua.Variant(int(value), ua.VariantType.UInt32)`, gerçek OPC UA hata
+        metni artık UI'ya taşınıyor.
+- [x] Faz B/C: `VisionSimulatorService.start_auto_camera()` +
+      `_on_auto_camera_tick()` - PLC state/actual X/xTrajectoryValid-Fault'a
+      göre TargetX/TargetY/CutPermit/ZDownRequest kendiliğinden üretiliyor
+      (Faz C tablosu tam uygulandı); manuel kontroller otomatik modda pasif.
+- [x] Faz D: disarm/reconnect artık bekleyen paketi GERÇEKTEN iptal ediyor
+      (`OpcUaWorker.cancel_pending_sequence`, sadece sinyal sonucu değil);
+      `y_actual_vel` eklendi (PLC notu: lrY_ActualVelocity zaten vardı).
+- [x] Faz E: `tests/test_auto_camera.py` (20) + `tests/
+      test_opcua_cancel_pending.py` (3). Tam suite 111/111. Gerçek PLC'ye
+      kendi kendine yazılmadı.
+- [x] `.ai/Codex_Codesys.md`'ye HMI->PLC yanıtı + kullanıcı rehberi eklendi.
+
+### 2026-09-18 — PLC-HMI-20260918-04: H1/H2/H3/H6 (kullanıcı onaylı, tamamlandı)
+Kaynak: `.ai/HMI_TEST_FINDINGS_TASKS_20260918.md`. H4/H5/H7 PLC C2/C5/C4
+sözleşmesini bekliyor - BAŞLANMADI (kullanıcı onayı: "H4 5 7 PLC tarafını
+bekleyecek").
+- [x] H1: "MANUEL AKTİF" -> "OPERATÖR KONTROLÜ"; feed izni tek başına
+      `feed_manual_allowed`'a güveniyor. ÇEVRİM DURUMU zaten eMachineState'ten
+      geliyordu (doğrulandı).
+- [x] H2: Manuel mod butonu + `MachineService.set_manual_mode` -
+      cycle_active/stale/disconnected'da fail-closed, UI+servis seviyesi.
+- [x] H3: `compute_start_inhibit_reasons` - StartPermitted=FALSE nedenini
+      mevcut tag'lerden açıklar, xStartPermitted'i yeniden hesaplamaz;
+      "Stop basılı" YOK (gerçek tag yok, tahmin edilmedi).
+- [x] H6: Otomatik kamera "tilted" senaryosu - sabit referans, üç katmanlı
+      ön-kontrol (lrMaxAllowedSlope/lrY_MaxVelocity/Y yazılım sınırları),
+      `send_packet`'te senaryo-bağımsız gerçek zamanlı Y-sınır reddi.
+- [x] Testler: `test_mode_change_guard.py` (8), `test_start_inhibit_
+      reasons.py` (12), `test_tilted_camera_scenario.py` (15). Tam suite
+      160/160.
+- [ ] Yan bulgu (kullanıcıya soruldu, henüz kararlaştırılmadı): paylaşımlı
+      `data/bufera.db` SettingsStore testler arasında izole değil - test
+      çalıştırma her seferinde gerçek DB'yi kirletiyor. Kalıcı düzeltme
+      `MachineService`'e `settings_db_path` enjeksiyonu gerektirir.
+
+### 2026-09-18 — Ana ekran Alarm/Uyarı/Mesaj panosu (tamamlandı)
+Kullanıcı isteği; H4'ün "ekran/tarihçe modeli hazırlanabilir, canlı alarm
+tagı tahmin edilmez" kapsamına giriyor.
+- [x] `AlarmEvent.severity` (ALARM/UYARI/MESAJ) + `log_event()`; eski
+      `data/bufera.db` şeması otomatik migrate edildi (veri kaybı yok).
+- [x] `machine_page.py`: 3 filtre kutusu (varsayılan hepsi açık) + tablo.
+      `alarm_page.py`: "Tür" sütunu eklendi.
+- [x] `tests/test_alarm_severity.py` (8, izole tmp_path DB). Tam suite
+      168/168. Canlı PLC alarm tagı henüz bağlanmadı (kasıtlı).

@@ -30,8 +30,8 @@ class DemoSimulator:
         self.jog_y_dir = 0
         self.jog_x_fast = False
         self.jog_y_fast = False
-        self.blade_cmd: str | None = None
-        self.clamp_cmd: str | None = None
+        self.blade_retract_requested = False
+        self.clamp_retract_requested = False
         self.y_center_requested = False
 
         self.start_requested = False
@@ -82,19 +82,11 @@ class DemoSimulator:
     def request_y_center(self) -> None:
         self.y_center_requested = True
 
-    def set_blade(self, down: bool, active: bool) -> None:
-        wanted = "down" if down else "up"
-        if active:
-            self.blade_cmd = wanted
-        elif self.blade_cmd == wanted:
-            self.blade_cmd = None
+    def request_blade_retract(self) -> None:
+        self.blade_retract_requested = True
 
-    def set_clamp(self, down: bool, active: bool) -> None:
-        wanted = "down" if down else "up"
-        if active:
-            self.clamp_cmd = wanted
-        elif self.clamp_cmd == wanted:
-            self.clamp_cmd = None
+    def request_clamp_retract(self) -> None:
+        self.clamp_retract_requested = True
 
     # -- simulation tick ---------------------------------------------------
 
@@ -167,14 +159,14 @@ class DemoSimulator:
             snap.y_actual_pos = self.params["lr_y_center_position"]
             snap.y_set_pos = snap.y_actual_pos
             self.y_center_requested = False
-        if self.blade_cmd == "down":
-            snap.blade_down, snap.blade_up = True, False
-        elif self.blade_cmd == "up":
+        if self.blade_retract_requested:
+            self.blade_retract_requested = False
             snap.blade_down, snap.blade_up = False, True
-        if self.clamp_cmd == "down":
-            snap.clamp_down, snap.clamp_up = True, False
-        elif self.clamp_cmd == "up":
+            snap.blade_retract_accepted = True
+        if self.clamp_retract_requested:
+            self.clamp_retract_requested = False
             snap.clamp_down, snap.clamp_up = False, True
+            snap.clamp_retract_accepted = True
 
     def _advance_phase(self, dt: float, snap: MachineSnapshot, phase: CycleState) -> None:
         p = self.params
@@ -272,6 +264,10 @@ class DemoSimulator:
         snap.vision_heartbeat_ok = False
         snap.start_permitted = False
         snap.cycle_state = int(CycleState.FAULT)
+        # Gerçek PLC her yeni FAULT'ta bu kabul bitlerini sıfırlar
+        # (PLC-HMI-20260918-06) - demo aynı davranışı taklit eder.
+        snap.blade_retract_accepted = False
+        snap.clamp_retract_accepted = False
         self.alarm_fired_once = True
         notify_alarms()
 

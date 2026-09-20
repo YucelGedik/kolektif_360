@@ -20,6 +20,11 @@ class OpcUaConfig(BaseModel):
     reconnect_backoff_max_ms: int = Field(default=5000, gt=0)
     command_pulse_ms: int = Field(default=150, gt=0)
     stale_timeout_ms: int = Field(default=1000, gt=0)
+    # Geçici mühendislik Vision veri simülatörü (PLC-HMI-20260917-02).
+    # Varsayılan FALSE: normal müşteri dağıtımında bu özellik ve sayfası
+    # görünmez/aktif olmaz. Gerçek kamera devreye alındığında kapatılıp
+    # kaldırılabilir olması gerektiğinden ayrı bir mimari parça, tek bayrak.
+    vision_simulator_enabled: bool = False
     nodes: dict[str, str] = Field(default_factory=dict)
 
     @property

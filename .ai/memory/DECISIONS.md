@@ -2,6 +2,39 @@
 
 Yeni teknik kararlar en uste eklenir.
 
+## 2026-09-18 - OPC UA yazımı artık sunucudan gerçek tipi soruyor (tag bazlı tahmin değil)
+
+- Baglam: Gerçek PLC'de Settings LREAL-adlandırılmış parametreleri
+  (`lrX_CutVelocity`, `lrX_CutEndPos`) yazarken `BadTypeMismatch` alındı.
+  Kullanıcının paylaştığı güncel GVL kaynağı (`.ai/PLC_GVL_REFERENCE_
+  2026-09-18.md`) kök nedeni kesinleştirdi: bu kalıcı (persistent) makine
+  parametreleri GVL'de `REAL` (32-bit) olarak tanımlı, `LREAL` (64-bit)
+  DEĞİL - "lr" ön eki yanıltıcı, sadece HMI/OPC UA sözleşmesini bozmamak
+  için korunmuş bir isimlendirme. Kullanıcı nedenini ayrıca doğruladı:
+  kullanılan CODESYS ürününün Persistent Variable özelliği 64-bit
+  desteklemiyor - REAL'e geçiş "memory tasarrufu" tercihi değil, bir
+  ARAÇ/PLATFORM KISITI. Python `float`'ın asyncua tarafında
+  doğru şekilde `Double`'a çıkarıldığı ayrıca doğrulanmıştı - yani
+  tag-bazlı VariantType tahmini (`EXPLICIT_VARIANT_TYPES`) prensip olarak
+  ölçeklenmiyordu.
+- Secenekler: (a) her yeni mismatch'i tag bazında `EXPLICIT_VARIANT_TYPES`'a
+  ekleyip büyütmeye devam et, (b) her tag için sunucudan gerçek DataType'ı
+  sorup onunla yaz.
+- Karar: (b). `plc/opcua_client.py::_write_checked`, `EXPLICIT_VARIANT_
+  TYPES`'ta olmayan her tag için `Node.read_data_type_as_variant_type()`
+  ile sunucunun advertised DataType'ını okur (tag başına bir kez, bağlantı
+  ömrü boyunca cache'lenir, reconnect'te temizlenir) ve o tiple yazar.
+  Sorgu başarısız olursa eski (Python tipinden çıkarım) davranışa düşer.
+- Sonuc: Şu an bilinen 2 UDINT tag (`vision_sequence`/`vision_heartbeat`,
+  kaynaktan zaten kesin bilindiği için sıfır-round-trip hızlı yol olarak
+  `EXPLICIT_VARIANT_TYPES`'ta kaldı) hariç HER yazım (mevcut/ileride
+  eklenecek her parametre, jog/manual_mode BOOL'u) artık kendiliğinden
+  doğru tipte. `tests/test_opcua_variant_types.py` 12 test. Doğrulama
+  kullanıcıdan bekleniyor (gerçek PLC'ye kendiliğinden yazılmadı).
+- Geri alma kosulu: Sunucu sorgusu ileride performans/uyumluluk sorunu
+  çıkarırsa, tag başına `EXPLICIT_VARIANT_TYPES` girişleriyle devre dışı
+  bırakılabilir (öncelik sırası zaten bunu destekliyor).
+
 ## 2026-09-12 - VisionCut kaynagi olmadan bagimsiz teslim paketi olarak insa et
 
 - Baglam: Brif, "mevcut VisionCut repository'sini incele, mevcut tema/

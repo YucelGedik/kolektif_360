@@ -10,11 +10,27 @@ Connection state machine: Disconnected -> Connecting -> Connected / Degraded
 `Client.read_values` once per configured `read_interval_ms`.
 
 Known follow-up (brief section 28, "OPC UA endpoint security configuration",
-"actual CODESYS namespace table"): value writes currently let asyncua infer
-the OPC UA VariantType from the Python type. Once the real PLC GVL is
-finalized, verify each tag's actual DataType (Bool / Real / LReal / Int) with
-UaExpert and, if any mismatch (`BadTypeMismatch`) appears, pass an explicit
-`ua.VariantType` into `write_value` for that tag.
+"actual CODESYS namespace table"): value writes let asyncua infer the OPC UA
+VariantType from the Python type by default (bool -> Boolean, float ->
+Double, int -> Int64). Confirmed real-PLC mismatch (2026-09-17): PLC UDINT
+tags (`Heartbeat`, `udiVisionSequence`) rejected a plain Python `int` write
+because asyncua infers `Int64` for it, not `UInt32` - `EXPLICIT_VARIANT_TYPES`
+below overrides the inferred type for exactly those tags.
+
+Second confirmed mismatch (2026-09-18, real-PLC "BadTypeMismatch" on
+Settings LREAL parameters `lrX_CutVelocity`/`lrX_CutEndPos` - reads work,
+writes are rejected): guessing the right VariantType per tag ahead of
+evidence doesn't scale and got this one wrong too (a plain Python float
+correctly infers Double, yet the server still rejected it - the node's
+*actual* advertised DataType on this particular symbol must be something
+else, e.g. Float/Single). Instead of adding more guesses, `_write_checked`
+now asks the SERVER what DataType each node actually is
+(`Node.read_data_type_as_variant_type()`, cached per tag after the first
+successful read) and writes using THAT type whenever no `EXPLICIT_
+VARIANT_TYPES` override exists - self-correcting for every tag, not just
+ones we've hit a bug report for. `EXPLICIT_VARIANT_TYPES` stays as a
+zero-round-trip fast path for the two tags already confirmed by source
+(GVL is UDINT) and as a fallback if the server query itself fails.
 """
 
 from __future__ import annotations
@@ -32,11 +48,29 @@ from plc.tag_map import TagMap
 
 logger = logging.getLogger(__name__)
 
+# Tags whose real PLC DataType does not match what asyncua would infer from
+# the Python value's type, so an explicit VariantType must be sent instead
+# (2026-09-17, real-PLC bug report: "Yazma başarısız: vision_sequence" -
+# GVL.Heartbeat / GVL.udiVisionSequence are UDINT; a plain Python int would
+# be sent as Int64 and rejected). Add further tags here only after a real
+# BadTypeMismatch is confirmed for them - do not guess ahead of evidence.
+EXPLICIT_VARIANT_TYPES: dict[str, "ua.VariantType"] = {
+    "vision_sequence": ua.VariantType.UInt32,
+    "vision_heartbeat": ua.VariantType.UInt32,
+}
+
 
 class OpcUaWorker(QThread):
     connectionStateChanged = Signal(str)
     snapshotReady = Signal(dict)
     errorOccurred = Signal(str)
+    # Geçici Vision veri simülatörü (PLC-HMI-20260917-02): tek paketin tüm
+    # alanlarını sırayla, her birinin ağ üzerinden tamamlanmasını bekleyerek
+    # yazar - back-to-back fire-and-forget request_write() çağrıları OPC UA
+    # seviyesinde sıralama garantisi vermiyor (görev notu). Sonuç tek sinyalle
+    # bildirilir: tüm alanlar başarılıysa True, ilk başarısız alanda False +
+    # hangi tag olduğunu söyleyen mesaj; kalan alanlar yazılmaz.
+    sequentialWriteResult = Signal(bool, str)
 
     def __init__(self, config: OpcUaConfig, tag_map: TagMap, parent=None):
         super().__init__(parent)
@@ -48,6 +82,11 @@ class OpcUaWorker(QThread):
         self._nodes: dict[str, Any] = {}
         self._running = True
         self._pulses_in_flight: set[str] = set()
+        self._sequence_future: "asyncio.Future | None" = None
+        # Tag -> server-reported VariantType, resolved lazily on first write
+        # and cached for the life of this connection (cleared on reconnect,
+        # since node handles/session are recreated then).
+        self._resolved_variant_types: dict[str, "ua.VariantType"] = {}
 
     # -- lifecycle -----------------------------------------------------
 
@@ -94,6 +133,7 @@ class OpcUaWorker(QThread):
             finally:
                 self._client = None
                 self._nodes = {}
+                self._resolved_variant_types = {}
 
             if not self._running:
                 break
@@ -154,15 +194,88 @@ class OpcUaWorker(QThread):
         self._pulses_in_flight.add(name)
         asyncio.run_coroutine_threadsafe(self._pulse(name), self._loop)
 
+    def request_write_sequence(self, fields: list[tuple[str, Any]]) -> None:
+        """Writes each (tag, value) in `fields` one at a time, awaiting the
+        PLC's write response before starting the next one, then emits
+        `sequentialWriteResult`. Used only by the temporary Vision simulator
+        (2026-09-17) so the "data fields before sequence number" packet
+        contract is an actual network-level ordering guarantee, not just
+        call order on our side."""
+        if self._loop is None:
+            self.sequentialWriteResult.emit(False, "PLC bağlı değil")
+            return
+        self._sequence_future = asyncio.run_coroutine_threadsafe(
+            self._write_sequence(list(fields)), self._loop
+        )
+
+    def cancel_pending_sequence(self) -> None:
+        """Gerçekten iptal eder - sadece sonucu yok saymaz (görev notu,
+        2026-09-17: "Generation yalnız eski sonucu yok saymak değil,
+        worker'daki eski yazıları gerçekten iptal/engellemek için
+        kullanılmalı"). Disarm/reconnect anında hâlâ bekleyen bir paket
+        varsa, kalan alanları (özellikle sequence'i) PLC'ye YAZMADAN durur -
+        `await` noktasında `CancelledError` fırlatılır, `_write_sequence`
+        bunu sessizce yutar (artık geçerli bir oturum yok, bildirecek sonuç
+        da yok)."""
+        future = self._sequence_future
+        if future is not None and not future.done():
+            future.cancel()
+
+    async def _write_sequence(self, fields: list[tuple[str, Any]]) -> None:
+        try:
+            for name, value in fields:
+                ok, error = await self._write_checked(name, value)
+                if not ok:
+                    # Gerçek OPC UA hata metnini kullanıcıya göster - salt
+                    # "tag adı" (2026-09-17 bug report: bunu görmeden
+                    # BadTypeMismatch teşhis edilemiyordu).
+                    self.sequentialWriteResult.emit(False, f"Yazma başarısız: {name} ({error})")
+                    return
+            self.sequentialWriteResult.emit(True, "")
+        except asyncio.CancelledError:
+            pass  # disarmed/reconnected mid-flight - bildirilecek bir sonuç yok
+
     async def _write(self, name: str, value: Any) -> None:
+        await self._write_checked(name, value)
+
+    async def _resolve_variant_type(self, name: str, node: Any) -> "ua.VariantType | None":
+        """Server-confirmed VariantType for this node, resolved once and
+        cached (2026-09-18: guessing per-tag doesn't scale - ask the PLC
+        what type it actually advertises instead)."""
+        cached = self._resolved_variant_types.get(name)
+        if cached is not None:
+            return cached
+        try:
+            variant_type = await node.read_data_type_as_variant_type()
+        except Exception as exc:  # noqa: BLE001 - best-effort, fall back to inferred type
+            logger.warning("Could not read DataType for '%s': %s", name, exc)
+            return None
+        self._resolved_variant_types[name] = variant_type
+        return variant_type
+
+    async def _write_checked(self, name: str, value: Any) -> tuple[bool, str]:
         node = self._nodes.get(name)
         if node is None or self._client is None:
-            self.errorOccurred.emit(f"Write skipped, not connected: {name}")
-            return
+            message = f"Write skipped, not connected: {name}"
+            self.errorOccurred.emit(message)
+            return False, message
         try:
-            await node.write_value(value)
+            explicit_type = EXPLICIT_VARIANT_TYPES.get(name)
+            if explicit_type is not None:
+                # Bilinen UDINT tagları - her zaman int değer (vision_
+                # simulator bu ikisine hep int/mod-2^32 sonucu yollar).
+                await node.write_value(ua.Variant(int(value), explicit_type))
+            elif (resolved_type := await self._resolve_variant_type(name, node)) is not None:
+                await node.write_value(ua.Variant(value, resolved_type))
+            else:
+                # Sunucu tipi öğrenilemedi (ör. okuma da başarısız) - eski
+                # davranış: asyncua'nın Python tipinden çıkarımına güven.
+                await node.write_value(value)
+            return True, ""
         except (ua.UaError, OSError) as exc:
-            self.errorOccurred.emit(f"Write failed for '{name}': {exc}")
+            message = f"{exc.__class__.__name__}: {exc}"
+            self.errorOccurred.emit(f"Write failed for '{name}': {message}")
+            return False, message
 
     async def _pulse(self, name: str) -> None:
         try:

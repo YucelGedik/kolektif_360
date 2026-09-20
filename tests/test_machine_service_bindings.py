@@ -105,6 +105,11 @@ def test_cycle_progress_is_clamped_to_0_100():
 def test_set_manual_mode_flips_demo_simulator_mode(tmp_path):
     svc = _demo_service(tmp_path)
     assert svc.demo_mode is True
+    # Gerçek çalışmada service.start() bunu False yapar (Demo modda bağlantı
+    # kavramı yok); burada elle taklit ediliyor - aksi halde H2'nin yeni
+    # "stale/bilinmeyen durumda fail-closed" engeli (2026-09-18) bunu da
+    # reddeder, ki bu testin amacı değil.
+    svc.snapshot.stale = False
 
     svc.set_manual_mode(True)
     assert svc._demo.manual_mode is True

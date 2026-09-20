@@ -152,27 +152,41 @@ class ManualPage(QWidget):
         return card
 
     def _build_blade_card(self) -> Card:
+        # PLC-HMI-20260918-06: yalnız "Yukarı/Geri Çek" gerçek, PLC-kabullü
+        # bir request'e sahip (GVL.xBladeRetractRequest, pulse). Manuel
+        # "Aşağı" için PLC'de henüz bir request tanımlı değil - ayrı, açık
+        # bir PLC görevi; tag adı uydurulup buton işlevli gösterilmez.
         card = Card("Bıçak")
-        self._blade_down_btn = HoldButton("Bıçak Aşağı")
-        self._blade_up_btn = HoldButton("Bıçak Yukarı")
-        self._blade_down_btn.held.connect(lambda active: self._service.set_blade(True, active))
-        self._blade_up_btn.held.connect(lambda active: self._service.set_blade(False, active))
+        self._blade_retract_btn = touch_button("Bıçağı Geri Çek (Yukarı)")
+        self._blade_retract_btn.clicked.connect(self._service.request_blade_retract)
+        card.body_layout().addWidget(self._blade_retract_btn)
+        self._blade_down_btn = touch_button("Bıçak Aşağı")
+        self._blade_down_btn.setEnabled(False)
+        self._blade_down_btn.setToolTip(
+            "PLC tarafında manuel Aşağı talebi henüz tanımlı değil (ayrı görev, açık)."
+        )
         card.body_layout().addWidget(self._blade_down_btn)
-        card.body_layout().addWidget(self._blade_up_btn)
-        self._blade_status = ProcessStatusCard("Durum")
+        self._blade_status = ProcessStatusCard("Sensör")
         card.body_layout().addWidget(self._blade_status)
+        self._blade_accept_status = ProcessStatusCard("Yukarı Talebi")
+        card.body_layout().addWidget(self._blade_accept_status)
         return card
 
     def _build_clamp_card(self) -> Card:
         card = Card("Perde Baskısı")
-        self._clamp_down_btn = HoldButton("Baskı Aşağı")
-        self._clamp_up_btn = HoldButton("Baskı Yukarı")
-        self._clamp_down_btn.held.connect(lambda active: self._service.set_clamp(True, active))
-        self._clamp_up_btn.held.connect(lambda active: self._service.set_clamp(False, active))
+        self._clamp_retract_btn = touch_button("Baskıyı Geri Çek (Yukarı)")
+        self._clamp_retract_btn.clicked.connect(self._service.request_clamp_retract)
+        card.body_layout().addWidget(self._clamp_retract_btn)
+        self._clamp_down_btn = touch_button("Baskı Aşağı")
+        self._clamp_down_btn.setEnabled(False)
+        self._clamp_down_btn.setToolTip(
+            "PLC tarafında manuel Aşağı talebi henüz tanımlı değil (ayrı görev, açık)."
+        )
         card.body_layout().addWidget(self._clamp_down_btn)
-        card.body_layout().addWidget(self._clamp_up_btn)
-        self._clamp_status = ProcessStatusCard("Durum")
+        self._clamp_status = ProcessStatusCard("Sensör")
         card.body_layout().addWidget(self._clamp_status)
+        self._clamp_accept_status = ProcessStatusCard("Yukarı Talebi")
+        card.body_layout().addWidget(self._clamp_accept_status)
         return card
 
     # -- data binding ---------------------------------------------------------
@@ -187,6 +201,14 @@ class ManualPage(QWidget):
         self._manual_mode_btn.blockSignals(True)
         self._manual_mode_btn.setChecked(snap.manual_mode)
         self._manual_mode_btn.blockSignals(False)
+        # H2 (2026-09-18, kullanıcı test notu): "otomatik mod aktifken ve
+        # kesim devam ederken buton aktif kalıyordu" - cycle_active TRUE
+        # olduğu SÜRECE (yalnız CUTTING değil; hazırlık/dönüş dahil tüm
+        # çevrim) buton devre dışı. Stale/bağlantısızken de fail-closed -
+        # PLC'nin gerçek modunu bilmeden değişikliğe izin verilmez. Gerçek
+        # engel `MachineService.set_manual_mode` içinde de var; bu sadece
+        # görsel/erken engel.
+        self._manual_mode_btn.setEnabled(not snap.cycle_active and not snap.stale)
 
         for btn in (
             self._x_minus,
@@ -194,12 +216,12 @@ class ManualPage(QWidget):
             self._y_minus,
             self._y_plus,
             self._y_center_btn,
-            self._blade_down_btn,
-            self._blade_up_btn,
-            self._clamp_down_btn,
-            self._clamp_up_btn,
+            self._blade_retract_btn,
+            self._clamp_retract_btn,
         ):
             btn.setEnabled(manual_allowed)
+        # Aşağı butonları kalıcı olarak devre dışı - PLC'de henüz bir
+        # request tanımlı değil (görev notu, tag adı uydurulmaz).
 
         self._x_pos_readout.set_value("--" if snap.stale else f"{snap.x_actual_pos:.1f}")
         self._y_pos_readout.set_value("--" if snap.stale else f"{snap.y_actual_pos:+.2f}")
@@ -223,9 +245,22 @@ class ManualPage(QWidget):
             "ÇALIŞIYOR" if snap.feed_running else "DURDU", "ok" if snap.feed_running else "inactive"
         )
 
+        # Kullanıcı isteği (2026-09-18): "AÇIK" yerine "YUKARI" gösterilsin.
+        # Not: PLC-HMI-20260918-06 sözleşmesi FALSE'un ayrı/doğrulanmış bir
+        # yukarı sensörü OLMADIĞINI, kullanıcının kabul ettiği mekanik
+        # açıklık olduğunu belirtiyor - okunan tag ve mantık değişmedi,
+        # yalnızca ekran metni kullanıcının tercihine göre güncellendi.
         self._blade_status.set_status(
             "AŞAĞI" if snap.blade_down else "YUKARI", "warn" if snap.blade_down else "ok"
         )
         self._clamp_status.set_status(
             "AŞAĞI" if snap.clamp_down else "YUKARI", "warn" if snap.clamp_down else "ok"
+        )
+        self._blade_accept_status.set_status(
+            "KABUL EDİLDİ" if snap.blade_retract_accepted else "BEKLENİYOR",
+            "ok" if snap.blade_retract_accepted else "inactive",
+        )
+        self._clamp_accept_status.set_status(
+            "KABUL EDİLDİ" if snap.clamp_retract_accepted else "BEKLENİYOR",
+            "ok" if snap.clamp_retract_accepted else "inactive",
         )

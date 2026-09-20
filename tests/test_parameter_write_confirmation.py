@@ -98,6 +98,48 @@ def test_write_reported_as_failed_after_timeout_with_no_echo(tmp_path, monkeypat
     assert svc.get_parameter_value("lr_x_cut_velocity") == 175.0
 
 
+def test_on_error_emits_parameter_write_error_for_a_pending_write(tmp_path):
+    """2026-09-18 bug report: the generic "HATA — PLC onaylamadı" message
+    hid a real OPC UA rejection. `_on_error` must recognize the worker's
+    "Write failed for '<tag>': <reason>" message and, if that tag is
+    currently a pending parameter write, surface the real reason via
+    `parameterWriteError` - the same class of fix already made for the
+    Vision simulator's sequential writes."""
+    svc = _real_mode_service(tmp_path)
+    svc._on_raw_snapshot({"lr_x_cut_velocity": 175.0})
+
+    errors: list[tuple[str, str]] = []
+    svc.parameterWriteError.connect(lambda key, reason: errors.append((key, reason)))
+
+    svc.set_parameter("lr_x_cut_velocity", 180.0)
+    svc._on_error("Write failed for 'lr_x_cut_velocity': BadUserAccessDenied")
+
+    assert errors == [("lr_x_cut_velocity", "BadUserAccessDenied")]
+
+
+def test_on_error_ignores_failures_for_tags_with_no_pending_write(tmp_path):
+    svc = _real_mode_service(tmp_path)
+    svc._on_raw_snapshot({"lr_x_cut_velocity": 175.0})
+
+    errors: list[tuple[str, str]] = []
+    svc.parameterWriteError.connect(lambda key, reason: errors.append((key, reason)))
+
+    # No set_parameter() call happened - "lr_x_cut_velocity" is not pending.
+    svc._on_error("Write failed for 'lr_x_cut_velocity': BadUserAccessDenied")
+
+    assert errors == []
+
+
+def test_on_error_ignores_unrelated_messages(tmp_path):
+    svc = _real_mode_service(tmp_path)
+    errors: list[tuple[str, str]] = []
+    svc.parameterWriteError.connect(lambda key, reason: errors.append((key, reason)))
+
+    svc._on_error("Connection lost")  # not a "Write failed for '...'" message
+
+    assert errors == []
+
+
 def test_set_parameter_confirms_immediately_in_demo_mode(tmp_path):
     cfg = tmp_path / "opcua.json"
     cfg.write_text('{"endpoint": "", "nodes": {}}', encoding="utf-8")

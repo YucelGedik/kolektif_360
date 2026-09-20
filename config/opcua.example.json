@@ -7,6 +7,7 @@
   "reconnect_backoff_max_ms": 5000,
   "command_pulse_ms": 150,
   "stale_timeout_ms": 1000,
+  "vision_simulator_enabled": false,
   "nodes": {
     "machine_ready": "ns=4;s=|var|MAT LC-C07.Application.GVL.MachineReady",
     "manual_mode": "ns=4;s=|var|MAT LC-C07.Application.GVL.xManualMode",
@@ -24,6 +25,7 @@
     "y_power_status": "ns=4;s=|var|MAT LC-C07.Application.GVL.xY_PowerStatus",
     "y_power_error": "ns=4;s=|var|MAT LC-C07.Application.GVL.xY_PowerError",
     "y_actual_pos": "ns=4;s=|var|MAT LC-C07.Application.GVL.ActualY_mm",
+    "y_actual_vel": "ns=4;s=|var|MAT LC-C07.Application.GVL.lrY_ActualVelocity",
     "y_at_center": "ns=4;s=|var|MAT LC-C07.Application.GVL.xY_AtCenter",
 
     "clamp_down": "ns=4;s=|var|MAT LC-C07.Application.GVL.ClampDown",
@@ -38,12 +40,27 @@
     "vision_fault": "ns=4;s=|var|MAT LC-C07.Application.GVL.VisionFault",
     "vision_heartbeat_ok": "ns=4;s=|var|MAT LC-C07.Application.GVL.xVisionHeartbeatOK",
     "trajectory_fault": "ns=4;s=|var|MAT LC-C07.Application.GVL.xTrajectoryFault",
+    "trajectory_valid": "ns=4;s=|var|MAT LC-C07.Application.GVL.xTrajectoryValid",
+    "lr_max_allowed_slope": "ns=4;s=|var|MAT LC-C07.Application.GVL.lrMaxAllowedSlope",
 
     "cut_end_x": "ns=4;s=|var|MAT LC-C07.Application.GVL.CutEndX_mm",
+
+    "vision_target_x": "ns=4;s=|var|MAT LC-C07.Application.GVL.TargetX_mm",
+    "vision_target_y": "ns=4;s=|var|MAT LC-C07.Application.GVL.TargetY_mm",
+    "vision_confidence": "ns=4;s=|var|MAT LC-C07.Application.GVL.Confidence",
+    "vision_cut_permit": "ns=4;s=|var|MAT LC-C07.Application.GVL.CutPermit",
+    "vision_z_down_request": "ns=4;s=|var|MAT LC-C07.Application.GVL.ZDownRequest",
+    "vision_heartbeat": "ns=4;s=|var|MAT LC-C07.Application.GVL.Heartbeat",
+    "vision_sequence": "ns=4;s=|var|MAT LC-C07.Application.GVL.udiVisionSequence",
 
     "cmd_start": "ns=4;s=|var|MAT LC-C07.Application.GVL.Start",
     "cmd_stop": "ns=4;s=|var|MAT LC-C07.Application.GVL.Stop",
     "cmd_reset": "ns=4;s=|var|MAT LC-C07.Application.GVL.Reset",
+
+    "cmd_blade_retract": "ns=4;s=|var|MAT LC-C07.Application.GVL.xBladeRetractRequest",
+    "cmd_clamp_retract": "ns=4;s=|var|MAT LC-C07.Application.GVL.xClampRetractRequest",
+    "blade_retract_accepted": "ns=4;s=|var|MAT LC-C07.Application.GVL.xBladeRetractAccepted",
+    "clamp_retract_accepted": "ns=4;s=|var|MAT LC-C07.Application.GVL.xClampRetractAccepted",
 
     "jog_x_plus_request": "ns=4;s=|var|MAT LC-C07.Application.GVL.xX_JogPlusRequest",
     "jog_x_minus_request": "ns=4;s=|var|MAT LC-C07.Application.GVL.xX_JogMinusRequest",

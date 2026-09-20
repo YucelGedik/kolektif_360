@@ -32,8 +32,24 @@ def init_engine(db_path: Path | str | None = None):
     import persistence.settings_store  # noqa: F401
 
     Base.metadata.create_all(_engine)
+    _migrate_alarm_events_severity(_engine)
     _SessionFactory = sessionmaker(bind=_engine, future=True, expire_on_commit=False)
     return _engine
+
+
+def _migrate_alarm_events_severity(engine) -> None:
+    """`create_all()` only creates missing TABLES, not missing COLUMNS on
+    existing ones - an existing local `data/bufera.db` from before the
+    2026-09-18 Alarm/Uyarı/Mesaj model change would be missing `severity`
+    and `code` would no longer be NOT NULL. Add the column if absent so old
+    databases keep working without the user having to delete their history."""
+    with engine.connect() as conn:
+        columns = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(alarm_events)")}
+        if columns and "severity" not in columns:
+            conn.exec_driver_sql(
+                "ALTER TABLE alarm_events ADD COLUMN severity VARCHAR(16) DEFAULT 'ALARM'"
+            )
+            conn.commit()
 
 
 def get_session() -> Session:

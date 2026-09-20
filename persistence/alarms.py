@@ -33,6 +33,22 @@ ALARM_TEXTS_TR: dict[int, str] = {
 
 ALARM_SOURCES = ("PLC", "X AXIS", "Y AXIS", "VISION", "PNEUMATIC", "OPC UA")
 
+# 2026-09-18 (kullanıcı isteği): ana ekrandaki birleşik Alarm/Uyarı/Mesaj
+# panosu için üç seviye. H4 (merkezi alarm ekranı) PLC C2 sözleşmesini
+# bekliyor - bu sadece EKRAN/VERİ MODELİDİR, canlı PLC alarm tag'i
+# bağlanmadı; satırlar şimdilik kullanıcı/HMI tarafından elle doldurulacak
+# ("onları dolduracağız").
+SEVERITY_ALARM = "ALARM"
+SEVERITY_WARNING = "UYARI"
+SEVERITY_MESSAGE = "MESAJ"
+SEVERITIES = (SEVERITY_ALARM, SEVERITY_WARNING, SEVERITY_MESSAGE)
+
+SEVERITY_LABELS_TR: dict[str, str] = {
+    SEVERITY_ALARM: "Hata",
+    SEVERITY_WARNING: "Uyarı",
+    SEVERITY_MESSAGE: "Mesaj",
+}
+
 
 def alarm_text(code: int) -> str:
     return ALARM_TEXTS_TR.get(code, f"Bilinmeyen Alarm ({code})")
@@ -44,9 +60,10 @@ class AlarmEvent(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     occurred_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.now)
     cleared_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
-    code: Mapped[int] = mapped_column(Integer)
+    code: Mapped[int | None] = mapped_column(Integer, nullable=True)
     source: Mapped[str] = mapped_column(String(32))
     message: Mapped[str] = mapped_column(String(200))
+    severity: Mapped[str] = mapped_column(String(16), default=SEVERITY_ALARM)
 
     @property
     def active(self) -> bool:
@@ -55,8 +72,19 @@ class AlarmEvent(Base):
 
 class AlarmRepository:
     def raise_alarm(self, code: int, source: str) -> AlarmEvent:
+        """Mevcut, kod-tabanlı ALARM girişleri (davranış değişmedi)."""
+        return self.log_event(SEVERITY_ALARM, source, alarm_text(code), code=code)
+
+    def log_event(
+        self, severity: str, source: str, message: str, code: int | None = None
+    ) -> AlarmEvent:
+        """Genel giriş - Uyarı/Mesaj için de kullanılır; bunların sabit bir
+        kod tablosu olmak zorunda değil (görev notu: kullanıcı satırları
+        elle dolduracak)."""
+        if severity not in SEVERITIES:
+            raise ValueError(f"Bilinmeyen severity: {severity}")
         with get_session() as session:
-            event = AlarmEvent(code=code, source=source, message=alarm_text(code))
+            event = AlarmEvent(code=code, source=source, message=message, severity=severity)
             session.add(event)
             session.commit()
             session.refresh(event)

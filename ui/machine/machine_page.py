@@ -4,13 +4,49 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QProgressBar, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtGui import QColor
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QFrame,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QProgressBar,
+    QSizePolicy,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 
 from core.cycle_state import cycle_state_label
 from core.models import ConnectionState, MachineSnapshot
+from persistence.alarms import (
+    SEVERITY_ALARM,
+    SEVERITY_LABELS_TR,
+    SEVERITY_MESSAGE,
+    SEVERITY_WARNING,
+    AlarmEvent,
+)
 from services.machine_service import MachineService
 from ui.machine.theme import COLORS, base_font
 from ui.machine.widgets import ProcessStatusCard, Readout, SectionTabs, StatusChip, touch_button
+
+SEVERITY_ROW_COLOR = {
+    SEVERITY_ALARM: COLORS["danger"],
+    SEVERITY_WARNING: COLORS["warning"],
+    SEVERITY_MESSAGE: COLORS["brand_cyan"],
+}
+
+
+def filter_alarm_events(
+    events: list[AlarmEvent], selected_severities: set[str]
+) -> list[AlarmEvent]:
+    """Saf, Qt'siz filtre - kullanıcı isteği (2026-09-18): "sadece uyarı /
+    sadece mesaj / sadece hata gibi ama defaultda hepsi gözüksün". Herhangi
+    bir kombinasyon seçilebilir; boş seçim boş liste döndürür (hiçbiri
+    işaretli değilse hiçbir satır gösterilmez)."""
+    return [e for e in events if e.severity in selected_severities]
 
 CONNECTION_CHIP_TEXT = {
     ConnectionState.DISCONNECTED: "PLC: BAĞLI DEĞİL",
@@ -31,6 +67,50 @@ CONNECTION_CHIP_STATE = {
 }
 
 
+def compute_start_inhibit_reasons(
+    snap: MachineSnapshot, x_start_pos: float, y_center_pos: float
+) -> list[str]:
+    """H3 (2026-09-18, kullanıcı test notu): "eksik olan koşul açık şekilde
+    bildirilmelidir" - StartPermitted=FALSE iken PLC'nin zaten yayınladığı
+    alt bileşenlerden (MachineReady'yi oluşturan servo/vision/emergency,
+    ayrıca xX_AtStart/xY_AtCenter) bir açıklama üretir. PLC'nin kendi
+    `xStartPermitted` formülünü (MachineReady AND NOT xManualMode AND NOT
+    xCycleActive AND xX_AtStart AND xY_AtCenter) YENİDEN HESAPLAMAZ/ikame
+    etmez - Start butonu hâlâ tek başına `snap.start_permitted`'e bakar; bu
+    liste salt bilgilendirmedir, arıza/alarm mesajından ayrıdır.
+
+    Bilinen sınırlama: fiziksel/HMI Stop butonunun "şu an basılı" durumu
+    için ayrı, gerçek bir PLC tagı yayınlanmıyor - bu nedenle "Stop basılı"
+    nedeni burada YOKTUR (bulunmayan tag için tahmin yapılmaz, görev notu).
+    """
+    if snap.start_permitted or snap.stale:
+        return []
+    if snap.manual_mode:
+        return ["Manuel modda — Start otomatik modda kullanılır."]
+    if snap.cycle_active:
+        return ["Çevrim zaten aktif."]
+
+    reasons: list[str] = []
+    if snap.emergency_active:
+        reasons.append("Acil durdurma aktif.")
+    if not snap.x_servo_ready:
+        reasons.append("X servo hazır değil.")
+    if not snap.y_servo_ready:
+        reasons.append("Y servo hazır değil.")
+    if not (snap.vision_ready and snap.vision_heartbeat_ok and not snap.vision_fault):
+        reasons.append("Vision hazır değil.")
+    if not snap.x_at_start:
+        reasons.append(f"X başlangıç konumunda değil (ayarlı: {x_start_pos:g} mm).")
+    if not snap.y_at_center:
+        reasons.append(f"Y merkez konumunda değil (ayarlı: {y_center_pos:g} mm).")
+    if not reasons:
+        # PLC'nin gördüğümüz tüm alt bileşenleri TRUE görünüyor ama
+        # MachineReady/StartPermitted hâlâ FALSE - HMI'nin görmediği bir
+        # PLC-içi koşul var; bunu KESİN bir neden gibi sunmuyoruz.
+        reasons.append("Makine hazır değil (bilinen koşulların dışında bir PLC koşulu olabilir).")
+    return reasons
+
+
 class MachinePage(QWidget):
     navigateRequested = Signal(str)  # "manual" | "settings" | "alarms" | "camera"
 
@@ -41,6 +121,8 @@ class MachinePage(QWidget):
 
         service.snapshotUpdated.connect(self._on_snapshot)
         service.connectionStateChanged.connect(self._on_connection_state)
+        service.alarmsChanged.connect(self._refresh_alarm_table)
+        self._refresh_alarm_table()
 
     # -- layout -------------------------------------------------------------
 
@@ -95,6 +177,15 @@ class MachinePage(QWidget):
         command_row.addWidget(self._reset_btn)
         root.addLayout(command_row)
 
+        # H3 (2026-09-18): StartPermitted=FALSE nedenini operatöre açıklar.
+        self._start_inhibit_label = QLabel("")
+        self._start_inhibit_label.setWordWrap(True)
+        self._start_inhibit_label.setStyleSheet(f"color: {COLORS['warning']};")
+        self._start_inhibit_label.setVisible(False)
+        root.addWidget(self._start_inhibit_label)
+
+        root.addWidget(self._build_alarm_panel())
+
         root.addStretch(1)
 
         # CNC kontrolcülerinde alışıldığı gibi sayfa geçiş sekmeleri ekranın
@@ -141,6 +232,65 @@ class MachinePage(QWidget):
             layout.addWidget(chip)
         return bar
 
+    def _build_alarm_panel(self) -> QFrame:
+        """Alarm/Uyarı/Mesaj panosu (kullanıcı isteği, 2026-09-18): H4'ün
+        (merkezi alarm ekranı) PLC C2 sözleşmesini beklemeyen kısmı - ekran
+        ve veri modeli. Canlı PLC alarm tagı bağlanmadı; satırlar şimdilik
+        elle/başka yollarla doldurulacak ("onları dolduracağız")."""
+        frame = QFrame()
+        frame.setObjectName("card")
+        layout = QVBoxLayout(frame)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(6)
+
+        filter_row = QHBoxLayout()
+        filter_label = QLabel("Göster:")
+        filter_label.setStyleSheet(f"color: {COLORS['text_secondary']};")
+        filter_row.addWidget(filter_label)
+        self._alarm_filter_checks: dict[str, QCheckBox] = {}
+        for severity in (SEVERITY_ALARM, SEVERITY_WARNING, SEVERITY_MESSAGE):
+            cb = QCheckBox(SEVERITY_LABELS_TR[severity])
+            cb.setChecked(True)  # varsayılan: hepsi görünür
+            cb.toggled.connect(self._refresh_alarm_table)
+            self._alarm_filter_checks[severity] = cb
+            filter_row.addWidget(cb)
+        filter_row.addStretch(1)
+        layout.addLayout(filter_row)
+
+        self._alarm_table = QTableWidget(0, 4)
+        self._alarm_table.setHorizontalHeaderLabels(["Saat", "Tür", "Kaynak", "Mesaj"])
+        self._alarm_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        self._alarm_table.verticalHeader().setVisible(False)
+        self._alarm_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._alarm_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self._alarm_table.setMaximumHeight(150)
+        layout.addWidget(self._alarm_table)
+        return frame
+
+    def _refresh_alarm_table(self) -> None:
+        # Kullanıcı isteği (2026-09-18): "resetle temizlendiyse ana ekrandan
+        # gitmeli" - ana ekran panosu yalnız AKTİF (cleared_at yok) satırları
+        # gösterir; geçmiş/temizlenmiş kayıtlar ALARMLAR sayfasının "Geçmiş
+        # Alarmlar" sekmesine ait.
+        active_events = [e for e in self._service.recent_alarms() if e.active]
+        selected = {sev for sev, cb in self._alarm_filter_checks.items() if cb.isChecked()}
+        events = filter_alarm_events(active_events, selected)
+        table = self._alarm_table
+        table.setRowCount(len(events))
+        for row, event in enumerate(events):
+            values = [
+                event.occurred_at.strftime("%H:%M:%S"),
+                SEVERITY_LABELS_TR.get(event.severity, event.severity),
+                event.source,
+                event.message,
+            ]
+            color = SEVERITY_ROW_COLOR.get(event.severity, COLORS["text_primary"])
+            for col, value in enumerate(values):
+                item = QTableWidgetItem(value)
+                if col == 1:
+                    item.setForeground(QColor(color))
+                table.setItem(row, col, item)
+
     # -- data binding ---------------------------------------------------------
 
     def _on_connection_state(self, state: str) -> None:
@@ -185,9 +335,28 @@ class MachinePage(QWidget):
         self._vision_card.set_status(
             "GEÇERLİ" if snap.line_valid else "GEÇERSİZ", "ok" if snap.line_valid else "inactive"
         )
+        # H1 (2026-09-18, kullanıcı test notu): "Manuel Aktif" ifadesi,
+        # üstteki ÇEVRİM DURUMU kartının "Manuel" (eMachineState=MANUAL)
+        # göstergesiyle aynı ekranda karışıklık yaratıyordu. "Operatör
+        # Kontrolü" olarak değiştirildi - kilitli görünüm aynı. PLC'nin
+        # kendi `FeedManualAllowed` hesabına güveniliyor (GVL notu: "Auto
+        # çevrimde FALSE olacak") - `cycle_active` ile ayrıca ikinci kez
+        # kapatılmıyor, bu MANUAL modda VEYA cycle_active öncesi (WAIT_FOR_
+        # MATERIAL) izinli olabilmesini engelliyordu.
         self._feed_card.set_status(
-            "MANUEL AKTİF" if snap.feed_manual_allowed and not snap.cycle_active else "KİLİTLİ",
-            "ok" if snap.feed_manual_allowed and not snap.cycle_active else "inactive",
+            "OPERATÖR KONTROLÜ" if snap.feed_manual_allowed else "KİLİTLİ",
+            "ok" if snap.feed_manual_allowed else "inactive",
         )
 
         self._start_btn.setEnabled(snap.start_permitted and not stale)
+
+        reasons = compute_start_inhibit_reasons(
+            snap,
+            self._service.get_parameter_value("lr_x_cut_start_pos"),
+            self._service.get_parameter_value("lr_y_center_position"),
+        )
+        if reasons:
+            self._start_inhibit_label.setText("Start engelli: " + " ".join(reasons))
+            self._start_inhibit_label.setVisible(True)
+        else:
+            self._start_inhibit_label.setVisible(False)

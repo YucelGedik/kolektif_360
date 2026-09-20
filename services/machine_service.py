@@ -18,6 +18,7 @@ whatever this service reports (brief section 32).
 from __future__ import annotations
 
 import logging
+import re
 import time
 
 from PySide6.QtCore import QObject, QTimer, Signal
@@ -37,6 +38,26 @@ UI_TICK_MS = 50
 
 PARAM_WRITE_CONFIRM_TIMEOUT_S = 2.0
 
+# Geçici mühendislik Vision veri simülatörü (PLC-HMI-20260917-02) - kapalı
+# izin listesi. Yalnız gerçek kameranın normalde yazdığı Vision->PLC alanları;
+# PLC'nin hesapladığı/authoritative state, sensör, motion execute veya valf
+# taglarına bu yoldan ASLA yazılmaz (services/vision_simulator.py bu listenin
+# dışına çıkamaz - MachineService burada zorunlu kılar).
+VISION_SIM_WRITABLE_TAGS = frozenset(
+    {
+        "vision_ready",
+        "line_valid",
+        "vision_fault",
+        "vision_target_x",
+        "vision_target_y",
+        "vision_confidence",
+        "vision_cut_permit",
+        "vision_z_down_request",
+        "vision_heartbeat",
+        "vision_sequence",
+    }
+)
+
 
 class MachineService(QObject):
     snapshotUpdated = Signal(MachineSnapshot)
@@ -44,6 +65,13 @@ class MachineService(QObject):
     alarmsChanged = Signal()
     parameterWriteConfirmed = Signal(str)
     parameterWriteFailed = Signal(str)
+    # 2026-09-18 bug report: "HATA — PLC onaylamadı" tek başına gerçek nedeni
+    # gizliyor (Vision paketlerinde aynı sınıf hatayı düzelttik, burada da
+    # aynı sorun vardı). Bir yazma OPC UA seviyesinde gerçekten reddedilirse
+    # (`errorOccurred`), o an bekleyen parametre yazmasıyla eşleşiyorsa bu
+    # sinyal gerçek nedeni taşır; SettingsPage bunu status/uyarıda gösterir.
+    parameterWriteError = Signal(str, str)
+    visionSequentialWriteResult = Signal(bool, str)
 
     def __init__(self, config_path=None, parent=None):
         super().__init__(parent)
@@ -56,6 +84,7 @@ class MachineService(QObject):
         self._worker: OpcUaWorker | None = None
 
         self.demo_mode = not self._config.is_configured
+        self.vision_simulator_enabled = self._config.vision_simulator_enabled
 
         stored_params = self._settings_store.get_all()
         self._param_cache: dict[str, float] = {
@@ -100,6 +129,7 @@ class MachineService(QObject):
             self._worker.snapshotReady.connect(self._on_raw_snapshot)
             self._worker.connectionStateChanged.connect(self._on_connection_state)
             self._worker.errorOccurred.connect(self._on_error)
+            self._worker.sequentialWriteResult.connect(self.visionSequentialWriteResult)
             self._worker.start()
         self._ui_timer.start(UI_TICK_MS)
 
@@ -125,6 +155,15 @@ class MachineService(QObject):
 
     def _on_error(self, message: str) -> None:
         logger.warning("PLC error: %s", message)
+        # `_write_checked` mesaj biçimi: "Write failed for '<tag>': <sebep>".
+        # O tag şu an bekleyen bir parametre yazmasıysa gerçek sebebi ayrı
+        # bir sinyalle taşı - Settings ekranı jenerik timeout mesajı yerine
+        # (veya yanında) bunu gösterebilsin.
+        match = re.match(r"Write failed for '([^']+)': (.*)", message)
+        if match:
+            key, reason = match.group(1), match.group(2)
+            if key in self._param_pending:
+                self.parameterWriteError.emit(key, reason)
 
     def _on_raw_snapshot(self, raw: dict) -> None:
         snap = self._snapshot
@@ -174,6 +213,7 @@ class MachineService(QObject):
         snap.y_fault = y_power_error
         snap.y_fault_code = i("y_fault_code", snap.y_fault_code)
         snap.y_actual_pos = f("y_actual_pos", snap.y_actual_pos)
+        snap.y_actual_vel = f("y_actual_vel", snap.y_actual_vel)
         snap.y_set_pos = f("y_set_pos", snap.y_set_pos)
         snap.y_set_vel = f("y_set_vel", snap.y_set_vel)
         snap.y_at_center = b("y_at_center", snap.y_at_center)  # diagnostic only
@@ -184,6 +224,9 @@ class MachineService(QObject):
         snap.clamp_up = not snap.clamp_down
         snap.blade_down = b("blade_down", snap.blade_down)
         snap.blade_up = not snap.blade_down
+        # PLC-üretimli, salt okunur - HMI yazmaz (PLC-HMI-20260918-06).
+        snap.blade_retract_accepted = b("blade_retract_accepted", snap.blade_retract_accepted)
+        snap.clamp_retract_accepted = b("clamp_retract_accepted", snap.clamp_retract_accepted)
 
         snap.feed_forward_input = b("feed_forward_input", snap.feed_forward_input)
         snap.feed_reverse_input = b("feed_reverse_input", snap.feed_reverse_input)
@@ -195,10 +238,16 @@ class MachineService(QObject):
         snap.vision_fault = b("vision_fault", snap.vision_fault)
         snap.vision_heartbeat_ok = b("vision_heartbeat_ok", snap.vision_heartbeat_ok)
         snap.trajectory_fault = b("trajectory_fault", snap.trajectory_fault)
+        snap.trajectory_valid = b("trajectory_valid", snap.trajectory_valid)
+        snap.lr_max_allowed_slope = f("lr_max_allowed_slope", snap.lr_max_allowed_slope)
         snap.vision_target_x = f("vision_target_x", snap.vision_target_x)
         snap.vision_target_y = f("vision_target_y", snap.vision_target_y)
         snap.vision_confidence = f("vision_confidence", snap.vision_confidence)
         snap.vision_slope = f("vision_slope", snap.vision_slope)
+        snap.vision_cut_permit = b("vision_cut_permit", snap.vision_cut_permit)
+        snap.vision_z_down_request = b("vision_z_down_request", snap.vision_z_down_request)
+        snap.vision_heartbeat = i("vision_heartbeat", snap.vision_heartbeat)
+        snap.vision_sequence = i("vision_sequence", snap.vision_sequence)
         snap.alarm_active = b("alarm_active", snap.alarm_active)
         snap.alarm_code = i("alarm_code", snap.alarm_code)
         snap.alarm_count = i("alarm_count", snap.alarm_count)
@@ -284,9 +333,26 @@ class MachineService(QObject):
         self._alarms.clear_active()
         self.alarmsChanged.emit()
 
+    def _mode_change_allowed(self) -> bool:
+        """H2 (2026-09-18, kullanıcı test notu): "otomatik mod aktifken ve
+        kesim devam ederken Manuel Modu Etkinleştir butonu aktif kalıyor,
+        disable olmalı." UI tarafı (ManualPage) zaten butonu görsel olarak
+        engelliyor; bu, çağrının UI dışından (veya devre dışı bir butondan
+        gecikmeli sinyalle) gelmesi durumunda da GERÇEK engeldir. Stale/
+        bağlantısız/bilinmeyen durumda fail-closed - PLC'nin gerçek modunu
+        bilmeden yazma yapılmaz."""
+        snap = self._snapshot
+        if snap.stale:
+            return False
+        if not self.demo_mode and snap.connection_state != ConnectionState.CONNECTED:
+            return False
+        return not snap.cycle_active
+
     def set_manual_mode(self, manual: bool) -> None:
         """xManualMode: TRUE=MANUAL, FALSE=AUTO. Duz yazma, pulse degil -
         PLC bunu bir R_TRIG ile degil dogrudan mod biti olarak okuyor."""
+        if not self._mode_change_allowed():
+            return
         if self.demo_mode and self._demo is not None:
             self._demo.set_mode(not manual)
         elif self._worker is not None:
@@ -340,23 +406,64 @@ class MachineService(QObject):
         elif self._worker is not None:
             self._worker.request_pulse("cmd_y_center")
 
-    def set_blade(self, down: bool, active: bool) -> None:
-        if active and not self._manual_allowed():
+    def request_blade_retract(self) -> None:
+        """GVL.xBladeRetractRequest: pulse (TRUE~150ms~FALSE), PLC-HMI-
+        20260918-06. Yalnız "yukarı/geri çek" için - manuel "aşağı" için
+        henüz PLC'de tanımlı bir request yok (ayrı, açık görev; tag adı
+        uydurulmaz). PLC kabulü `blade_retract_accepted` readback'inden
+        okunur, bu yazının başarısı kabul kanıtı değildir."""
+        if not self._manual_allowed():
             return
         if self.demo_mode and self._demo is not None:
-            self._demo.set_blade(down, active)
+            self._demo.request_blade_retract()
         elif self._worker is not None:
-            tag = "cmd_blade_down" if down else "cmd_blade_up"
-            self._worker.request_write(tag, active)
+            self._worker.request_pulse("cmd_blade_retract")
 
-    def set_clamp(self, down: bool, active: bool) -> None:
-        if active and not self._manual_allowed():
+    def request_clamp_retract(self) -> None:
+        """GVL.xClampRetractRequest - bkz. request_blade_retract() notu."""
+        if not self._manual_allowed():
             return
         if self.demo_mode and self._demo is not None:
-            self._demo.set_clamp(down, active)
+            self._demo.request_clamp_retract()
         elif self._worker is not None:
-            tag = "cmd_clamp_down" if down else "cmd_clamp_up"
-            self._worker.request_write(tag, active)
+            self._worker.request_pulse("cmd_clamp_retract")
+
+    # -- temporary Vision data simulator (PLC-HMI-20260917-02) --------------
+    # Narrow, allow-listed write gateway used only by
+    # services/vision_simulator.py so the UI/simulator never touches
+    # plc.opcua_client directly and can never write outside
+    # VISION_SIM_WRITABLE_TAGS (real Vision->PLC fields only - never PLC-
+    # computed state, sensors, motion execute or valve tags).
+
+    def request_vision_write(self, tag: str, value) -> None:
+        if tag not in VISION_SIM_WRITABLE_TAGS:
+            raise ValueError(f"Vision simülatörü '{tag}' yazamaz (izin listesinde değil).")
+        if self.demo_mode:
+            return  # Demo modda gerçek yazılacak PLC yok; teşhis amaçlı no-op.
+        if self._worker is not None:
+            self._worker.request_write(tag, value)
+
+    def request_vision_sequential_write(self, fields: list[tuple[str, object]]) -> bool:
+        """Returns True if the write was dispatched (result arrives later via
+        `visionSequentialWriteResult`), False if there is nowhere to send it
+        (real mode, no worker) - the caller must not treat False as success."""
+        for tag, _value in fields:
+            if tag not in VISION_SIM_WRITABLE_TAGS:
+                raise ValueError(f"Vision simülatörü '{tag}' yazamaz (izin listesinde değil).")
+        if self.demo_mode:
+            QTimer.singleShot(0, lambda: self.visionSequentialWriteResult.emit(True, ""))
+            return True
+        if self._worker is None:
+            return False
+        self._worker.request_write_sequence(fields)
+        return True
+
+    def request_vision_cancel_pending(self) -> None:
+        """Bekleyen (in-flight) bir sıralı Vision paketi varsa gerçekten
+        iptal eder - PLC'ye kalan alanları yazmadan durur. Disarm/reconnect
+        anında çağrılır (2026-09-17 görev notu)."""
+        if not self.demo_mode and self._worker is not None:
+            self._worker.cancel_pending_sequence()
 
     # -- engineering parameters ---------------------------------------------
 
