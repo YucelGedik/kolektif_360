@@ -8,7 +8,7 @@ brief section 6 & 26)."""
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QApplication, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QHBoxLayout, QLabel, QMessageBox, QVBoxLayout, QWidget
 
 from core.cycle_state import AUTO_CYCLE_ACTIVE_STATES, CycleState
 from core.models import MachineSnapshot
@@ -31,6 +31,7 @@ class ManualPage(QWidget):
         self._clamp_last_cmd: str | None = None
         self._build_ui()
         service.snapshotUpdated.connect(self._on_snapshot)
+        service.commandWriteError.connect(self._on_command_write_error)
 
         app = QApplication.instance()
         if app is not None:
@@ -190,28 +191,51 @@ class ManualPage(QWidget):
     # -- blade/clamp click handlers (track last-sent direction, not proof) --
 
     def _on_blade_retract_clicked(self) -> None:
-        self._blade_last_cmd = "up"
-        self._service.request_blade_retract()
+        # C0.4 takip notu: yalnız gönderim GERÇEKTEN kalktıysa (izin +
+        # tag'ler tamam) "gönderildi" göster - iyimser değil.
+        if self._service.request_blade_retract():
+            self._blade_last_cmd = "up"
 
     def _on_blade_down_clicked(self) -> None:
-        self._blade_last_cmd = "down"
-        self._service.request_blade_down()
+        if self._service.request_blade_down():
+            self._blade_last_cmd = "down"
 
     def _on_clamp_retract_clicked(self) -> None:
-        self._clamp_last_cmd = "up"
-        self._service.request_clamp_retract()
+        if self._service.request_clamp_retract():
+            self._clamp_last_cmd = "up"
 
     def _on_clamp_down_clicked(self) -> None:
-        self._clamp_last_cmd = "down"
-        self._service.request_clamp_down()
+        if self._service.request_clamp_down():
+            self._clamp_last_cmd = "down"
+
+    def _on_command_write_error(self, tag: str, reason: str) -> None:
+        """C0.4 takip notu: "gerçek OPC yazma sonucunu göster, yalnız demo
+        testi yeterli değil" - `MachineService.commandWriteError`, PLC bu
+        pulse'u gerçekten reddettiğinde (`errorOccurred`) buraya taşır."""
+        if tag in ("cmd_blade_retract", "cmd_blade_down"):
+            self._blade_last_cmd = "error"
+            mechanism = "Bıçak"
+        elif tag in ("cmd_clamp_retract", "cmd_clamp_down"):
+            self._clamp_last_cmd = "error"
+            mechanism = "Baskı"
+        else:
+            return
+        QMessageBox.warning(
+            self,
+            "Yazma Reddedildi",
+            f"{mechanism} komutu PLC tarafından reddedildi.\n\nGerçek OPC UA hatası:\n{reason}",
+        )
 
     @staticmethod
     def _pneumatic_feedback(retract_accepted: bool, last_cmd: str | None) -> tuple[str, str]:
         """PLC-HMI-20260921-09: Aşağı için PLC-onaylı bir kabul biti yok -
         Yukarı kabulünü PLC'den (kanıt), Aşağı'yı yalnız "gönderildi" olarak
-        (kanıt DEĞİL) gösterir; ikisi karıştırılmaz."""
+        (kanıt DEĞİL) gösterir; ikisi karıştırılmaz. "error" gerçek bir OPC UA
+        reddini (`commandWriteError`) yansıtır."""
         if retract_accepted:
             return "YUKARI: KABUL EDİLDİ", "ok"
+        if last_cmd == "error":
+            return "HATA — PLC REDDETTİ", "fault"
         if last_cmd == "down":
             return "AŞAĞI: GÖNDERİLDİ", "warn"
         if last_cmd == "up":
@@ -257,6 +281,16 @@ class ManualPage(QWidget):
         self._clamp_retract_btn.setEnabled(pneumatic_allowed)
         self._blade_down_btn.setEnabled(self._service.manual_blade_down_allowed())
         self._clamp_down_btn.setEnabled(self._service.manual_clamp_down_allowed())
+        # Devre dışıysa nedeni ayırt et: PLC'de tag hâlâ tanımsız mı (online
+        # doğrulama bekliyor), yoksa yalnızca şu an izin şartları mı sağlanmıyor.
+        self._blade_down_btn.setToolTip(
+            "" if self._service.blade_down_tags_configured()
+            else "PLC'de xBladeDownRequest/xAlarmStopRequest/xManualPreparationRequired henüz online doğrulanmadı."
+        )
+        self._clamp_down_btn.setToolTip(
+            "" if self._service.clamp_down_tags_configured()
+            else "PLC'de xClampDownRequest/xAlarmStopRequest/xManualPreparationRequired henüz online doğrulanmadı."
+        )
 
         if not snap.manual_mode:
             self._blade_last_cmd = None

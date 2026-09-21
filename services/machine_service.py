@@ -64,6 +64,14 @@ VISION_SIM_WRITABLE_TAGS = frozenset(
     }
 )
 
+# PLC-HMI-20260921-09 (C0.4 takip notu): bıçak/baskı pulse komutlarının
+# gerçek OPC UA yazma sonucu, parametre yazmaları gibi UI'ya taşınır (yalnız
+# log'a değil) - "yalnız demo testi yeterli değil, gerçek yazma sonucunu
+# göster" talebi.
+PNEUMATIC_COMMAND_TAGS = frozenset(
+    {"cmd_blade_retract", "cmd_clamp_retract", "cmd_blade_down", "cmd_clamp_down"}
+)
+
 
 class MachineService(QObject):
     snapshotUpdated = Signal(MachineSnapshot)
@@ -77,6 +85,10 @@ class MachineService(QObject):
     # (`errorOccurred`), o an bekleyen parametre yazmasıyla eşleşiyorsa bu
     # sinyal gerçek nedeni taşır; SettingsPage bunu status/uyarıda gösterir.
     parameterWriteError = Signal(str, str)
+    # PLC-HMI-20260921-09 takip notu: bıçak/baskı pulse komutlarının (Yukarı/
+    # Aşağı) gerçek OPC UA reddi - tag adı + gerçek hata metni. ManualPage bunu
+    # gösterir; "gönderildi" iyimserliği tek başına yeterli değil.
+    commandWriteError = Signal(str, str)
     visionSequentialWriteResult = Signal(bool, str)
 
     def __init__(self, config_path=None, parent=None):
@@ -181,6 +193,8 @@ class MachineService(QObject):
             key, reason = match.group(1), match.group(2)
             if key in self._param_pending:
                 self.parameterWriteError.emit(key, reason)
+            elif key in PNEUMATIC_COMMAND_TAGS:
+                self.commandWriteError.emit(key, reason)
 
     def _on_raw_snapshot(self, raw: dict) -> None:
         snap = self._snapshot
@@ -473,64 +487,109 @@ class MachineService(QObject):
             return False
         return True
 
+    def _tags_configured(self, *names: str) -> bool:
+        """Demo modda taglar anlamsız (gerçek node yok, her zaman True).
+        Gerçek modda: `config/opcua.json` içinde bu isimlerin HEPSİ için bir
+        NodeId eşlemesi var mı? PLC-HMI-20260921-09 C0.4 takip notu: "eksik
+        tag varken butonu etkinleştirme" - Aşağı taleplerinin hem kendi pulse
+        tag'i hem paylaştığı ortak-izin okumaları (alarm_stop_request,
+        manual_preparation_required) burada zorunlu tutulur."""
+        if self.demo_mode:
+            return True
+        return all(name in self._config.nodes for name in names)
+
+    def blade_down_tags_configured(self) -> bool:
+        return self._tags_configured("cmd_blade_down", "alarm_stop_request", "manual_preparation_required")
+
+    def clamp_down_tags_configured(self) -> bool:
+        return self._tags_configured("cmd_clamp_down", "alarm_stop_request", "manual_preparation_required")
+
     def manual_pneumatic_allowed(self) -> bool:
         """Public: UI'nin Yukarı (Geri Çek) butonlarını göstermek için
         kullandığı tek kaynak - mantık burada tekrar edilmesin."""
         return self._pneumatic_common_allowed()
 
     def manual_blade_down_allowed(self) -> bool:
-        return self._pneumatic_common_allowed() and self._manual_down_extra_allowed()
+        return (
+            self.blade_down_tags_configured()
+            and self._pneumatic_common_allowed()
+            and self._manual_down_extra_allowed()
+        )
 
     def manual_clamp_down_allowed(self) -> bool:
-        return self._pneumatic_common_allowed() and self._manual_down_extra_allowed()
+        return (
+            self.clamp_down_tags_configured()
+            and self._pneumatic_common_allowed()
+            and self._manual_down_extra_allowed()
+        )
 
-    def request_blade_retract(self) -> None:
+    def request_blade_retract(self) -> bool:
         """GVL.xBladeRetractRequest: pulse (TRUE~150ms~FALSE), PLC-HMI-
         20260918-06. PLC kabulü `blade_retract_accepted` readback'inden
-        okunur, bu yazının başarısı kabul kanıtı değildir."""
+        okunur, bu yazının başarısı (dönen True) kabul kanıtı değildir -
+        yalnız pulse'ın gönderime kalktığını gösterir; gerçek OPC UA reddi
+        `commandWriteError` ile ayrıca gelir."""
         if not self._pneumatic_common_allowed():
-            return
+            return False
         self._blade_retract_pulse_until = time.monotonic() + self._config.command_pulse_ms / 1000
         if self.demo_mode and self._demo is not None:
             self._demo.request_blade_retract()
         elif self._worker is not None:
             self._worker.request_pulse("cmd_blade_retract")
+        else:
+            return False
+        return True
 
-    def request_clamp_retract(self) -> None:
+    def request_clamp_retract(self) -> bool:
         """GVL.xClampRetractRequest - bkz. request_blade_retract() notu."""
         if not self._pneumatic_common_allowed():
-            return
+            return False
         self._clamp_retract_pulse_until = time.monotonic() + self._config.command_pulse_ms / 1000
         if self.demo_mode and self._demo is not None:
             self._demo.request_clamp_retract()
         elif self._worker is not None:
             self._worker.request_pulse("cmd_clamp_retract")
+        else:
+            return False
+        return True
 
-    def request_blade_down(self) -> None:
+    def request_blade_down(self) -> bool:
         """GVL.xBladeDownRequest (YENİ, PLC-HMI-20260921-09): pulse. PLC'de
         bu talep için ayrı bir "kabul" biti YOK (görev notu, bilinçli) -
         gönderim fiziksel konum kanıtı değildir, yalnız Sensör (BladeZDown)
         gerçek durumu gösterir. Aynı mekanizmanın Yukarı pulse'u hâlâ iş
-        başındaysa (command_pulse_ms penceresi) reddedilir - Yukarı öncelikli."""
+        başındaysa (command_pulse_ms penceresi) reddedilir - Yukarı öncelikli.
+        Tag eksikse (config'te yok) hiç denemez - dönen False, UI'nin
+        "gönderildi" göstermesini engeller."""
+        if not self.blade_down_tags_configured():
+            return False
         if time.monotonic() < self._blade_retract_pulse_until:
-            return
+            return False
         if not self.manual_blade_down_allowed():
-            return
+            return False
         if self.demo_mode and self._demo is not None:
             self._demo.request_blade_down()
         elif self._worker is not None:
             self._worker.request_pulse("cmd_blade_down")
+        else:
+            return False
+        return True
 
-    def request_clamp_down(self) -> None:
+    def request_clamp_down(self) -> bool:
         """GVL.xClampDownRequest - bkz. request_blade_down() notu."""
+        if not self.clamp_down_tags_configured():
+            return False
         if time.monotonic() < self._clamp_retract_pulse_until:
-            return
+            return False
         if not self.manual_clamp_down_allowed():
-            return
+            return False
         if self.demo_mode and self._demo is not None:
             self._demo.request_clamp_down()
         elif self._worker is not None:
             self._worker.request_pulse("cmd_clamp_down")
+        else:
+            return False
+        return True
 
     # -- temporary Vision data simulator (PLC-HMI-20260917-02) --------------
     # Narrow, allow-listed write gateway used only by

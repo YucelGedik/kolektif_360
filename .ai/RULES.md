@@ -240,7 +240,34 @@ eklendi.
       fiziksel kanıt kalıyor.
 - [x] Testler: `tests/test_manual_down_requests.py` (26). Tam suite 204/204.
       Gerçek PLC'ye kendi kendine yazılmadı/hareket başlatılmadı.
-- [ ] Kullanıcı: PLC tarafını build/export edip online sembolleri
+- [x] Kullanıcı: PLC tarafını build/export edip online sembolleri
       doğruladıktan sonra 4 yeni NodeId'yi (`cmd_blade_down`,
       `cmd_clamp_down`, `alarm_stop_request`, `manual_preparation_required`)
       gerçek `config/opcua.json`'a eklemeli - HMI şimdilik bunları yazmıyor.
+
+### 2026-09-21 — C0.4 takip: gerçek config eşlemesi + eksik-tag koruması (tamamlandı)
+Kullanıcı: "C0.4 aşağı butonlarının bağlantısı gerçek config/opcua.json
+dosyasında eksik... PLC'de yeni request'lerin Symbol Configuration üzerinden
+yayımlandığını doğrulayarak ... eşlemeleri tamamla." PLC tarafı 4 tag'i
+(xBladeDownRequest/xClampDownRequest/xAlarmStopRequest/xManualPreparation
+Required) online doğruladı - yukarıdaki `[ ]` `[x]`'e çevrildi, 4 NodeId
+gerçek `config/opcua.json`'a eklendi.
+- [x] `MachineService.blade_down_tags_configured()`/`clamp_down_tags_
+      configured()` (demo modda her zaman True) - Aşağı butonları artık
+      kendi pulse tag'i + paylaşılan `alarm_stop_request`/`manual_
+      preparation_required` okumaları config'te YOKSA hem devre dışı kalır
+      hem tıklansa bile hiçbir pulse göndermez (`request_blade_down`/
+      `request_clamp_down` artık bool döner - UI yalnız gerçekten
+      gönderildiyse "GÖNDERİLDİ" gösterir, iyimser değil).
+- [x] Gerçek OPC UA yazma reddi artık UI'ya taşınıyor: yeni `MachineService.
+      commandWriteError` sinyali (`_on_error`, `PNEUMATIC_COMMAND_TAGS`
+      eşleşmesiyle) - `manual_page.py` bunu "Son Komut" kartında "HATA — PLC
+      REDDETTİ" olarak gösterir + `QMessageBox.warning` açar. Yalnız demo
+      testi değil, gerçek `_write_checked` reddi (örn. BadNodeIdUnknown) bu
+      yolla görünür hale geldi.
+- [x] Devre dışı Aşağı butonlarında dinamik tooltip - hangi tag(ler)in
+      henüz online doğrulanmadığını söyler.
+- [x] Valf komutlarına (`xBladeValveCmd`/`xClampValveCmd`) hâlâ hiç
+      yazılmıyor - değişmedi.
+- [x] Testler: `test_manual_down_requests.py` 26 -> 33 (eksik-tag +
+      commandWriteError testleri eklendi). Tam suite 211/211.

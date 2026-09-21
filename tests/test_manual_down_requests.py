@@ -7,6 +7,7 @@ bağlanılmaz (gerçek mod bir MagicMock worker ile taklit edilir)."""
 
 from __future__ import annotations
 
+import json
 import time
 from unittest.mock import MagicMock
 
@@ -16,13 +17,28 @@ from services.machine_service import MachineService
 MANUAL = 10  # CycleState.MANUAL
 CUTTING = 80  # CycleState.CUTTING, an AUTO_CYCLE_ACTIVE_STATE
 
+# A realistic, fully-online-confirmed node map for the four pneumatic buttons
+# + their shared ortak-izin reads (matches the real config/opcua.json shape
+# after PLC-HMI-20260921-09's C0.4 follow-up - Symbol Configuration confirmed
+# xBladeDownRequest/xClampDownRequest published).
+_FULL_PNEUMATIC_NODES = {
+    "cmd_blade_retract": "ns=4;s=|var|MAT LC-C07.Application.GVL.xBladeRetractRequest",
+    "cmd_clamp_retract": "ns=4;s=|var|MAT LC-C07.Application.GVL.xClampRetractRequest",
+    "cmd_blade_down": "ns=4;s=|var|MAT LC-C07.Application.GVL.xBladeDownRequest",
+    "cmd_clamp_down": "ns=4;s=|var|MAT LC-C07.Application.GVL.xClampDownRequest",
+    "alarm_stop_request": "ns=4;s=|var|MAT LC-C07.Application.GVL.xAlarmStopRequest",
+    "manual_preparation_required": "ns=4;s=|var|MAT LC-C07.Application.GVL.xManualPreparationRequired",
+}
 
-def _real_service(tmp_path, pulse_ms: int = 10) -> MachineService:
+
+def _real_service(tmp_path, pulse_ms: int = 10, nodes: dict | None = None) -> MachineService:
     cfg = tmp_path / "opcua.json"
-    cfg.write_text(
-        f'{{"endpoint": "opc.tcp://192.168.0.2:4840", "command_pulse_ms": {pulse_ms}, "nodes": {{}}}}',
-        encoding="utf-8",
-    )
+    config = {
+        "endpoint": "opc.tcp://192.168.0.2:4840",
+        "command_pulse_ms": pulse_ms,
+        "nodes": dict(_FULL_PNEUMATIC_NODES) if nodes is None else nodes,
+    }
+    cfg.write_text(json.dumps(config), encoding="utf-8")
     svc = MachineService(config_path=cfg)
     svc._worker = MagicMock()
     svc.snapshot.connection_state = ConnectionState.CONNECTED
@@ -153,26 +169,93 @@ def test_down_refused_while_feed_running(tmp_path):
     assert svc.manual_blade_down_allowed() is False
 
 
+# -- C0.4 takip notu: eksik tag varken buton etkinleşmez/göndermez ----------
+
+
+def test_blade_down_refused_when_its_own_pulse_tag_is_not_configured(tmp_path):
+    svc = _real_service(tmp_path, nodes={"alarm_stop_request": "x", "manual_preparation_required": "y"})
+    assert svc.blade_down_tags_configured() is False
+    assert svc.manual_blade_down_allowed() is False
+    assert svc.request_blade_down() is False
+    svc._worker.request_pulse.assert_not_called()
+
+
+def test_blade_down_refused_when_alarm_stop_request_read_is_not_configured(tmp_path):
+    nodes = dict(_FULL_PNEUMATIC_NODES)
+    del nodes["alarm_stop_request"]
+    svc = _real_service(tmp_path, nodes=nodes)
+    assert svc.manual_blade_down_allowed() is False
+    assert svc.request_blade_down() is False
+
+
+def test_blade_down_refused_when_manual_preparation_required_read_is_not_configured(tmp_path):
+    nodes = dict(_FULL_PNEUMATIC_NODES)
+    del nodes["manual_preparation_required"]
+    svc = _real_service(tmp_path, nodes=nodes)
+    assert svc.manual_blade_down_allowed() is False
+
+
+def test_clamp_down_refused_when_its_own_pulse_tag_is_not_configured(tmp_path):
+    nodes = dict(_FULL_PNEUMATIC_NODES)
+    del nodes["cmd_clamp_down"]
+    svc = _real_service(tmp_path, nodes=nodes)
+    assert svc.clamp_down_tags_configured() is False
+    assert svc.request_clamp_down() is False
+    svc._worker.request_pulse.assert_not_called()
+
+
+def test_missing_down_tags_do_not_affect_retract_which_stays_allowed(tmp_path):
+    """Aşağı'nın tag'leri eksik olsa da Yukarı (zaten var olan, çalışan
+    tag'ler) etkilenmemeli - iki yön birbirinden bağımsız gater edilir."""
+    svc = _real_service(tmp_path, nodes={"cmd_blade_retract": "x"})
+    assert svc.manual_pneumatic_allowed() is True
+    assert svc.manual_blade_down_allowed() is False
+
+
 # -- MachineService: real mode pulse dispatch --------------------------------
 
 
 def test_request_blade_down_pulses_the_new_tag_when_allowed(tmp_path):
     svc = _real_service(tmp_path)
-    svc.request_blade_down()
+    assert svc.request_blade_down() is True
     svc._worker.request_pulse.assert_called_once_with("cmd_blade_down")
 
 
 def test_request_clamp_down_pulses_the_new_tag_when_allowed(tmp_path):
     svc = _real_service(tmp_path)
-    svc.request_clamp_down()
+    assert svc.request_clamp_down() is True
     svc._worker.request_pulse.assert_called_once_with("cmd_clamp_down")
 
 
 def test_request_blade_down_refused_outside_manual(tmp_path):
     svc = _real_service(tmp_path)
     svc.snapshot.cycle_state = CUTTING
-    svc.request_blade_down()
+    assert svc.request_blade_down() is False
     svc._worker.request_pulse.assert_not_called()
+
+
+# -- C0.4 takip notu: gerçek OPC UA yazma reddi UI'ya taşınır ----------------
+
+
+def test_command_write_error_emitted_for_blade_down_tag_not_for_unrelated_param(tmp_path):
+    svc = _real_service(tmp_path)
+    received: list[tuple[str, str]] = []
+    svc.commandWriteError.connect(lambda tag, reason: received.append((tag, reason)))
+
+    svc._on_error("Write failed for 'cmd_blade_down': BadNodeIdUnknown")
+    svc._on_error("Write failed for 'some_unrelated_tag': BadTypeMismatch")
+
+    assert received == [("cmd_blade_down", "BadNodeIdUnknown")]
+
+
+def test_command_write_error_emitted_for_clamp_retract(tmp_path):
+    svc = _real_service(tmp_path)
+    received: list[tuple[str, str]] = []
+    svc.commandWriteError.connect(lambda tag, reason: received.append((tag, reason)))
+
+    svc._on_error("Write failed for 'cmd_clamp_retract': BadUserAccessDenied")
+
+    assert received == [("cmd_clamp_retract", "BadUserAccessDenied")]
 
 
 def test_retract_up_priority_blocks_a_same_mechanism_down_during_its_pulse_window(tmp_path):

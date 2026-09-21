@@ -3,6 +3,66 @@
 Yeni girisleri en uste ekle. Eski ve uzun detaylari `CHANGELOG_ARCHIVE.md`
 dosyasina tasi.
 
+## 2026-09-21 - C0.4 takibi: gerçek config eşlemesi + eksik-tag koruması + gerçek yazma reddi UI'da
+
+Kullanıcı: "C0.4 aşağı butonlarının bağlantısı gerçek config/opcua.json
+dosyasında eksik. PLC'de yeni request'lerin Symbol Configuration üzerinden
+yayımlandığını doğrulayarak ... eşlemeleri tamamla. ... Eksik tag varken
+butonu etkinleştirme veya 'gönderildi' gösterme. Gerçek OPC yazma sonucunu
+göster; yalnız demo testi yeterli değil. Valf komutlarına doğrudan yazma."
+
+**Gerçek config tamamlandı:** PLC tarafı 4 tag'i (`xBladeDownRequest`,
+`xClampDownRequest`, `xAlarmStopRequest`, `xManualPreparationRequired`)
+Symbol Configuration'da yayımladığını doğruladı - `cmd_blade_down`,
+`cmd_clamp_down`, `alarm_stop_request`, `manual_preparation_required`
+NodeId'leri artık gerçek yerel `config/opcua.json`'a da eklendi (önceki
+turda kasıtlı olarak yalnız `example.json`'da bırakılmıştı).
+
+**Eksik-tag koruması (yeni):** `MachineService.blade_down_tags_configured()`
+/ `clamp_down_tags_configured()` - demo modda her zaman True, gerçek modda
+kendi pulse tag'i VE paylaşılan `alarm_stop_request`/`manual_preparation_
+required` okumalarının HEPSİ `config.nodes` içinde mi diye bakar. `manual_
+blade_down_allowed()`/`manual_clamp_down_allowed()` bu kontrolü ilk sıraya
+aldı - eksikse buton hem devre dışı kalır hem `request_blade_down()`/
+`request_clamp_down()` hiç pulse göndermeden `False` döner. Yukarı (Retract)
+tag'leri zaten doğrulanmış olduğu için bu kontrole tabi değil; bir mekanizma
+eksik olsa bile diğerini ve Yukarı'yı etkilemez (test: `test_missing_down_
+tags_do_not_affect_retract_which_stays_allowed`).
+
+**"Gönderildi" artık iyimser değil:** `request_blade_retract`/`request_
+clamp_retract`/`request_blade_down`/`request_clamp_down` hepsi `bool` döner
+(gönderim gerçekten kalktı mı). `manual_page.py`'deki dört click handler
+yalnız `True` dönerse `_blade_last_cmd`/`_clamp_last_cmd`'yi günceller -
+izin/tag eksikliği yüzünden reddedilen bir tıklama artık asla "GÖNDERİLDİ"
+göstermez.
+
+**Gerçek OPC UA yazma reddi UI'ya taşınıyor:** Yeni `MachineService.
+commandWriteError` sinyali (`str tag, str reason`) - `_on_error` artık
+`PNEUMATIC_COMMAND_TAGS` (`cmd_blade_retract`/`cmd_clamp_retract`/`cmd_
+blade_down`/`cmd_clamp_down`) ile eşleşen gerçek bir `errorOccurred` (örn.
+`BadNodeIdUnknown`, `BadUserAccessDenied`) gördüğünde bunu emit eder -
+parametre yazmalarındaki `parameterWriteError` ile aynı prensip, artık pulse
+komutları için de var. `manual_page.py::_on_command_write_error` "Son Komut"
+kartını "HATA — PLC REDDETTİ" (fault) yapar ve `QMessageBox.warning`
+gösterir - demo testi tek başına bunu doğrulayamazdı, bu artık gerçek bir
+OPC UA reddini temsil eden senaryoyla (`_on_error` çağrısıyla) test ediliyor.
+
+**Değişmeyen:** Valf komutlarına (`xBladeValveCmd`/`xClampValveCmd`) hâlâ
+hiçbir yerden yazılmıyor - yalnız `cmd_*` request pulse'ları.
+
+Kod: `services/machine_service.py` (`PNEUMATIC_COMMAND_TAGS`,
+`commandWriteError`, `_tags_configured`/`blade_down_tags_configured`/
+`clamp_down_tags_configured`, dört `request_*` artık bool döner), `ui/
+machine/manual_page.py` (`_on_command_write_error`, click handler'lar bool
+kontrolü, devre dışı Aşağı butonlarında dinamik tooltip), `config/opcua.json`
+(4 yeni NodeId, gerçek).
+
+Test: `tests/test_manual_down_requests.py` 26 -> 33 (eksik-tag + `command
+WriteError` testleri). Tam suite 211/211. Gerçek PLC'ye kendi kendine
+yazılmadı - online test kullanıcıyı bekliyor.
+
+`.ai/Codex_Codesys.md`'ye HMI -> PLC yanıtı eklendi.
+
 ## 2026-09-21 - Manuel Bıçak/Baskı Aşağı talepleri eklendi (PLC-HMI-20260921-09)
 
 Kullanıcı: "Manuel durumda bıçak ve baskı kontrolü için sistemin nasıl

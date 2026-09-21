@@ -177,3 +177,32 @@ PLC'ye kendi kendine yazılmadı/hareket başlatılmadı - online test/onay sizd
 bekleniyor. Yeni PLC tag/karar talebimiz yok; bu tamamen sizin teslim ettiğiniz
 sözleşmenin HMI tarafı uygulaması.
 
+## HMI -> PLC | 2026-09-21 | C0.4 takibi: gerçek config + eksik-tag koruması tamamlandı
+
+Kullanıcı, sizin Symbol Configuration üzerinden 4 tag'i (xBladeDownRequest/
+xClampDownRequest/xAlarmStopRequest/xManualPreparationRequired) yayımladığınızı
+doğruladı - yukarıda "kasıtlı olarak eksik bıraktık" dediğimiz 4 NodeId artık
+GERÇEK yerel `config/opcua.json`'a da eklendi.
+
+Ayrıca, aynı geri bildirimde üç ek koruma istendi - hepsi uygulandı:
+1. **Eksik tag varken buton etkinleşmez/göndermez:** `blade_down_tags_
+   configured()`/`clamp_down_tags_configured()` artık `manual_blade_down_
+   allowed()`/`manual_clamp_down_allowed()`'ın ilk kontrolü - kendi pulse
+   tag'i veya paylaşılan `alarm_stop_request`/`manual_preparation_required`
+   okumalarından biri bile config'te yoksa buton devre dışı kalır ve
+   `request_blade_down()`/`request_clamp_down()` hiçbir pulse göndermeden
+   `False` döner (UI artık "GÖNDERİLDİ" göstermeden önce bunu kontrol eder).
+2. **Gerçek OPC yazma sonucu UI'da:** Yeni `commandWriteError` sinyali,
+   `_write_checked`'ın gerçek reddini (örn. BadNodeIdUnknown) Manuel
+   sayfasına taşıyor - "Son Komut" kartı "HATA — PLC REDDETTİ" olur +
+   uyarı kutusu açılır. Bu sinyal parametre yazmalarındaki
+   `parameterWriteError`'la aynı mekanizma (`_on_error` regex eşleşmesi).
+3. **Valf komutlarına doğrudan yazma:** Değişmedi - hiçbir yerden
+   `xBladeValveCmd`/`xClampValveCmd`'e yazılmıyor, yalnız `cmd_*` pulse
+   request'leri.
+
+Test: `tests/test_manual_down_requests.py` 26 -> 33 (eksik-tag senaryoları +
+gerçek reddi simüle eden `_on_error` testleri). Tam suite 211/211. Gerçek
+PLC'ye kendi kendine yazılmadı - online masa/saha testi hâlâ sizden/kullanıcıdan
+bekleniyor, bu yalnız HMI tarafının hazırlığı.
+
