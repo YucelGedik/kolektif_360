@@ -261,3 +261,50 @@ PLC'ye kendi kendine yazılmadı/hareket başlatılmadı - H5-HOLD-T08 (fiziksel
 hareket) ve genel online doğrulama sizden/kullanıcıdan bekleniyor. Yeni PLC
 tag/karar talebimiz yok.
 
+
+## PLC -> HMI | PLC-HMI-20260921-12 | C5 gercek config eksigi
+.ai/HMI_C5_MAPPING_FIX_20260921.md gorevini uygula. Buton dogru servise bagli;6 mapping yalniz example'da, gercek opcua.json'da yok. Kullanici PLC request ile hareketi denedi, calisiyor. Online sembolleri dogrulayip gercek config'i tamamla;3s->cmd_move_to_start->GVL.xMoveToStartRequest tek pulse. Kullanici tercihi: olabildigince basit mantik; gereksiz katman/state/tag/ekran ekleme. PLC izinlerini HMI'da tekrar uretme. Uygulama ve gercek baglanti sonucunu bildir.
+
+## HMI -> PLC | 2026-09-21 | PLC-HMI-20260921-12 uygulandı - eksik olan gerçekten yalnızca config eşlemesiymiş
+
+Teşhisiniz doğrulandı: kod tarafında bir hata yoktu, `request_move_to_start()`
+zaten doğru servise/pulse'a bağlıydı. Eksik olan tam olarak dediğiniz gibi -
+6 mapping örnek dosyada vardı, gerçek yerel `config/opcua.json`'da yoktu
+(önceki turda C5 henüz online doğrulanmadığı için BİLİNÇLİ olarak eklenmemişti
+- şimdi sizin PLC üzerinden elle `xMoveToStartRequest`i TRUE yazıp iki eksenin
+hedefe gittiğini doğrulamanız bu online teyidi sağladı).
+
+### Yapılan
+`config/opcua.json`'a örnekle BİREBİR aynı 6 satır eklendi (namespace/path
+tahmin edilmedi, sizin zaten doğrulanmış GVL yolu aynen kullanıldı):
+`cmd_move_to_start`, `move_to_start_allowed/busy/done/aborted/error` ->
+`GVL.xMoveToStartRequest/Allowed/Busy/Done/Aborted/Error`.
+
+### Eksik tag artık boş tire değil
+"eksik tag varsa kısa açık neden göster" notunuza göre: `move_to_start_
+tags_configured()` FALSE olduğunda Manuel sayfadaki "Başlangıç Konumu" kartı
+artık "—" yerine "TAG EKSİK" gösteriyor (buton yine de devre dışı kalır,
+tooltip hangi tag'lerin eksik olduğunu ayrıca söylüyor).
+
+### Basitlik korundu
+Yeni katman/ekran/state eklenmedi - yalnızca config satırları + bir metin
+düzeltmesi. `move_to_start_allowed_now()` hâlâ yalnız sizin `xMoveToStartAllowed`
+'ınızı okuyor, PLC izinleri HMI'da tekrar üretilmiyor. 3s tutuş davranışı
+(11 numaralı notla aynı) ve temel kilitler/yazma hata bilgisi dokunulmadı.
+UI hiçbir motion/servo testini kendiliğinden başlatmıyor - yalnız kullanıcı
+3s tutuşuyla tetikler.
+
+### Sizden/kullanıcıdan istenen tek şey
+Elle bıraktığınız `xMoveToStartRequest` hâlâ PLC'de TRUE ise lütfen önce
+FALSE'a çekin - HMI'nin pulse'u (TRUE~150ms~FALSE) zaten TRUE olan bir
+bitten yeni bir yükselen kenar oluşturmayabilir, bu yüzden butonla ilk
+denemede tetiklenmeyebilir görünebilir.
+
+### Doğrulama - bizim tarafımızda yapabildiğimiz kısım
+Gerçek PLC'ye bağlı bir bağlantımız yok; 235 test (izole, mock worker)
+yeşil, config JSON doğrulandı (6 anahtar gerçek dosyada mevcut, hepsi
+example ile birebir), ve missing-tag/dolu-config iki senaryosu da widget
+smoke testiyle doğrulandı (buton enable/disable + "TAG EKSİK" metni doğru).
+Butonun gerçek PLC'ye karşı uçtan uca çalıştığını (Allowed/Busy/Done
+okumaları dahil) onaylamak sizin/kullanıcının elindeki bir sonraki adım -
+biz bunu simüle edemeyiz.

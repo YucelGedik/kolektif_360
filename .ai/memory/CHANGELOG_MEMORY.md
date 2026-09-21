@@ -3,6 +3,49 @@
 Yeni girisleri en uste ekle. Eski ve uzun detaylari `CHANGELOG_ARCHIVE.md`
 dosyasina tasi.
 
+## 2026-09-21 - C5 gerçek config eksiği tamamlandı (PLC-HMI-20260921-12)
+
+Kullanıcı: "HMI'ya 11 numaralı görevi iletildi kontrol et eksikler yazıyor
+oradan tedarik et." Kaynak: `.ai/Codex_Codesys.md` (mesaj 12) + `.ai/HMI_
+C5_MAPPING_FIX_20260921.md`. PLC tarafı kod incelemesi yaptı: buton mantığı
+zaten doğru (`request_move_to_start()` -> `request_pulse("cmd_move_to_
+start")`), eksik olan tek şey önceki turda BİLİNÇLİ olarak eklenmeyen 6
+NodeId'nin gerçek `config/opcua.json`'a hâlâ girmemiş olmasıydı - kullanıcı
+PLC üzerinden elle `xMoveToStartRequest`i TRUE yazıp iki eksenin hedefe
+gittiğini doğruladığı için artık online teyit sağlanmış oldu.
+
+**Config tamamlandı:** `cmd_move_to_start`, `move_to_start_allowed/busy/
+done/aborted/error` -> `GVL.xMoveToStartRequest/Allowed/Busy/Done/Aborted/
+Error`, `config/opcua.example.json` ile BİREBİR aynı satırlar (namespace/
+path tahmin edilmedi - zaten örnekte duran, şimdi kullanıcının kendi PLC
+denemesiyle dolaylı doğrulanan yol kullanıldı).
+
+**"Eksik tag varsa kısa açık neden göster; boş tireyle bırakma" (PLC notu):**
+`move_to_start_tags_configured()` FALSE olduğunda "Başlangıç Konumu" kartı
+artık "—" yerine "TAG EKSİK" (fault) gösteriyor - buton yine devre dışı,
+tooltip hangi tag'lerin eksik olduğunu ayrıca söylüyor.
+
+**Basitlik korundu (PLC notu, açıkça istendi):** Yeni katman/ekran/state
+eklenmedi - yalnızca 6 config satırı + bir metin dallanması. `move_to_
+start_allowed_now()` hâlâ yalnız PLC'nin `xMoveToStartAllowed`'ını okuyor.
+
+**Kullanıcıya/PLC tarafına iletildi:** PLC üzerinde elle TRUE bırakılan
+`xMoveToStartRequest` varsa önce FALSE'a çekilmeli - HMI'nin pulse'u
+(TRUE~150ms~FALSE) zaten TRUE olan bir bitten yeni bir yükselen kenar
+oluşturmayabilir, ilk denemede tetiklenmeyebilir.
+
+Kod: `config/opcua.json` (6 yeni satır, gitignore'lu - gerçek dosya), `ui/
+machine/manual_page.py` (eksik-tag durumunda "TAG EKSİK" gösterimi).
+
+Test: mevcut 235 test aynen geçti (config değişikliği test edilen kod
+yolunu etkilemiyor). Gerçek config'in 6 anahtarı içerdiği + dolu/eksik
+config'te buton enable/disable ve "TAG EKSİK" metni widget smoke testiyle
+doğrulandı. Gerçek PLC'ye bağlı bir bağlantımız yok - butonun uçtan uca
+çalıştığını (Allowed/Busy/Done okumaları dahil) onaylamak kullanıcının
+elindeki sıradaki adım.
+
+`.ai/Codex_Codesys.md`'ye HMI -> PLC yanıtı eklendi.
+
 ## 2026-09-21 - Manuel sayfa düzeni: buton yerleşimi, hizalama, jog hızı girişi (kullanıcı UI geri bildirimi)
 
 Kullanıcı ekran görüntüsüyle 4 istek iletti: (1) "Başlangıç Konumuna Dön"

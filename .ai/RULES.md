@@ -340,3 +340,26 @@ tarihli en üst giriş için tam gerekçe).
 - [x] Testler: mevcut 235 test aynen geçti. Yeni davranış (kilit aç/kapa,
       dirty-commit, geçersiz değer reddi) + hizalama widget smoke testi ve
       gerçek render edilmiş ekran görüntüsüyle doğrulandı.
+
+### 2026-09-21 — PLC-HMI-20260921-12: C5 gerçek config eksiği (tamamlandı)
+Kullanıcı PLC üzerinde elle `xMoveToStartRequest`i TRUE yazıp iki eksenin
+hedefe gittiğini doğruladı - C5 online teyit edilmiş oldu. PLC kod
+incelemesi: buton mantığı zaten doğruydu, eksik olan yalnızca 6 NodeId'nin
+gerçek `config/opcua.json`'a hiç eklenmemiş olmasıydı (önceki turda C5
+henüz online doğrulanmadığı için kasıtlı bırakılmıştı).
+- [x] `cmd_move_to_start`, `move_to_start_allowed/busy/done/aborted/error`
+      -> `GVL.xMoveToStartRequest/Allowed/Busy/Done/Aborted/Error`,
+      `config/opcua.example.json` ile birebir aynı, gerçek `config/opcua.
+      json`'a eklendi (namespace/path tahmin edilmedi).
+- [x] Eksik tag durumunda "Başlangıç Konumu" kartı artık "—" değil "TAG
+      EKSİK" (fault) gösteriyor - PLC notu: "boş tireyle bırakma."
+- [x] Basitlik korundu - yeni katman/ekran/state yok, yalnızca config +
+      bir metin dallanması. `move_to_start_allowed_now()` hâlâ yalnız
+      PLC'nin `xMoveToStartAllowed`'ını okuyor.
+- [x] Kullanıcıya/PLC tarafına iletildi: PLC'de elle TRUE bırakılan
+      `xMoveToStartRequest` önce FALSE'a çekilmeli - HMI pulse'u zaten-TRUE
+      bitten yeni bir yükselen kenar oluşturmayabilir.
+- [x] Testler: mevcut 235 test aynen geçti. Gerçek config'in 6 anahtarı
+      içerdiği + dolu/eksik config senaryoları widget smoke testiyle
+      doğrulandı. Gerçek PLC'ye bağlı bir bağlantımız yok - butonun uçtan
+      uca çalıştığını onaylamak kullanıcının sıradaki adımı.

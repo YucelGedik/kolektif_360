@@ -443,12 +443,15 @@ class ManualPage(QWidget):
         self._move_to_start_btn.setEnabled(move_to_start_ok)
         if self._move_to_start_holding and not move_to_start_ok:
             self._cancel_move_to_start_hold()
-        self._move_to_start_btn.setToolTip(
-            ""
-            if self._service.move_to_start_tags_configured()
-            else "PLC'de xMoveToStartRequest/Allowed/Busy/Done/Aborted/Error henüz online doğrulanmadı."
-        )
-        status_text, status_mood = self._MOVE_TO_START_STATUS_LABELS[self._service.move_to_start_status()]
+        move_to_start_tag_reason = "PLC'de xMoveToStartRequest/Allowed/Busy/Done/Aborted/Error henüz online doğrulanmadı."
+        move_to_start_tags_configured = self._service.move_to_start_tags_configured()
+        self._move_to_start_btn.setToolTip("" if move_to_start_tags_configured else move_to_start_tag_reason)
+        if move_to_start_tags_configured:
+            status_text, status_mood = self._MOVE_TO_START_STATUS_LABELS[self._service.move_to_start_status()]
+        else:
+            # PLC-HMI-20260921-12 takip notu: eksik tag boş tireyle
+            # bırakılmasın - kısa, açık bir neden gösterilsin.
+            status_text, status_mood = "TAG EKSİK", "fault"
         self._move_to_start_status.set_status(status_text, status_mood)
 
         # PLC-HMI-20260921-09: bıçak/baskı butonları artık kendi (daha

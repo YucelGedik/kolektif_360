@@ -5,22 +5,23 @@
 
 ## Aktif Durum
 
-**PLC-HMI-20260921-10/11 (C5, "Başlangıç Konumuna Dön") + kullanıcı UI
-geri bildirimi TAMAMLANDI, online test bekliyor.** Tek buton 3 saniye
-kesintisiz basılı tutulunca X+Y'yi ayarlı başlangıç konumuna tek pulse ile
-götürüyor - erken bırakma/odak-sayfa kaybı/izin-stale/bağlantı kaybı anında
-iptal eder, süre dolunca parmak basılı kalsa da tek pulse. İzin PLC'nin
-`xMoveToStartAllowed`'ından okunur; Busy `xCycleActive` DEĞİL, HMI jog/mod/
-pnömatik/ayar yazmalarını ayrıca kilitler (Stop hariç). Ekran görüntüsü
-sonrası: buton X kartına taşındı (durum Y'de kaldı), hint butonun içinde
-köşede, X-/Y- satırları `addStretch(1)` ile hizalandı, "JOG Yavaş/Hızlı"
-kaldırılıp yerine `lr_x/y_jog_velocity` parametresine bağlı "Düzenle"
-tik kutulu hız girişi geldi. C5 node'ları yalnız `config/opcua.example.json`
-'da - PLC henüz build/export etmedi.
+**PLC-HMI-20260921-12: C5 ("Başlangıç Konumuna Dön") gerçek config eksiği
+tamamlandı.** Kullanıcı PLC'de elle `xMoveToStartRequest=TRUE` yazıp iki
+eksenin hedefe gittiğini doğruladı - PLC kod incelemesinde buton mantığının
+zaten doğru olduğu, yalnızca 6 NodeId'nin gerçek `config/opcua.json`'a hiç
+eklenmediği bulundu (önceki turda C5 online doğrulanmadığı için kasıtlı
+bırakılmıştı). Artık gerçek config'e eklendi (example ile birebir).
+Eksik-tag durumunda "Başlangıç Konumu" kartı artık "—" değil "TAG EKSİK"
+gösteriyor. **Kullanıcıya iletildi:** PLC'de elle TRUE bırakılan request
+varsa önce FALSE'a çekilmeli (HMI pulse'u zaten-TRUE bitten yeni kenar
+oluşturmayabilir). Butonun PLC'ye karşı uçtan uca çalıştığını (Allowed/
+Busy/Done readback dahil) doğrulamak kullanıcının sıradaki adımı.
 
-**Önceki (aynı gün) - C0.4 takibi + PLC-HMI-20260921-09 (manuel Aşağı
-talepleri) TAMAMLANDI.** 4 NodeId gerçek config'e eklendi, eksik-tag koruması
-ve gerçek OPC yazma reddi UI'ya taşındı. Detay: RULES.md, CHANGELOG_MEMORY.md.
+**Aynı gün, önceki tamamlanan işler (detay CHANGELOG_MEMORY.md'de,
+kronolojik sırayla):** PLC-HMI-20260921-09 (manuel Aşağı talepleri) ->
+C0.4 takibi (gerçek config + eksik-tag koruması) -> PLC-HMI-20260921-10/11
+(C5 "Başlangıç Konumuna Dön" 3s tek buton) -> kullanıcı UI geri bildirimi
+(buton yerleşimi, X/Y hizalama, jog hızı girişi) -> bugünkü C5 config fix.
 
 **Ayrı bulgu (beklemede, kullanıcı talimatı):** VisionCut'tan 3 yeni mesaj
 (07/08/09) geldi - ayrı süreç mimarisi, paketlenmiş exe + 4 kusur yaması,
@@ -29,9 +30,9 @@ dokunulmadı.
 
 ## Siradaki Gorevler
 
-- [ ] Kullanıcı: masa/saha testiyle Aşağı butonlarını ve "Başlangıç Konumuna
-      Dön"u gerçek PLC'ye karşı doğrulamalı (C5 node'ları henüz gerçek
-      config'te değil - build/export + online doğrulama sonrası eklenmeli).
+- [ ] Kullanıcı: "Başlangıç Konumuna Dön" butonunu HMI üzerinden gerçek
+      PLC'ye karşı uçtan uca denemeli (config artık tam; önce PLC'deki elle
+      bırakılmış TRUE'yu FALSE'a çekmeli).
 - [ ] VisionCut 07/08/09 mesajları: kullanıcı "sonra ilgilenelim" dedi.
 - [ ] H4/H7: PLC C2 (alarm) kararı gelince başlanacak (H7 iptal edildi).
 - [ ] SettingsStore `data/bufera.db` test-izolasyonu kararı bekliyor.
@@ -43,11 +44,12 @@ dokunulmadı.
 
 ## Son Degisiklikler
 
+- 2026-09-21 - PLC-HMI-20260921-12: C5 gerçek config eksiği + "TAG EKSİK"
+  gösterimi (detay: CHANGELOG_MEMORY.md aynı tarihli en üst girişi).
 - 2026-09-21 - Manuel sayfa UI geri bildirimi: buton yerleşimi/hizalama +
-  jog hızı girişi (detay: CHANGELOG_MEMORY.md aynı tarihli en üst girişi).
+  jog hızı girişi.
 - 2026-09-21 - PLC-HMI-20260921-10/11: "Başlangıç Konumuna Dön" tek buton.
-- 2026-09-21 - C0.4 takibi: gerçek config'e 4 NodeId, eksik-tag koruması.
-- 2026-09-21 - PLC-HMI-20260921-09: manuel Aşağı talepleri.
+- 2026-09-21 - C0.4 takibi + PLC-HMI-20260921-09: manuel Aşağı talepleri.
 
 ## Kisa Notlar
 
