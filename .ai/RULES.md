@@ -44,9 +44,9 @@ docs/         orijinal 32 bolumluk entegrasyon brifi
 - Build: `python -m venv .venv` + `.venv\Scripts\pip install -r requirements.txt`
 - Run: `.venv\Scripts\python.exe -m app.main` (Demo modda calisir)
 - Test: `.venv\Scripts\python.exe -m pytest`
-- Son build/test: 2026-09-21 - `pytest` 204/204 gecti (PLC-HMI-20260921-09
-  manuel Aşağı talepleri dahil); demo modda widget smoke testiyle dogrulandi
-  (bkz. CHANGELOG_MEMORY.md).
+- Son build/test: 2026-09-21 - `pytest` 235/235 gecti (C5 "Başlangıç
+  Konumuna Dön" tek buton + C0.4 takibi + PLC-HMI-20260921-09 dahil); demo
+  modda widget smoke testiyle dogrulandi (bkz. CHANGELOG_MEMORY.md).
 
 Her anlamli degisiklikten sonra `pytest` calistir. UI degisikligi yapildiysa
 mumkunse `python -m app.main` ile gercekten ac ve gez (bkz. DESIGN.tr.md).
@@ -271,3 +271,50 @@ gerçek `config/opcua.json`'a eklendi.
       yazılmıyor - değişmedi.
 - [x] Testler: `test_manual_down_requests.py` 26 -> 33 (eksik-tag +
       commandWriteError testleri eklendi). Tam suite 211/211.
+
+### 2026-09-21 — PLC-HMI-20260921-10/11 (C5): "Başlangıç Konumuna Dön" tek buton, 3s basılı tutuş (tamamlandı, online test bekliyor)
+Kaynak: `.ai/HMI_C5_MOVE_TO_START_20260921.md` (10, aday sözleşme) + `.ai/
+HMI_C5_HOLD_BUTTON_20260921.md` (11, kullanıcı UI talebi - H5-HOLD-T01..T08
+test listesi dahil). C5 PLC tarafında henüz build/test edilmedi - node'lar
+yalnız `config/opcua.example.json`'a eklendi, GERÇEK `config/opcua.json`'a
+EKLENMEDİ (önceki C0.4 dersiyle tutarlı: online doğrulanmamış node canlı
+bağlantıyı riske atabilir).
+- [x] Eski "MERKEZE GİT / Y=0" (yalnız Y) butonu TAMAMEN kaldırıldı, yerine
+      tek "Başlangıç Konumuna Dön" (X+Y) `HoldButton`'ı geldi - alt metin
+      hedefleri (ayarlı X başlangıç/Y merkez) gösterir. `MachineService.
+      y_center()`/`cmd_y_center` koda dokunulmadı (hâlâ geçerli PLC
+      sözleşmesi, yalnızca artık hiçbir butona bağlı değil).
+- [x] 3 saniye kesintisiz basılı tutuş: `ManualPage` içinde tek-atışlı
+      `QTimer` + 100ms'lik görünür geri sayım. Erken bırakma/pointer
+      butondan çıkma/pencere odağı kaybı/sayfa değişimi/izin kaybı/stale/
+      bağlantı kaybı - hepsi anında iptal eder, kuyruklanmış gecikmeli
+      hareket yok. Süre TAM dolunca (parmak hâlâ basılı olsa bile) TEK
+      pulse; aynı basış ikinci bir sayaç/pulse üretemez.
+- [x] "İzin HMI'da yeniden üretilmez" - bıçak/baskı'daki gibi ayrıntılı bir
+      ön koşul listesi burada TEKRARLANMAZ, yalnız PLC'nin kendi
+      `xMoveToStartAllowed`'ı okunur (`MachineService.move_to_start_allowed_
+      now()`).
+- [x] "Yeni isteğin readback geçişlerini izle, belirsizse tamamlandı iddia
+      etme": `_update_move_to_start_status` - bir pulse gönderildikten sonra
+      ya Busy TRUE görülmeli ya da Done/Aborted/Error'ın üçü de FALSE
+      görülmeli (PLC eski latch'i temizledi); ancak o noktadan sonra bir
+      Done/Aborted/Error TRUE'su BU isteğin sonucu sayılır - önceki başarılı
+      hareketten kalma stale/latched Done asla yeni komutun sonucu
+      sayılmaz. Zaten-hedefte hızlı tamamlanma (Busy hiç gözlenmeden) de
+      doğru işleniyor.
+- [x] Gerçek OPC UA yazma reddi (`commandWriteError`, `cmd_move_to_start`)
+      "sent" durumunda sonsuza kadar asılı kalmayı önler - doğrudan "error"a
+      geçer.
+- [x] Busy, `xCycleActive` DEĞİL - bu yüzden HMI Busy'yi AYRICA kilitler:
+      jog (`_manual_allowed`), mod değişimi (`_mode_change_allowed`),
+      bıçak/baskı dört buton (`_pneumatic_common_allowed`) ve Ayarlar
+      parametre yazmaları (`set_parameter`, `ValueError` fırlatır). Stop
+      (`request_stop`) hiçbir zaman kilitlenmez.
+- [x] Eksik NodeId/bağlantı/stale'de buton hiç etkinleşmez
+      (`move_to_start_tags_configured()`), dinamik tooltip nedenini söyler.
+- [x] Testler: `tests/test_move_to_start.py` (24, servis katmanı - izin,
+      gönderim, edge-detection, busy-kilitleri, demo tam döngü). UI'daki
+      gerçek-zamanlı 3s sayaç davranışı widget smoke testiyle ayrıca
+      doğrulandı (erken bırakma, tam 3s, basılı kalırken ikinci pulse yok).
+      Tam suite 235/235. Gerçek PLC'ye kendi kendine yazılmadı/hareket
+      başlatılmadı - H5-HOLD-T08 (fiziksel hareket) kullanıcıyı bekliyor.

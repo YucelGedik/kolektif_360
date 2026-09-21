@@ -71,6 +71,13 @@
     "cmd_blade_down": "ns=4;s=|var|MAT LC-C07.Application.GVL.xBladeDownRequest",
     "cmd_clamp_down": "ns=4;s=|var|MAT LC-C07.Application.GVL.xClampDownRequest",
 
+    "cmd_move_to_start": "ns=4;s=|var|MAT LC-C07.Application.GVL.xMoveToStartRequest",
+    "move_to_start_allowed": "ns=4;s=|var|MAT LC-C07.Application.GVL.xMoveToStartAllowed",
+    "move_to_start_busy": "ns=4;s=|var|MAT LC-C07.Application.GVL.xMoveToStartBusy",
+    "move_to_start_done": "ns=4;s=|var|MAT LC-C07.Application.GVL.xMoveToStartDone",
+    "move_to_start_aborted": "ns=4;s=|var|MAT LC-C07.Application.GVL.xMoveToStartAborted",
+    "move_to_start_error": "ns=4;s=|var|MAT LC-C07.Application.GVL.xMoveToStartError",
+
     "jog_x_plus_request": "ns=4;s=|var|MAT LC-C07.Application.GVL.xX_JogPlusRequest",
     "jog_x_minus_request": "ns=4;s=|var|MAT LC-C07.Application.GVL.xX_JogMinusRequest",
     "jog_y_plus_request": "ns=4;s=|var|MAT LC-C07.Application.GVL.xY_JogPlusRequest",

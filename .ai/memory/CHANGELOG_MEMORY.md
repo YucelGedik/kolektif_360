@@ -3,6 +3,96 @@
 Yeni girisleri en uste ekle. Eski ve uzun detaylari `CHANGELOG_ARCHIVE.md`
 dosyasina tasi.
 
+## 2026-09-21 - "Başlangıç Konumuna Dön" tek buton, 3s basılı tutuş (PLC-HMI-20260921-10/11, C5)
+
+Kullanıcı: "Sana 11 numaralı görevi iletti ajan kontrol et. HMI manuel
+sayfasına koyacağımız bir buton olacak 0'a göndermek için." Kaynak: `.ai/
+Codex_Codesys.md` (mesaj 10 aday sözleşme, mesaj 11 kullanıcı UI talebi) +
+`.ai/HMI_C5_MOVE_TO_START_20260921.md` + `.ai/HMI_C5_HOLD_BUTTON_20260921.md`
+(H5-HOLD-T01..T08 test listesi dahil).
+
+**Yeni tag'ler (6, YENİ - C5 PLC tarafında henüz build/test edilmedi):**
+`GVL.xMoveToStartRequest` (BOOL pulse, HMI yazar) + 5 salt okunur:
+`xMoveToStartAllowed/Busy/Done/Aborted/Error`. X hedefi `lrX_CutStartPos`,
+Y hedefi `lrY_CenterPosition` (ayarlar parametresi - sabit 0 veya MC_Home
+DEĞİL). Yalnız `config/opcua.example.json`'a eklendi - C0.4'teki aynı
+disiplinle GERÇEK `config/opcua.json`'a EKLENMEDİ (online doğrulanmamış
+node canlı bağlantıyı bozabilir riski); PLC build/export edip online
+sembolleri doğruladıktan sonra kullanıcı (veya onayıyla biz) ekleyecek.
+
+**UI - eski buton tamamen kaldırıldı:** "MERKEZE GİT / Y=0" (yalnız Y) yerine
+tek "Başlangıç Konumuna Dön" (X+Y) `HoldButton`'ı geldi, alt metin hedefleri
+(ayarlar onaylıysa "X=.. Y=.. mm", değilse jenerik) gösterir. `MachineService.
+y_center()`/`cmd_y_center` koda dokunulmadı - hâlâ geçerli bir PLC komut
+kapasitesi, yalnızca artık hiçbir HMI butonuna bağlı değil (silmek ayrı,
+istenmeyen bir karar olurdu).
+
+**3 saniye kesintisiz basılı tutuş (kullanıcı talebi, H5-HOLD-T01-T05):**
+`ManualPage` içinde tek-atışlı `QTimer(3000ms)` + 100ms'lik ikinci bir
+timer'la görünür geri sayım ("Basılı tutun… 2.4s"). Erken bırakma, pointer
+butondan çıkması (`HoldButton.leaveEvent` zaten `held(False)` üretiyordu),
+pencere odağı kaybı (`applicationStateChanged`), sayfa değişimi
+(`hideEvent`), izin kaybı/stale/bağlantı kaybı (her `_on_snapshot`'ta
+`move_to_start_allowed_now()` yeniden kontrol edilir) - hepsi timer'ı
+durdurup sıfırlar; kuyruklanmış gecikmeli hareket yok, yeniden denemek YENİ
+bir basış+3s ister. Süre TAM dolduğunda (T02) - parmak hâlâ basılı kalsa
+bile - tek pulse: `_move_to_start_holding` bayrağı yalnız gerçek bırakışta
+(`held(False)`) sıfırlanır, bu yüzden aynı fiziksel basış ikinci bir
+sayaç/pulse asla üretemez (auto-repeat/gecikmiş timer/UI disable-enable
+döngüsü de dahil - hepsi widget smoke testiyle doğrulandı).
+
+**"İzin HMI'da yeniden üretilmez" (görev notu, bilinçli tasarım farkı):**
+Bıçak/baskı'nın aksine burada ayrıntılı bir ön koşul listesi (manuel+servo+
+emergency+eksen durmuş...) TEKRARLANMAZ - `MachineService.move_to_start_
+allowed_now()` yalnızca PLC'nin kendi `xMoveToStartAllowed`'ını okur (+ tag
+varlığı/stale/bağlantı kontrolü).
+
+**"Yeni isteğin readback geçişlerini izle, belirsizse tamamlandı iddia
+etme" (H5-HOLD-T07, en kritik parça):** Bir pulse gönderildikten hemen sonra
+`xMoveToStartDone` hâlâ ÖNCEKİ başarılı hareketten kalma TRUE (latched)
+olabilir - bunu yeni komutun sonucu saymak yanlış bir "TAMAMLANDI" gösterirdi.
+`_update_move_to_start_status`: gönderim sonrası önce "cleared" (ya Busy
+TRUE görüldü ya da Done/Aborted/Error'ın ÜÇÜ DE FALSE görüldü - PLC eski
+latch'i gerçekten temizledi) beklenir; ancak o noktadan sonraki bir
+Done/Aborted/Error TRUE'su BU isteğin sonucu sayılır. Zaten-hedefte hızlı
+tamamlanma (Busy hiç gözlenmeden, done/aborted/error'ın FALSE görülmesi tek
+başına yeterli) da doğru işleniyor - ayrı test edildi.
+
+**Gerçek OPC UA yazma reddi UI'ya taşınıyor (C0.4'teki aynı mekanizma,
+genişletildi):** `MOTION_COMMAND_TAGS = {"cmd_move_to_start"}`, `_on_error`
+bunu da `commandWriteError`e yönlendirir VE doğrudan `_move_to_start_status`u
+"error"a çeker - aksi halde PLC pulse'u hiç görmediyse (örn. BadNodeIdUnknown)
+Busy/Done/Aborted/Error asla değişmeyeceği için durum sonsuza dek "sent"te
+asılı kalırdı.
+
+**Busy, `xCycleActive` DEĞİL - HMI AYRICA kilitler (görev notu):** `_manual_
+allowed()` (jog), `_mode_change_allowed()` (mod), `_pneumatic_common_
+allowed()` (bıçak/baskı dört buton) hepsine `not snap.move_to_start_busy`
+eklendi; `set_parameter()` Busy'de `ValueError` fırlatır ("Başlangıç
+konumuna dönüş sürüyor - ayar değişikliği şu an kilitli."). `request_stop()`
+hiçbir zaman kilitlenmedi - "Stop açık" şartı korundu.
+
+**Eksik tag/bağlantı/stale'de buton hiç etkinleşmez** (`move_to_start_tags_
+configured()`, C0.4 emsaliyle aynı desen) - dinamik tooltip hangi tag(ler)in
+online doğrulanmadığını söyler.
+
+Kod: `core/models.py` (5 yeni MachineSnapshot alanı), `services/machine_
+service.py` (`MOTION_COMMAND_TAGS`, `_update_move_to_start_status`, `move_
+to_start_tags_configured`/`move_to_start_allowed_now`/`move_to_start_status`/
+`request_move_to_start`, dört gating fonksiyonuna+`set_parameter`'a Busy
+kilidi), `services/demo_simulator.py` (`_apply_move_to_start` - Allowed'ı her
+tick yeniden hesaplar, kısa simüle hareket), `ui/machine/manual_page.py`
+(eski buton kaldırıldı, 3s hold-to-confirm mantığı, durum kartı).
+
+Test: `tests/test_move_to_start.py` (24, yeni - izin, gönderim, edge-
+detection, busy-kilitleri, demo tam döngü). UI'daki gerçek-zamanlı 3s sayaç
+davranışı (erken bırakma, tam 3s, basılı kalırken ikinci pulse yok, eksik-tag
+guard) widget smoke testiyle ayrıca doğrulandı. Tam suite 235/235. Gerçek
+PLC'ye kendi kendine yazılmadı/hareket başlatılmadı - H5-HOLD-T08 (fiziksel
+hareket) ve C5'in genel online doğrulaması kullanıcıyı bekliyor.
+
+`.ai/Codex_Codesys.md`'ye HMI -> PLC yanıtı eklendi.
+
 ## 2026-09-21 - C0.4 takibi: gerçek config eşlemesi + eksik-tag koruması + gerçek yazma reddi UI'da
 
 Kullanıcı: "C0.4 aşağı butonlarının bağlantısı gerçek config/opcua.json

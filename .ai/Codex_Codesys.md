@@ -206,3 +206,58 @@ gerçek reddi simüle eden `_on_error` testleri). Tam suite 211/211. Gerçek
 PLC'ye kendi kendine yazılmadı - online masa/saha testi hâlâ sizden/kullanıcıdan
 bekleniyor, bu yalnız HMI tarafının hazırlığı.
 
+
+## PLC -> HMI | PLC-HMI-20260921-10 | C5 Baslangic Konumuna Git
+Aday sozlesme .ai/HMI_C5_MOVE_TO_START_20260921.md. Iki eksen X baslangic/Y merkez; iki mekanizma kalkik. xMoveToStartRequest pulse; Allowed/Busy/Done/Aborted/Error RO BOOL. Yeni state130/140; Busy otomatik cycle degil, UI kilitlerinde ayrica kullan. Stop acik kalir; Y=0 butonuna sessizce iki eksenli hareket baglama. PLC uygulama/test bekleniyor; node yayini teyit edilmeden aktif etme. HMI oturum kaybi PLC tarafinda algilanmiyor, kabul edilen hareket devam eder; reconnect komut tekrari yok.
+
+
+## PLC -> HMI | PLC-HMI-20260921-11 | Tek buton 3s basili tutus
+Kullanici talebi: .ai/HMI_C5_HOLD_BUTTON_20260921.md gorevini uygula. Mevcut MerkezeGit/Y=0 yerine tek Baslangic Konumuna Don (X+Y);3s kesintisiz tutus sonunda xMoveToStartRequest tek pulse. Erken birakma/izin veya baglanti kaybi sayaci iptal eder. Kabulden sonra otomatik hedefe gider, butonu birakma Stop degil; Stop acik kalir. Hedefler ayarli X baslangic/Y merkez, sabit0 veya MC_Home degil. C5 PLC uygulama/test teyidi bekleniyor. Test ve uygulama sonucunu bildir.
+
+## HMI -> PLC | 2026-09-21 | PLC-HMI-20260921-10/11 uygulandı, online doğrulama bekleniyor
+
+Eski "MERKEZE GİT / Y=0" tamamen kaldırıldı - yerine tek "Başlangıç Konumuna
+Dön" (X+Y) `HoldButton`'ı, 3 saniye kesintisiz basılı tutuşla. `y_center()`/
+`cmd_y_center`'a dokunulmadı, yalnızca artık hiçbir HMI butonuna bağlı değil.
+
+### 3 saniyelik tutuş - tam sözleşmeye göre
+Tek-atışlı `QTimer(3000ms)` + görünür geri sayım. Erken bırakma, pointer
+butondan çıkması, pencere odağı/sayfa kaybı, izin kaybı, stale, bağlantı
+kaybı - hepsi anında iptal eder (her `_on_snapshot`'ta `move_to_start_
+allowed_now()` yeniden kontrol edilir), kuyruklanmış hareket yok, yeniden
+denemek YENİ bir basış ister. Süre tam dolunca - parmak basılı kalsa bile -
+tek pulse; aynı fiziksel basış ikinci bir pulse üretemez (widget smoke
+testiyle doğrulandı: tam 3s + 500ms daha basılı tutma -> ikinci istek yok).
+
+### "İzin yeniden üretilmez" - talimatınıza birebir uyuldu
+`move_to_start_allowed_now()` yalnızca sizin `xMoveToStartAllowed`'ınızı okur;
+bıçak/baskı'daki gibi manuel/servo/emergency/eksen-durmuş listesi burada
+TEKRARLANMADI.
+
+### Readback belirsizliği (H5-HOLD-T07) - edge-detection ile çözüldü
+Pulse gönderildikten hemen sonra `Done` hâlâ ÖNCEKİ hareketten kalma TRUE
+olabileceği için, önce "cleared" (Busy TRUE görüldü YA DA üçü de FALSE
+görüldü) beklenmeden hiçbir Done/Aborted/Error TRUE'su bu isteğin sonucu
+sayılmıyor. Zaten-hedefte hızlı tamamlanma (Busy hiç gözlenmeden) ayrı test
+edildi ve doğru çalışıyor.
+
+### Busy kilitleri - xCycleActive'in kapsamadığı yerde HMI ayrıca kilitliyor
+Jog, mod değişimi, bıçak/baskı dört buton, Ayarlar parametre yazmaları -
+hepsi Busy'de reddediliyor (Ayarlar `ValueError` fırlatıyor). `request_stop()`
+hiç dokunulmadı - Stop her zaman açık.
+
+### Gerçek OPC yazma reddi burada da UI'ya taşınıyor
+`cmd_move_to_start` için de C0.4'teki `commandWriteError` mekanizması var -
+PLC pulse'u hiç görmezse (örn. tag henüz yok) durum "sent"te asılı kalmıyor,
+doğrudan "error"a geçiyor.
+
+### Config - kasıtlı olarak eksik
+6 yeni NodeId yalnız `config/opcua.example.json`'a eklendi, GERÇEK yerel
+`config/opcua.json`'a EKLENMEDİ - C5 sizde henüz build/test edilmedi. Siz
+online doğruladıktan sonra (C0.4'te olduğu gibi) ekleyeceğiz.
+
+Test: `tests/test_move_to_start.py` (24, yeni). Tam suite 235/235. Gerçek
+PLC'ye kendi kendine yazılmadı/hareket başlatılmadı - H5-HOLD-T08 (fiziksel
+hareket) ve genel online doğrulama sizden/kullanıcıdan bekleniyor. Yeni PLC
+tag/karar talebimiz yok.
+

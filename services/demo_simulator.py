@@ -16,6 +16,9 @@ from core.models import MachineSnapshot
 from core.parameters import PARAMETER_SPECS
 
 IDLE_ALARM_DELAY_S = 8.0
+# PLC-HMI-20260921-10/11 (C5): demo-only, kısa tutulur (gerçek PLC hareket
+# süresini taklit etmiyor - yalnız Busy->Done geçişini göstermek için).
+MOVE_TO_START_DURATION_S = 0.6
 
 
 class DemoSimulator:
@@ -35,6 +38,8 @@ class DemoSimulator:
         self.blade_down_requested = False
         self.clamp_down_requested = False
         self.y_center_requested = False
+        self.move_to_start_requested = False
+        self.move_to_start_remaining = 0.0
 
         self.start_requested = False
         self.stop_requested = False
@@ -96,6 +101,9 @@ class DemoSimulator:
     def request_clamp_down(self) -> None:
         self.clamp_down_requested = True
 
+    def request_move_to_start(self) -> None:
+        self.move_to_start_requested = True
+
     # -- simulation tick ---------------------------------------------------
 
     def tick(self, dt: float, snap: MachineSnapshot, alarms, notify_alarms) -> None:
@@ -118,6 +126,7 @@ class DemoSimulator:
             self._enter(snap, phase)
 
         self._apply_manual_controls(snap, phase)
+        self._apply_move_to_start(dt, snap, phase)
 
         idle = phase in (CycleState.MANUAL, CycleState.WAIT_FOR_MATERIAL)
         if idle and not snap.alarm_active and not self.alarm_fired_once:
@@ -188,6 +197,41 @@ class DemoSimulator:
                 snap.clamp_retract_accepted = False
             self.clamp_retract_requested = False
             self.clamp_down_requested = False
+
+    def _apply_move_to_start(self, dt: float, snap: MachineSnapshot, phase: CycleState) -> None:
+        """PLC-HMI-20260921-10/11 (C5): demo tarafı "İzin HMI'da yeniden
+        üretilmez" ilkesini burada bile korur - `Allowed`'ı PLC'nin gerçek
+        ön koşuluna yakın (manuel + otomatik çevrim dışı + iki mekanizma
+        kalkık + zaten meşgul değil) her tick yeniden hesaplar, yalnız
+        `request_move_to_start()` bunu tekrar sorgulamaz."""
+        snap.move_to_start_allowed = (
+            self.manual_mode
+            and phase not in AUTO_CYCLE_ACTIVE_STATES
+            and snap.blade_up
+            and snap.clamp_up
+            and not snap.move_to_start_busy
+        )
+
+        if self.move_to_start_requested:
+            self.move_to_start_requested = False
+            if snap.move_to_start_allowed:
+                snap.move_to_start_busy = True
+                snap.move_to_start_allowed = False
+                snap.move_to_start_done = False
+                snap.move_to_start_aborted = False
+                snap.move_to_start_error = False
+                self.move_to_start_remaining = MOVE_TO_START_DURATION_S
+            else:
+                snap.move_to_start_aborted = True
+
+        if snap.move_to_start_busy:
+            self.move_to_start_remaining -= dt
+            if self.move_to_start_remaining <= 0:
+                snap.x_actual_pos = self.params["lr_x_cut_start_pos"]
+                snap.y_actual_pos = self.params["lr_y_center_position"]
+                snap.y_set_pos = snap.y_actual_pos
+                snap.move_to_start_busy = False
+                snap.move_to_start_done = True
 
     def _advance_phase(self, dt: float, snap: MachineSnapshot, phase: CycleState) -> None:
         p = self.params

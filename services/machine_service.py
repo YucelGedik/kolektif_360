@@ -72,6 +72,10 @@ PNEUMATIC_COMMAND_TAGS = frozenset(
     {"cmd_blade_retract", "cmd_clamp_retract", "cmd_blade_down", "cmd_clamp_down"}
 )
 
+# PLC-HMI-20260921-10/11 (C5, "Başlangıç Konumuna Dön" tek buton, 3s basılı
+# tutuş): aynı "gerçek yazma sonucunu göster" ilkesi bu komut için de geçerli.
+MOTION_COMMAND_TAGS = frozenset({"cmd_move_to_start"})
+
 
 class MachineService(QObject):
     snapshotUpdated = Signal(MachineSnapshot)
@@ -136,6 +140,17 @@ class MachineService(QObject):
         self._blade_retract_pulse_until = 0.0
         self._clamp_retract_pulse_until = 0.0
 
+        # PLC-HMI-20260921-10/11 (C5): "yeni isteğin readback geçişlerini
+        # izle, belirsizse tamamlandı iddia etme" - bir pulse gönderdikten
+        # sonra Done/Aborted/Error'ın ESKİ (önceki komuttan kalma, latched)
+        # değerini yeni komutun sonucu saymamak için basit bir yükselen-kenar
+        # takibi. "cleared" = pulse'tan SONRA en az bir kez ya Busy TRUE
+        # görüldü ya da üçü de FALSE görüldü (PLC eski latch'i temizledi) -
+        # ancak o noktadan sonra bir Done/Aborted/Error TRUE'su güvenilir.
+        self._move_to_start_sent = False
+        self._move_to_start_cleared = False
+        self._move_to_start_status = "idle"
+
         from services.demo_simulator import DemoSimulator
 
         self._demo: DemoSimulator | None = DemoSimulator() if self.demo_mode else None
@@ -193,7 +208,13 @@ class MachineService(QObject):
             key, reason = match.group(1), match.group(2)
             if key in self._param_pending:
                 self.parameterWriteError.emit(key, reason)
-            elif key in PNEUMATIC_COMMAND_TAGS:
+            elif key in PNEUMATIC_COMMAND_TAGS or key in MOTION_COMMAND_TAGS:
+                if key == "cmd_move_to_start":
+                    # PLC hiç görmediyse Busy/Done/Aborted/Error asla
+                    # değişmeyecek - "sent" durumunda sonsuza dek asılı
+                    # kalmak yerine bunu da gerçek bir "error" say.
+                    self._move_to_start_sent = False
+                    self._move_to_start_status = "error"
                 self.commandWriteError.emit(key, reason)
 
     def _on_raw_snapshot(self, raw: dict) -> None:
@@ -226,6 +247,14 @@ class MachineService(QObject):
         snap.manual_preparation_required = b(
             "manual_preparation_required", snap.manual_preparation_required
         )
+        # PLC-HMI-20260921-10/11 (C5): "Başlangıç Konumuna Dön" salt okunur
+        # durumu. Allowed PLC'nin nihai izni - HMI bunu yeniden üretmez.
+        snap.move_to_start_allowed = b("move_to_start_allowed", snap.move_to_start_allowed)
+        snap.move_to_start_busy = b("move_to_start_busy", snap.move_to_start_busy)
+        snap.move_to_start_done = b("move_to_start_done", snap.move_to_start_done)
+        snap.move_to_start_aborted = b("move_to_start_aborted", snap.move_to_start_aborted)
+        snap.move_to_start_error = b("move_to_start_error", snap.move_to_start_error)
+        self._update_move_to_start_status(snap)
 
         # xCycleActive and xStartPermitted are real, authoritative PLC tags
         # (2026-09-16 duzeltmesi) - HMI reads them, it does not recompute
@@ -329,9 +358,40 @@ class MachineService(QObject):
             # optimistic value in _param_cache (set by set_parameter) so the
             # UI doesn't flicker back to the old value while we wait.
 
+    def _update_move_to_start_status(self, snap: MachineSnapshot) -> None:
+        """PLC-HMI-20260921-11: "yeni isteğin readback geçişlerini izle,
+        belirsizse tamamlandı iddia etme". Bir pulse gönderilmemişse (`_move_
+        to_start_sent` False) hiçbir şey yapmaz - Done/Aborted/Error'ın eski,
+        önceki komuttan kalma (latched) değeri asla yeni bir sonuç olarak
+        yorumlanmaz. Gönderim sonrası önce "cleared" (PLC eski latch'i
+        gerçekten temizledi - ya Busy TRUE görüldü ya da üçü de FALSE
+        görüldü) beklenir; ancak ondan sonra bir Done/Aborted/Error TRUE'su
+        BU isteğin sonucu sayılır."""
+        if not self._move_to_start_sent:
+            return
+        if not self._move_to_start_cleared:
+            if snap.move_to_start_busy or not (
+                snap.move_to_start_done or snap.move_to_start_aborted or snap.move_to_start_error
+            ):
+                self._move_to_start_cleared = True
+        if not self._move_to_start_cleared:
+            return
+        if snap.move_to_start_done:
+            self._move_to_start_status = "done"
+            self._move_to_start_sent = False
+        elif snap.move_to_start_aborted:
+            self._move_to_start_status = "aborted"
+            self._move_to_start_sent = False
+        elif snap.move_to_start_error:
+            self._move_to_start_status = "error"
+            self._move_to_start_sent = False
+        elif snap.move_to_start_busy:
+            self._move_to_start_status = "busy"
+
     def _on_tick(self) -> None:
         if self.demo_mode and self._demo is not None:
             self._demo.tick(UI_TICK_MS / 1000.0, self._snapshot, self._alarms, self.alarmsChanged.emit)
+            self._update_move_to_start_status(self._snapshot)
         else:
             age_ms = (time.monotonic() - self._snapshot.timestamp) * 1000
             self._snapshot.stale = age_ms > self._config.stale_timeout_ms
@@ -340,6 +400,11 @@ class MachineService(QObject):
     # -- commands (called from the UI thread) ------------------------------
 
     def _manual_allowed(self) -> bool:
+        # PLC-HMI-20260921-10: "Başlangıç Konumuna Dön" hareketi xCycleActive
+        # DEĞİL (otomatik çevrim sayılmaz) - bu yüzden PLC'nin kendi cycle
+        # kilidi bunu kapsamaz; HMI Busy'yi burada AYRICA kilitler.
+        if self._snapshot.move_to_start_busy:
+            return False
         try:
             state = CycleState(self._snapshot.cycle_state)
         except ValueError:
@@ -384,7 +449,9 @@ class MachineService(QObject):
             return False
         if not self.demo_mode and snap.connection_state != ConnectionState.CONNECTED:
             return False
-        return not snap.cycle_active
+        # PLC-HMI-20260921-10: move-to-start busy'de mod değişimi de kilitli
+        # (xCycleActive bunu kapsamaz, ayrıca kontrol edilir).
+        return not snap.cycle_active and not snap.move_to_start_busy
 
     def set_manual_mode(self, manual: bool) -> None:
         """xManualMode: TRUE=MANUAL, FALSE=AUTO. Duz yazma, pulse degil -
@@ -474,6 +541,9 @@ class MachineService(QObject):
         if abs(snap.y_actual_vel) > AXIS_STOPPED_VELOCITY_TOLERANCE:
             return False
         if self._jog_x_active or self._jog_y_active:
+            return False
+        # PLC-HMI-20260921-10: move-to-start busy'de pnömatik de kilitli.
+        if snap.move_to_start_busy:
             return False
         return True
 
@@ -591,6 +661,62 @@ class MachineService(QObject):
             return False
         return True
 
+    # -- C5 "Başlangıç Konumuna Dön" (PLC-HMI-20260921-10/11) ----------------
+
+    def move_to_start_tags_configured(self) -> bool:
+        """C5 henüz online doğrulanmadı (aday sözleşme) - demo modda anlamsız
+        (her zaman True), gerçek modda pulse tag'i + 5 salt okunur durum
+        tag'inin HEPSİ config'te olmalı, yoksa buton hiç etkinleşmez."""
+        if self.demo_mode:
+            return True
+        required = (
+            "cmd_move_to_start",
+            "move_to_start_allowed",
+            "move_to_start_busy",
+            "move_to_start_done",
+            "move_to_start_aborted",
+            "move_to_start_error",
+        )
+        return all(name in self._config.nodes for name in required)
+
+    def move_to_start_allowed_now(self) -> bool:
+        """PLC-HMI-20260921-11: "İzin HMI'da yeniden üretilmez, Allowed
+        okunur" - burada bıçak/baskı'daki gibi ayrıntılı bir ön koşul listesi
+        TEKRARLANMAZ, yalnız PLC'nin kendi `xMoveToStartAllowed`'ı okunur."""
+        if not self.move_to_start_tags_configured():
+            return False
+        snap = self._snapshot
+        if snap.stale:
+            return False
+        if not self.demo_mode and snap.connection_state != ConnectionState.CONNECTED:
+            return False
+        return snap.move_to_start_allowed and not snap.move_to_start_busy
+
+    def move_to_start_status(self) -> str:
+        """"idle" (hiç gönderilmedi) | "sent" | "busy" | "done" | "aborted"
+        | "error" - bkz. `_update_move_to_start_status`."""
+        return self._move_to_start_status
+
+    def request_move_to_start(self) -> bool:
+        """GVL.xMoveToStartRequest: pulse (TRUE~150ms~FALSE). Gönderim PLC
+        kabul kanıtı değildir - gerçek OPC UA reddi `commandWriteError` ile,
+        PLC'nin kendi reddi Busy/Done/Aborted/Error readback'iyle gelir.
+        Çağıran (ManualPage) 3 saniyelik basılı tutuşu ve iptal koşullarını
+        kendisi yönetir; burada yalnız TEK pulse'ın koşulları/gönderimi var -
+        bu metod kaç kez çağrılırsa çağrılsın izin yoksa hiçbir şey göndermez."""
+        if not self.move_to_start_allowed_now():
+            return False
+        self._move_to_start_sent = True
+        self._move_to_start_cleared = False
+        self._move_to_start_status = "sent"
+        if self.demo_mode and self._demo is not None:
+            self._demo.request_move_to_start()
+        elif self._worker is not None:
+            self._worker.request_pulse("cmd_move_to_start")
+        else:
+            return False
+        return True
+
     # -- temporary Vision data simulator (PLC-HMI-20260917-02) --------------
     # Narrow, allow-listed write gateway used only by
     # services/vision_simulator.py so the UI/simulator never touches
@@ -640,6 +766,11 @@ class MachineService(QObject):
         return key in self._param_confirmed
 
     def set_parameter(self, key: str, value: float) -> None:
+        # PLC-HMI-20260921-10: move-to-start busy'de ayar yazmaları da kilitli
+        # ("mode/jog/feed/pnömatik/ayar yazmalarını AYRICA kilitler" - xCycle
+        # Active bunu kapsamaz).
+        if self._snapshot.move_to_start_busy:
+            raise ValueError("Başlangıç konumuna dönüş sürüyor - ayar değişikliği şu an kilitli.")
         spec = next((s for s in PARAMETER_SPECS if s.key == key), None)
         if spec is None:
             raise ValueError(f"Bilinmeyen parametre: {key}")

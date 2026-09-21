@@ -7,14 +7,18 @@ brief section 6 & 26)."""
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import QApplication, QHBoxLayout, QLabel, QMessageBox, QVBoxLayout, QWidget
 
 from core.cycle_state import AUTO_CYCLE_ACTIVE_STATES, CycleState
 from core.models import MachineSnapshot
 from services.machine_service import MachineService
-from ui.machine.theme import MIN_TOUCH_HEIGHT, base_font
+from ui.machine.theme import COLORS, MIN_TOUCH_HEIGHT, base_font
 from ui.machine.widgets import Card, HoldButton, ProcessStatusCard, Readout, touch_button
+
+# PLC-HMI-20260921-11: "3 saniye basılı tutulunca iki eksen otomatik
+# başlangıca dönsün" - kullanıcı talebi, sabit ve tek yerde tanımlı.
+MOVE_TO_START_HOLD_MS = 3000
 
 
 class ManualPage(QWidget):
@@ -29,7 +33,18 @@ class ManualPage(QWidget):
         # yalnız son gönderilen komutu (kanıt değil) göstermek için yerel iz.
         self._blade_last_cmd: str | None = None
         self._clamp_last_cmd: str | None = None
+        # PLC-HMI-20260921-11: 3 saniye kesintisiz basılı tutuş - erken
+        # bırakma/izin kaybı/stale/odak kaybı/sayfa değişimi anında iptal
+        # eder, yalnız süre TAM dolunca tek pulse gönderir.
+        self._move_to_start_holding = False
+        self._move_to_start_hold_timer = QTimer(self)
+        self._move_to_start_hold_timer.setSingleShot(True)
+        self._move_to_start_hold_timer.timeout.connect(self._on_move_to_start_hold_complete)
+        self._move_to_start_progress_timer = QTimer(self)
+        self._move_to_start_progress_timer.setInterval(100)
+        self._move_to_start_progress_timer.timeout.connect(self._update_move_to_start_progress)
         self._build_ui()
+        self._update_move_to_start_hint()
         service.snapshotUpdated.connect(self._on_snapshot)
         service.commandWriteError.connect(self._on_command_write_error)
 
@@ -42,9 +57,11 @@ class ManualPage(QWidget):
     def _on_application_state_changed(self, state: Qt.ApplicationState) -> None:
         if state != Qt.ApplicationState.ApplicationActive:
             self._service.release_all_jog()
+            self._cancel_move_to_start_hold()
 
     def hideEvent(self, event) -> None:  # noqa: N802 (Qt override)
         self._service.release_all_jog()
+        self._cancel_move_to_start_hold()
         super().hideEvent(event)
 
     def _build_ui(self) -> None:
@@ -119,9 +136,19 @@ class ManualPage(QWidget):
         card.body_layout().addLayout(row)
         card.body_layout().addLayout(self._build_jog_speed_row(lambda fast: setattr(self, "_y_jog_fast", fast)))
 
-        self._y_center_btn = touch_button("MERKEZE GİT / Y=0")
-        self._y_center_btn.clicked.connect(self._service.y_center)
-        card.body_layout().addWidget(self._y_center_btn)
+        # PLC-HMI-20260921-11: eski "MERKEZE GİT / Y=0" (yalnız Y) tek bir
+        # "Başlangıç Konumuna Dön" (X+Y) butonuyla değiştirildi - kullanıcı
+        # talebi, kazara dokunmayı önlemek için 3 saniye basılı tutuş şartlı.
+        self._move_to_start_btn = HoldButton("Başlangıç Konumuna Dön")
+        self._move_to_start_btn.held.connect(self._on_move_to_start_held)
+        card.body_layout().addWidget(self._move_to_start_btn)
+        self._move_to_start_hint = QLabel()
+        self._move_to_start_hint.setFont(base_font(10))
+        self._move_to_start_hint.setStyleSheet(f"color: {COLORS['text_secondary']};")
+        self._move_to_start_hint.setWordWrap(True)
+        card.body_layout().addWidget(self._move_to_start_hint)
+        self._move_to_start_status = ProcessStatusCard("Başlangıç Konumu")
+        card.body_layout().addWidget(self._move_to_start_status)
 
         self._y_pos_readout = Readout("Actual Position", "+0.00", "mm")
         card.body_layout().addWidget(self._y_pos_readout)
@@ -218,6 +245,8 @@ class ManualPage(QWidget):
         elif tag in ("cmd_clamp_retract", "cmd_clamp_down"):
             self._clamp_last_cmd = "error"
             mechanism = "Baskı"
+        elif tag == "cmd_move_to_start":
+            mechanism = "Başlangıç konumuna dönüş"
         else:
             return
         QMessageBox.warning(
@@ -225,6 +254,69 @@ class ManualPage(QWidget):
             "Yazma Reddedildi",
             f"{mechanism} komutu PLC tarafından reddedildi.\n\nGerçek OPC UA hatası:\n{reason}",
         )
+
+    # -- "Başlangıç Konumuna Dön": 3 saniye kesintisiz basılı tutuş ---------
+
+    def _on_move_to_start_held(self, active: bool) -> None:
+        if active:
+            self._start_move_to_start_hold()
+        else:
+            self._cancel_move_to_start_hold()
+
+    def _start_move_to_start_hold(self) -> None:
+        if self._move_to_start_holding:
+            return
+        if not self._service.move_to_start_allowed_now():
+            return
+        self._move_to_start_holding = True
+        self._move_to_start_hold_timer.start(MOVE_TO_START_HOLD_MS)
+        self._move_to_start_progress_timer.start()
+        self._update_move_to_start_progress()
+
+    def _cancel_move_to_start_hold(self) -> None:
+        # Erken bırakma, pointer butondan çıkması, odak/sayfa kaybı, izin
+        # kaybı, stale veya bağlantı kopması - hepsi buraya düşer. Sayaç
+        # tam sıfırlanır; bir sonraki deneme YENİ, baştan bir basış ister.
+        if not self._move_to_start_holding:
+            return
+        self._move_to_start_holding = False
+        self._move_to_start_hold_timer.stop()
+        self._move_to_start_progress_timer.stop()
+        self._update_move_to_start_hint()
+
+    def _update_move_to_start_progress(self) -> None:
+        remaining_ms = self._move_to_start_hold_timer.remainingTime()
+        if remaining_ms < 0:
+            return
+        self._move_to_start_hint.setText(f"Basılı tutun… {remaining_ms / 1000:.1f}s")
+
+    def _on_move_to_start_hold_complete(self) -> None:
+        # Süre TAM dolduğunda - parmak hâlâ basılı olsa bile - tek pulse.
+        # HoldButton `held(False)` gelene kadar (gerçek bırakışta)
+        # `_move_to_start_holding` True kalır, bu yüzden aynı basış ikinci
+        # bir sayaç/pulse üretemez (görev notu: "auto-repeat kapalı").
+        self._move_to_start_progress_timer.stop()
+        self._update_move_to_start_hint()
+        self._service.request_move_to_start()
+
+    def _update_move_to_start_hint(self) -> None:
+        if self._service.is_parameter_confirmed(
+            "lr_x_cut_start_pos"
+        ) and self._service.is_parameter_confirmed("lr_y_center_position"):
+            x = self._service.get_parameter_value("lr_x_cut_start_pos")
+            y = self._service.get_parameter_value("lr_y_center_position")
+            self._move_to_start_hint.setText(f"3 saniye basılı tutun — X={x:g} Y={y:g} mm")
+        else:
+            self._move_to_start_hint.setText("3 saniye basılı tutun — X + Y")
+
+    _MOVE_TO_START_STATUS_LABELS = {
+        "idle": ("—", "inactive"),
+        "sent": ("GÖNDERİLDİ", "warn"),
+        "busy": ("HAREKET EDİYOR", "warn"),
+        "done": ("TAMAMLANDI", "ok"),
+        "aborted": ("REDDEDİLDİ", "fault"),
+        "error": ("HATA — PLC REDDETTİ", "fault"),
+    }
 
     @staticmethod
     def _pneumatic_feedback(retract_accepted: bool, last_cmd: str | None) -> tuple[str, str]:
@@ -268,9 +360,25 @@ class ManualPage(QWidget):
             self._x_plus,
             self._y_minus,
             self._y_plus,
-            self._y_center_btn,
         ):
             btn.setEnabled(manual_allowed)
+
+        # PLC-HMI-20260921-11: "İzin HMI'da yeniden üretilmez" - yalnız
+        # servisin `move_to_start_allowed_now()`'u (Allowed okunur, ayrıntılı
+        # ön koşul tekrarlanmaz) buton etkinliğini belirler. Basılı tutuş
+        # SÜRERKEN izin kaybolursa hemen iptal edilir - "izin şartları 3
+        # saniye boyunca korunmalı" (görev notu).
+        move_to_start_ok = self._service.move_to_start_allowed_now()
+        self._move_to_start_btn.setEnabled(move_to_start_ok)
+        if self._move_to_start_holding and not move_to_start_ok:
+            self._cancel_move_to_start_hold()
+        self._move_to_start_btn.setToolTip(
+            ""
+            if self._service.move_to_start_tags_configured()
+            else "PLC'de xMoveToStartRequest/Allowed/Busy/Done/Aborted/Error henüz online doğrulanmadı."
+        )
+        status_text, status_mood = self._MOVE_TO_START_STATUS_LABELS[self._service.move_to_start_status()]
+        self._move_to_start_status.set_status(status_text, status_mood)
 
         # PLC-HMI-20260921-09: bıçak/baskı butonları artık kendi (daha
         # eksiksiz) "ortak izin" kontrolüyle gater - tek kaynak MachineService,

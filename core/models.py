@@ -47,6 +47,15 @@ class MachineSnapshot:
     alarm_stop_request: bool = False
     motion_stop: bool = False
 
+    # PLC-HMI-20260921-10/11 (C5, "Başlangıç Konumuna Dön"): X+Y'yi ayarlı
+    # başlangıç konumuna otomatik götüren tek PLC hareketinin salt okunur
+    # durum bitleri. Allowed PLC'nin nihai izni - HMI bunu yeniden üretmez.
+    move_to_start_allowed: bool = False
+    move_to_start_busy: bool = False
+    move_to_start_done: bool = False
+    move_to_start_aborted: bool = False
+    move_to_start_error: bool = False
+
     x_servo_ready: bool = False
     x_fault: bool = False
     x_fault_code: int = 0
