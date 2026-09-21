@@ -17,6 +17,11 @@
     "emergency_active": "ns=4;s=|var|MAT LC-C07.Application.GVL.EmergencyState",
     "start_permitted": "ns=4;s=|var|MAT LC-C07.Application.GVL.xStartPermitted",
 
+    "emergency_ok": "ns=4;s=|var|MAT LC-C07.Application.GVL.xEmergencyOK",
+    "alarm_stop_request": "ns=4;s=|var|MAT LC-C07.Application.GVL.xAlarmStopRequest",
+    "motion_stop": "ns=4;s=|var|MAT LC-C07.Application.GVL.xMotionStop",
+    "manual_preparation_required": "ns=4;s=|var|MAT LC-C07.Application.GVL.xManualPreparationRequired",
+
     "x_power_status": "ns=4;s=|var|MAT LC-C07.Application.GVL.xX_PowerStatus",
     "x_power_error": "ns=4;s=|var|MAT LC-C07.Application.GVL.xX_PowerError",
     "x_actual_pos": "ns=4;s=|var|MAT LC-C07.Application.GVL.ActualX_mm",
@@ -34,6 +39,8 @@
     "feed_active": "ns=4;s=|var|MAT LC-C07.Application.GVL.FeedActive",
     "feed_complete": "ns=4;s=|var|MAT LC-C07.Application.GVL.FeedComplete",
     "feed_manual_allowed": "ns=4;s=|var|MAT LC-C07.Application.GVL.FeedManualAllowed",
+    "feed_forward_input": "ns=4;s=|var|MAT LC-C07.Application.GVL.FeedForwardPB",
+    "feed_reverse_input": "ns=4;s=|var|MAT LC-C07.Application.GVL.FeedReversePB",
 
     "vision_ready": "ns=4;s=|var|MAT LC-C07.Application.GVL.VisionReady",
     "line_valid": "ns=4;s=|var|MAT LC-C07.Application.GVL.LineValid",
@@ -61,6 +68,8 @@
     "cmd_clamp_retract": "ns=4;s=|var|MAT LC-C07.Application.GVL.xClampRetractRequest",
     "blade_retract_accepted": "ns=4;s=|var|MAT LC-C07.Application.GVL.xBladeRetractAccepted",
     "clamp_retract_accepted": "ns=4;s=|var|MAT LC-C07.Application.GVL.xClampRetractAccepted",
+    "cmd_blade_down": "ns=4;s=|var|MAT LC-C07.Application.GVL.xBladeDownRequest",
+    "cmd_clamp_down": "ns=4;s=|var|MAT LC-C07.Application.GVL.xClampDownRequest",
 
     "jog_x_plus_request": "ns=4;s=|var|MAT LC-C07.Application.GVL.xX_JogPlusRequest",
     "jog_x_minus_request": "ns=4;s=|var|MAT LC-C07.Application.GVL.xX_JogMinusRequest",

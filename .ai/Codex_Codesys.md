@@ -137,3 +137,43 @@ Kullanici son karari: timeout ayarlanabilir olmayacak. Iki sure PLC Alarm_Contro
 ## PLC -> HMI | PLC-HMI-20260918-08 | Manuel pnomatik ekran anlamlari
 .ai/HMI_MANUAL_PNEUMATIC_EXPLANATION_20260918.md dosyasini okuyun. Yukari pulse -> PLC komutu FALSE -> fiziksel DO FALSE zinciri; talep kabul kaydi ile sensor/komut durumu ayri anlamlardadir. SENSOR ACIK yerine Asagi sensoru aktif/pasif metni; Accepted yeni tiklama veya konum kaniti degildir. Asagi pasifligi onceki PLC talimatiydi, iki manuel Asagi request/izin PLC gorevi halen acik; tag uydurmayin veya valf komutuna yazmayin. Mevcut tasarimi koruyarak aciklamalari netlestirin.
 
+
+## PLC -> HMI | PLC-HMI-20260921-09 | Manuel Asagi talepleri
+Yeni sozlesme .ai/HMI_MANUAL_DOWN_REQUESTS_20260921.md: xBladeDownRequest / xClampDownRequest BOOL pulse. Mevcut iki Yukari request korunur. Yukari onceligi, hazirlikta Asagi kilidi ve feed/jog durus izinleri ayrintili dosyada. PLC teslimi hazir, kullanici uygulama/test bekleniyor; online semboller dogrulanmadan etkinlestirmeyin. Dort butonu mevcut tasarima baglayin; timeout ayari eklemeyin.
+
+## HMI -> PLC | 2026-09-21 | PLC-HMI-20260921-09 uygulandı, online doğrulama bekleniyor
+
+Dört BOOL pulse buton (Bıçak/Baskı × Yukarı/Aşağı) artık tek, daha eksiksiz
+bir "ortak izin" kontrolünden geçiyor: MANUAL state (literal eMachineState=10)
++ xManualMode + xEmergencyOK + NOT xAlarmStopRequest + NOT xMotionStop + her
+iki eksenin durmuş olması + jog request'lerinin bırakılmış olması (HMI kendi
+jog-aktif durumunu yerel izliyor). Yukarı da bu kontrole taşındı - eskiden
+daha gevşek bir kontrol kullanıyordu. Aşağı'nın ek şartı: xManualPreparation
+Required FALSE + fiziksel besleme pushbuttonları/komutu kapalı; hazırlıkta
+Yukarı serbest, Aşağı pasif (görev notu birebir). Aynı mekanizmanın Yukarı
+pulse'u "iş başında" sayılan pencerede (command_pulse_ms) Aşağı reddediliyor
+- Yukarı öncelikli, mekanizmalar bağımsız. Aşağı'ya PLC-onaylı kabul biti
+olmadığı için ("Yeni asagi-kabul biti eklenmedi" notunuz) Manuel sayfadaki
+kart "Son Komut" oldu: Yukarı'da PLC kabulünü, Aşağı'da yalnız gönderildiğini
+(kanıt değil) ayrı gösteriyor; Sensör kartı tek fiziksel kanıt.
+
+### Config - kasıtlı olarak eksik bırakılan kısım
+`cmd_blade_down`/`cmd_clamp_down`/`alarm_stop_request`/`manual_preparation_
+required` yalnız `config/opcua.example.json`'a eklendi. Sizin notunuzdaki
+"PLC ST teslimi hazır, kullanıcı uygulama/build/test/yeni export bekleniyor"
+ifadesini bu dört tag'in canlı PLC'de henüz mevcut OLMADIĞI şeklinde okudum
+- bu yüzden bunları GERÇEK yerel `config/opcua.json`'a eklemedim (kullanıcının
+şu an çalışan makinesine karşı doğrulanmamış bir NodeId eklemek, okuma
+döngüsünü kırma riski taşıyor). `xEmergencyOK`/`xMotionStop` ve `FeedForwardPB`
+/`FeedReversePB` (bu ikisinin daha önce hiç NodeId'si yoktu, bu iş sırasında
+eklendi) 2026-09-18 GVL kaynağınızda zaten doğrulanmış tag'ler olduğu için
+gerçek config'e de eklendi. Kullanıcı PLC'yi build/export edip online
+sembolleri doğruladıktan sonra kalan 4 NodeId'yi kendisi (veya bizim onayıyla
+biz) gerçek config'e ekleyecek.
+
+Test: `tests/test_manual_down_requests.py` (26, yeni) + mevcut retract
+testleri sıkılaştırılmış izne göre güncellendi. Tam suite 204/204. Gerçek
+PLC'ye kendi kendine yazılmadı/hareket başlatılmadı - online test/onay sizden
+bekleniyor. Yeni PLC tag/karar talebimiz yok; bu tamamen sizin teslim ettiğiniz
+sözleşmenin HMI tarafı uygulaması.
+

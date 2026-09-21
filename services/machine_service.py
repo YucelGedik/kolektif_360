@@ -38,6 +38,12 @@ UI_TICK_MS = 50
 
 PARAM_WRITE_CONFIRM_TIMEOUT_S = 2.0
 
+# "Eksenler durmuş" kabulü için actual velocity toleransı (mm/s) - PLC-HMI-
+# 20260921-09 ortak izin şartı. vision_simulator.py'deki aynı değerle
+# tutarlı tutulur (orada da aynı gerekçeyle kullanılıyor); modüller arası
+# bağımlılık kurmamak için burada ayrı bir sabit olarak tutulur.
+AXIS_STOPPED_VELOCITY_TOLERANCE = 0.5
+
 # Geçici mühendislik Vision veri simülatörü (PLC-HMI-20260917-02) - kapalı
 # izin listesi. Yalnız gerçek kameranın normalde yazdığı Vision->PLC alanları;
 # PLC'nin hesapladığı/authoritative state, sensör, motion execute veya valf
@@ -106,6 +112,17 @@ class MachineService(QObject):
         # arrived before the PLC processed the write, making a failed write
         # look identical to a slow one (2026-09-16, real-PLC bug report).
         self._param_pending: dict[str, tuple[float, float]] = {}
+
+        # PLC-HMI-20260921-09: "jog requestleri bırakılmış" ortak izin şartı
+        # için yerel takip - PLC'ye jog request geri-okuması yapmadan, HMI'nin
+        # kendi son gönderdiği durumu (UI thread'de senkron güncellenir).
+        self._jog_x_active = False
+        self._jog_y_active = False
+        # Aynı mekanizmanın Yukarı pulse'u "iş başında" sayılan pencerede
+        # (command_pulse_ms) Aşağı'yı reddetmek için - "Yukarı talebi seviyesi
+        # TRUE iken Aşağı da reddedilir" (görev notu).
+        self._blade_retract_pulse_until = 0.0
+        self._clamp_retract_pulse_until = 0.0
 
         from services.demo_simulator import DemoSimulator
 
@@ -188,6 +205,13 @@ class MachineService(QObject):
         snap.cycle_state = i("cycle_state", snap.cycle_state)
         snap.cut_active = b("cut_active", snap.cut_active)
         snap.emergency_active = b("emergency_active", snap.emergency_active)
+        # PLC-HMI-20260921-09: manuel bıçak/baskı "ortak izin" şartları.
+        snap.emergency_ok = b("emergency_ok", snap.emergency_ok)
+        snap.alarm_stop_request = b("alarm_stop_request", snap.alarm_stop_request)
+        snap.motion_stop = b("motion_stop", snap.motion_stop)
+        snap.manual_preparation_required = b(
+            "manual_preparation_required", snap.manual_preparation_required
+        )
 
         # xCycleActive and xStartPermitted are real, authoritative PLC tags
         # (2026-09-16 duzeltmesi) - HMI reads them, it does not recompute
@@ -361,6 +385,7 @@ class MachineService(QObject):
     def jog_x(self, direction: int, active: bool, fast: bool = False) -> None:
         if active and not self._manual_allowed():
             return
+        self._jog_x_active = active
         if self.demo_mode and self._demo is not None:
             self._demo.set_jog_x(direction, active, fast)
         elif self._worker is not None:
@@ -373,6 +398,7 @@ class MachineService(QObject):
     def jog_y(self, direction: int, active: bool, fast: bool = False) -> None:
         if active and not self._manual_allowed():
             return
+        self._jog_y_active = active
         if self.demo_mode and self._demo is not None:
             self._demo.set_jog_y(direction, active, fast)
         elif self._worker is not None:
@@ -384,6 +410,8 @@ class MachineService(QObject):
         veya Manuel sayfasindan cikildiginda tum jog request tag'lerini
         FALSE'a ceker. manual_allowed kontrolune tabi degildir - birakma
         her zaman calismalidir."""
+        self._jog_x_active = False
+        self._jog_y_active = False
         if self.demo_mode and self._demo is not None:
             self._demo.set_jog_x(0, False)
             self._demo.set_jog_y(0, False)
@@ -406,14 +434,63 @@ class MachineService(QObject):
         elif self._worker is not None:
             self._worker.request_pulse("cmd_y_center")
 
+    def _pneumatic_common_allowed(self) -> bool:
+        """PLC-HMI-20260921-09 "ortak izin": bıçak/baskı Yukarı VE Aşağı
+        pulse butonlarının paylaştığı ön koşul (eskiden yalnız `_manual_
+        allowed()` kullanılıyordu - bu tag'lerin fiziksel bir valfi tetiklemesi
+        nedeniyle şimdi daha eksiksiz kontrol edilir). HMI yalnız gördüğü
+        kadarını kontrol eder; fiziksel Stop/bazı PLC iç hesapları tam
+        yayınlı değil - PLC'nin kendi kabul/red kararı esastır, bu yalnız
+        erken/görsel bir engeldir."""
+        snap = self._snapshot
+        if snap.stale:
+            return False
+        if not self.demo_mode and snap.connection_state != ConnectionState.CONNECTED:
+            return False
+        try:
+            state = CycleState(snap.cycle_state)
+        except ValueError:
+            return False
+        if state != CycleState.MANUAL or not snap.manual_mode:
+            return False
+        if not snap.emergency_ok or snap.alarm_stop_request or snap.motion_stop:
+            return False
+        if abs(snap.x_actual_vel) > AXIS_STOPPED_VELOCITY_TOLERANCE:
+            return False
+        if abs(snap.y_actual_vel) > AXIS_STOPPED_VELOCITY_TOLERANCE:
+            return False
+        if self._jog_x_active or self._jog_y_active:
+            return False
+        return True
+
+    def _manual_down_extra_allowed(self) -> bool:
+        """Aşağı için ek şart (Yukarı'da aranmaz): hazırlıkta Aşağı pasif
+        kalmalı, fiziksel besleme pushbuttonları/komutu kapalı olmalı."""
+        snap = self._snapshot
+        if snap.manual_preparation_required:
+            return False
+        if snap.feed_forward_input or snap.feed_reverse_input or snap.feed_running:
+            return False
+        return True
+
+    def manual_pneumatic_allowed(self) -> bool:
+        """Public: UI'nin Yukarı (Geri Çek) butonlarını göstermek için
+        kullandığı tek kaynak - mantık burada tekrar edilmesin."""
+        return self._pneumatic_common_allowed()
+
+    def manual_blade_down_allowed(self) -> bool:
+        return self._pneumatic_common_allowed() and self._manual_down_extra_allowed()
+
+    def manual_clamp_down_allowed(self) -> bool:
+        return self._pneumatic_common_allowed() and self._manual_down_extra_allowed()
+
     def request_blade_retract(self) -> None:
         """GVL.xBladeRetractRequest: pulse (TRUE~150ms~FALSE), PLC-HMI-
-        20260918-06. Yalnız "yukarı/geri çek" için - manuel "aşağı" için
-        henüz PLC'de tanımlı bir request yok (ayrı, açık görev; tag adı
-        uydurulmaz). PLC kabulü `blade_retract_accepted` readback'inden
+        20260918-06. PLC kabulü `blade_retract_accepted` readback'inden
         okunur, bu yazının başarısı kabul kanıtı değildir."""
-        if not self._manual_allowed():
+        if not self._pneumatic_common_allowed():
             return
+        self._blade_retract_pulse_until = time.monotonic() + self._config.command_pulse_ms / 1000
         if self.demo_mode and self._demo is not None:
             self._demo.request_blade_retract()
         elif self._worker is not None:
@@ -421,12 +498,39 @@ class MachineService(QObject):
 
     def request_clamp_retract(self) -> None:
         """GVL.xClampRetractRequest - bkz. request_blade_retract() notu."""
-        if not self._manual_allowed():
+        if not self._pneumatic_common_allowed():
             return
+        self._clamp_retract_pulse_until = time.monotonic() + self._config.command_pulse_ms / 1000
         if self.demo_mode and self._demo is not None:
             self._demo.request_clamp_retract()
         elif self._worker is not None:
             self._worker.request_pulse("cmd_clamp_retract")
+
+    def request_blade_down(self) -> None:
+        """GVL.xBladeDownRequest (YENİ, PLC-HMI-20260921-09): pulse. PLC'de
+        bu talep için ayrı bir "kabul" biti YOK (görev notu, bilinçli) -
+        gönderim fiziksel konum kanıtı değildir, yalnız Sensör (BladeZDown)
+        gerçek durumu gösterir. Aynı mekanizmanın Yukarı pulse'u hâlâ iş
+        başındaysa (command_pulse_ms penceresi) reddedilir - Yukarı öncelikli."""
+        if time.monotonic() < self._blade_retract_pulse_until:
+            return
+        if not self.manual_blade_down_allowed():
+            return
+        if self.demo_mode and self._demo is not None:
+            self._demo.request_blade_down()
+        elif self._worker is not None:
+            self._worker.request_pulse("cmd_blade_down")
+
+    def request_clamp_down(self) -> None:
+        """GVL.xClampDownRequest - bkz. request_blade_down() notu."""
+        if time.monotonic() < self._clamp_retract_pulse_until:
+            return
+        if not self.manual_clamp_down_allowed():
+            return
+        if self.demo_mode and self._demo is not None:
+            self._demo.request_clamp_down()
+        elif self._worker is not None:
+            self._worker.request_pulse("cmd_clamp_down")
 
     # -- temporary Vision data simulator (PLC-HMI-20260917-02) --------------
     # Narrow, allow-listed write gateway used only by

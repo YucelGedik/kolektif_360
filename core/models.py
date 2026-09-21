@@ -40,6 +40,13 @@ class MachineSnapshot:
     trajectory_valid: bool = False
     lr_max_allowed_slope: float = 0.0
 
+    # PLC-HMI-20260921-09: manuel bıçak/baskı pulse butonlarının "ortak izin"
+    # kontrolü için - GVL.xEmergencyOK/xAlarmStopRequest/xMotionStop.
+    # xEmergencyOK, EmergencyState'in tersi kutupta ayrı bir tag (TRUE=saglikli).
+    emergency_ok: bool = True
+    alarm_stop_request: bool = False
+    motion_stop: bool = False
+
     x_servo_ready: bool = False
     x_fault: bool = False
     x_fault_code: int = 0
@@ -65,6 +72,10 @@ class MachineSnapshot:
     # bunları hiç yazmaz, yalnız gösterir. FAULT'ta PLC tarafından sıfırlanır.
     blade_retract_accepted: bool = False
     clamp_retract_accepted: bool = False
+    # PLC-HMI-20260921-09: Aşağı taleplerine PLC-üretimli bir "kabul" biti
+    # yok (bilinçli tasarım - önceki not: "Yeni asagi-kabul biti eklenmedi").
+    # Hazırlıkta Aşağı pasif, Yukarı serbest kalmalı - HMI bu bayrağa göre gater.
+    manual_preparation_required: bool = False
 
     feed_forward_input: bool = False
     feed_reverse_input: bool = False

@@ -32,6 +32,8 @@ class DemoSimulator:
         self.jog_y_fast = False
         self.blade_retract_requested = False
         self.clamp_retract_requested = False
+        self.blade_down_requested = False
+        self.clamp_down_requested = False
         self.y_center_requested = False
 
         self.start_requested = False
@@ -87,6 +89,12 @@ class DemoSimulator:
 
     def request_clamp_retract(self) -> None:
         self.clamp_retract_requested = True
+
+    def request_blade_down(self) -> None:
+        self.blade_down_requested = True
+
+    def request_clamp_down(self) -> None:
+        self.clamp_down_requested = True
 
     # -- simulation tick ---------------------------------------------------
 
@@ -159,14 +167,27 @@ class DemoSimulator:
             snap.y_actual_pos = self.params["lr_y_center_position"]
             snap.y_set_pos = snap.y_actual_pos
             self.y_center_requested = False
-        if self.blade_retract_requested:
+        # PLC-HMI-20260921-09: aynı mekanizmanın iki talebi birlikte gelirse
+        # Yukarı öncelikli; Aşağı kabul edilince o mekanizmanın Yukarı-kabul
+        # biti FALSE olur (ayrı bir Aşağı-kabul biti yok - bilinçli tasarım).
+        if self.blade_retract_requested or self.blade_down_requested:
+            if self.blade_retract_requested:
+                snap.blade_down, snap.blade_up = False, True
+                snap.blade_retract_accepted = True
+            else:
+                snap.blade_down, snap.blade_up = True, False
+                snap.blade_retract_accepted = False
             self.blade_retract_requested = False
-            snap.blade_down, snap.blade_up = False, True
-            snap.blade_retract_accepted = True
-        if self.clamp_retract_requested:
+            self.blade_down_requested = False
+        if self.clamp_retract_requested or self.clamp_down_requested:
+            if self.clamp_retract_requested:
+                snap.clamp_down, snap.clamp_up = False, True
+                snap.clamp_retract_accepted = True
+            else:
+                snap.clamp_down, snap.clamp_up = True, False
+                snap.clamp_retract_accepted = False
             self.clamp_retract_requested = False
-            snap.clamp_down, snap.clamp_up = False, True
-            snap.clamp_retract_accepted = True
+            self.clamp_down_requested = False
 
     def _advance_phase(self, dt: float, snap: MachineSnapshot, phase: CycleState) -> None:
         p = self.params

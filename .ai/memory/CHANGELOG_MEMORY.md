@@ -3,6 +3,76 @@
 Yeni girisleri en uste ekle. Eski ve uzun detaylari `CHANGELOG_ARCHIVE.md`
 dosyasina tasi.
 
+## 2026-09-21 - Manuel Bıçak/Baskı Aşağı talepleri eklendi (PLC-HMI-20260921-09)
+
+Kullanıcı: "Manuel durumda bıçak ve baskı kontrolü için sistemin nasıl
+olması gerektiğine dair ... 09 numaralı bağlantı notunu ilettim." Kaynak:
+`.ai/Codex_Codesys.md` (mesaj 09) + `.ai/HMI_MANUAL_DOWN_REQUESTS_20260921.md`.
+PLC ST teslimi hazır; `xBladeDownRequest`/`xClampDownRequest` PLC'de henüz
+build/export/online doğrulanmadı.
+
+**Yeni tag'ler (2 yazma, YENİ - GVL'de henüz online doğrulanmadı):**
+`GVL.xBladeDownRequest` / `GVL.xClampDownRequest` (BOOL pulse, mevcut
+`command_pulse_ms` mekanizmasıyla, 100-250ms TRUE->FALSE). Var olan Yukarı
+(`xBladeRetractRequest`/`xClampRetractRequest`) korunuyor.
+
+**Ortak izin sıkılaştırıldı (dört buton da):** `MachineService.
+_pneumatic_common_allowed()` artık MANUAL state (literal eMachineState=10,
+eskisi gibi yalnızca "AUTO_CYCLE_ACTIVE_STATES dışı" değil) + xManualMode +
+xEmergencyOK + NOT xAlarmStopRequest + NOT xMotionStop + her iki eksenin
+durmuş olması (|vel| <= 0.5 mm/s, vision_simulator.py'deki aynı toleransla
+tutarlı) + jog request'lerinin bırakılmış olması (HMI kendi jog-aktif
+durumunu yerel izliyor, PLC'ye geri-okuma yapmıyor) kontrol ediyor. Yukarı
+(Retract) da bu daha eksiksiz kontrole taşındı - eskiden yalnız `_manual_
+allowed()` (manual_mode + cycle_state not in AUTO_CYCLE_ACTIVE_STATES)
+kullanıyordu.
+
+**Aşağı'ya özel ek şart:** `xManualPreparationRequired` FALSE + fiziksel
+besleme pushbuttonları (`FeedForwardPB`/`FeedReversePB`) ve besleme motoru
+kapalı. Hazırlıkta (`xManualPreparationRequired`=TRUE) Yukarı serbest kalır,
+Aşağı pasif kalır - görev notundaki "Hazırlıkta Yukarı kullanılabilir, Aşağı
+pasif kalır" birebir uygulandı.
+
+**Yukarı önceliği:** Aynı mekanizmanın Yukarı pulse'u hâlâ "iş başında"
+sayılan pencerede (command_pulse_ms) Aşağı reddedilir - `MachineService`
+içinde `_blade_retract_pulse_until`/`_clamp_retract_pulse_until` zaman
+damgasıyla takip edilir. İki mekanizma (bıçak/baskı) birbirinden bağımsız.
+
+**Aşağı'ya PLC-onaylı kabul biti YOK (görev notu, bilinçli tasarım - "Yeni
+asagi-kabul biti eklenmedi").** Demo tarafında Aşağı kabul edilince ilgili
+`blade_retract_accepted`/`clamp_retract_accepted` FALSE'a çekiliyor (gerçek
+PLC'nin davranışını taklit eder). Manuel sayfada "Yukarı Talebi" kartı "Son
+Komut" olarak yeniden adlandırıldı: Yukarı için PLC kabulünü ("YUKARI: KABUL
+EDİLDİ"), Aşağı için yalnızca gönderildiğini ("AŞAĞI: GÖNDERİLDİ" - kanıt
+DEĞİL) ayrı ayrı gösteriyor; Sensör kartı (BladeZDown/ClampDown) tek fiziksel
+kanıt olarak duruyor.
+
+**Config:** `cmd_blade_down`/`cmd_clamp_down`/`alarm_stop_request`/`manual_
+preparation_required` yalnızca `config/opcua.example.json`'a eklendi - PLC
+henüz deploy etmediği için GERÇEK yerel `config/opcua.json`'a EKLENMEDİ
+(online doğrulanmamış bir NodeId, canlı okuma döngüsünü bozabilir riski).
+`emergency_ok`/`motion_stop`/`feed_forward_input`/`feed_reverse_input` ise
+2026-09-18 GVL kaynağında zaten doğrulanmış (var olan) tag'ler olduğu için
+hem example hem gerçek config'e eklendi - ayrıca `feed_forward_input`/
+`feed_reverse_input` daha önce hiç NodeId'si olmayan, sessizce hep varsayılan
+kalan iki alandı; bu iş sırasında fark edilip düzeltildi.
+
+Kod: `core/models.py` (4 yeni MachineSnapshot alanı), `services/
+machine_service.py` (`_pneumatic_common_allowed`, `_manual_down_extra_
+allowed`, `manual_pneumatic_allowed`/`manual_blade_down_allowed`/`manual_
+clamp_down_allowed`, `request_blade_down`/`request_clamp_down`, jog-aktif
+takibi), `services/demo_simulator.py` (Aşağı taklip + Yukarı-öncelik +
+kabul-sıfırlama), `ui/machine/manual_page.py` (Aşağı butonları etkinleştirildi,
+"Son Komut" kartı, tek-kaynak izin kontrolü UI'da tekrar edilmiyor).
+
+Test: `tests/test_manual_down_requests.py` (26, yeni) + `tests/
+test_blade_clamp_retract.py` (10, sıkılaştırılmış ortak izne göre güncellendi
+- artık `stale=False`/`connection_state=CONNECTED`/`cycle_state=MANUAL`
+açıkça set ediliyor). Tam suite 204/204. Gerçek PLC'ye kendi kendine
+yazılmadı/hareket başlatılmadı - online test kullanıcıyı bekliyor.
+
+`.ai/Codex_Codesys.md`'ye HMI -> PLC yanıtı eklendi.
+
 ## 2026-09-18 - Manuel Bıçak/Baskı Yukarı gerçek PLC request'lerine bağlandı (PLC-HMI-20260918-06)
 
 Kullanıcı, PLC notlarında `xBladeRetractRequest`/`xClampRetractRequest`

@@ -10,13 +10,16 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+from core.models import ConnectionState
 from services.machine_service import MachineService
 
 
 def _demo_service(tmp_path) -> MachineService:
     cfg = tmp_path / "opcua.json"
     cfg.write_text('{"endpoint": "", "nodes": {}}', encoding="utf-8")
-    return MachineService(config_path=cfg)
+    svc = MachineService(config_path=cfg)
+    svc.snapshot.stale = False  # service.start() would normally do this
+    return svc
 
 
 def _real_service(tmp_path) -> MachineService:
@@ -26,6 +29,8 @@ def _real_service(tmp_path) -> MachineService:
     )
     svc = MachineService(config_path=cfg)
     svc._worker = MagicMock()
+    svc.snapshot.connection_state = ConnectionState.CONNECTED
+    svc.snapshot.stale = False
     return svc
 
 
@@ -109,6 +114,7 @@ def test_demo_mode_retract_requests_delegate_to_demo_simulator(tmp_path):
 def test_demo_blade_retract_sets_up_and_accepted_after_a_tick(tmp_path):
     svc = _demo_service(tmp_path)
     svc.snapshot.manual_mode = True
+    svc.snapshot.cycle_state = 10  # CycleState.MANUAL
     svc._demo.manual_mode = True
     svc.snapshot.blade_down = True
     svc.snapshot.blade_up = False
@@ -125,6 +131,7 @@ def test_demo_blade_retract_sets_up_and_accepted_after_a_tick(tmp_path):
 def test_demo_clamp_retract_sets_up_and_accepted_after_a_tick(tmp_path):
     svc = _demo_service(tmp_path)
     svc.snapshot.manual_mode = True
+    svc.snapshot.cycle_state = 10  # CycleState.MANUAL
     svc._demo.manual_mode = True
     svc.snapshot.clamp_down = True
     svc.snapshot.clamp_up = False
@@ -141,6 +148,7 @@ def test_demo_blade_and_clamp_retract_are_independent(tmp_path):
     """Iki talep bağımsız, istenen sırada veya birlikte (görev notu)."""
     svc = _demo_service(tmp_path)
     svc.snapshot.manual_mode = True
+    svc.snapshot.cycle_state = 10  # CycleState.MANUAL
     svc._demo.manual_mode = True
     svc.snapshot.blade_down = True
     svc.snapshot.clamp_down = True
@@ -158,6 +166,7 @@ def test_demo_new_fault_resets_accepted_bits(tmp_path):
     demo simülatörü aynı davranışı taklit eder."""
     svc = _demo_service(tmp_path)
     svc.snapshot.manual_mode = True
+    svc.snapshot.cycle_state = 10  # CycleState.MANUAL
     svc._demo.manual_mode = True
     svc.request_blade_retract()
     svc._on_tick()

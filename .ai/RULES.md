@@ -44,10 +44,9 @@ docs/         orijinal 32 bolumluk entegrasyon brifi
 - Build: `python -m venv .venv` + `.venv\Scripts\pip install -r requirements.txt`
 - Run: `.venv\Scripts\python.exe -m app.main` (Demo modda calisir)
 - Test: `.venv\Scripts\python.exe -m pytest`
-- Son build/test: 2026-09-18 - `pytest` 160/160 gecti (H1/H2/H3/H6 +
-  eğimli kamera senaryosu + sunucu-tabanlı DataType çözümleme dahil); demo
-  modda `python -m app.main` + widget testiyle dogrulandi (bkz.
-  CHANGELOG_MEMORY.md).
+- Son build/test: 2026-09-21 - `pytest` 204/204 gecti (PLC-HMI-20260921-09
+  manuel Aşağı talepleri dahil); demo modda widget smoke testiyle dogrulandi
+  (bkz. CHANGELOG_MEMORY.md).
 
 Her anlamli degisiklikten sonra `pytest` calistir. UI degisikligi yapildiysa
 mumkunse `python -m app.main` ile gercekten ac ve gez (bkz. DESIGN.tr.md).
@@ -215,3 +214,33 @@ tagı tahmin edilmez" kapsamına giriyor.
       `alarm_page.py`: "Tür" sütunu eklendi.
 - [x] `tests/test_alarm_severity.py` (8, izole tmp_path DB). Tam suite
       168/168. Canlı PLC alarm tagı henüz bağlanmadı (kasıtlı).
+
+### 2026-09-21 — PLC-HMI-20260921-09: manuel bıçak/baskı Aşağı talepleri (tamamlandı, online test bekliyor)
+Kaynak: `.ai/HMI_MANUAL_DOWN_REQUESTS_20260921.md`. PLC ST teslimi hazır;
+`xBladeDownRequest`/`xClampDownRequest` PLC'de henüz build/export/online
+doğrulanmadı - bu yüzden bu ikisi ve `xAlarmStopRequest`/`xManualPreparation
+Required` yalnız `config/opcua.example.json`'a eklendi, GERÇEK yerel
+`config/opcua.json`'a eklenmedi (canlı bağlantıyı riske atmamak için).
+`xEmergencyOK`/`xMotionStop`/`FeedForwardPB`/`FeedReversePB` 2026-09-18
+GVL kaynağında zaten doğrulanmış tag'ler olduğu için gerçek config'e de
+eklendi.
+- [x] Dört BOOL pulse buton artık ortak, daha eksiksiz bir izin kontrolünden
+      geçiyor (`MachineService._pneumatic_common_allowed`): MANUAL state +
+      xManualMode + xEmergencyOK + NOT xAlarmStopRequest + NOT xMotionStop +
+      eksenler durmuş (X ve Y) + jog bırakılmış. Yukarı (Retract) da bu
+      kontrole taşındı (eskiden daha gevşek `_manual_allowed` kullanıyordu).
+- [x] Aşağı için ek şart: xManualPreparationRequired FALSE + fiziksel besleme
+      pushbuttonları/komutu kapalı - hazırlıkta Yukarı serbest, Aşağı pasif.
+- [x] Aynı mekanizmanın Yukarı pulse'u "iş başında" sayıldığı pencerede
+      (command_pulse_ms) Aşağı reddedilir (Yukarı öncelikli); mekanizmalar
+      (bıçak/baskı) birbirinden bağımsız.
+- [x] Aşağı'ya PLC-onaylı bir "kabul" biti YOK (bilinçli tasarım) - Manuel
+      sayfada "Son Komut" kartı Yukarı için PLC kabulünü, Aşağı için yalnız
+      "gönderildi"yi (kanıt değil) ayrı ayrı gösterir; Sensör kartı tek
+      fiziksel kanıt kalıyor.
+- [x] Testler: `tests/test_manual_down_requests.py` (26). Tam suite 204/204.
+      Gerçek PLC'ye kendi kendine yazılmadı/hareket başlatılmadı.
+- [ ] Kullanıcı: PLC tarafını build/export edip online sembolleri
+      doğruladıktan sonra 4 yeni NodeId'yi (`cmd_blade_down`,
+      `cmd_clamp_down`, `alarm_stop_request`, `manual_preparation_required`)
+      gerçek `config/opcua.json`'a eklemeli - HMI şimdilik bunları yazmıyor.

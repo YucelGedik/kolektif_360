@@ -25,6 +25,10 @@ class ManualPage(QWidget):
         self._service = service
         self._x_jog_fast = False
         self._y_jog_fast = False
+        # PLC-HMI-20260921-09: Aşağı için PLC-onaylı bir "kabul" biti yok -
+        # yalnız son gönderilen komutu (kanıt değil) göstermek için yerel iz.
+        self._blade_last_cmd: str | None = None
+        self._clamp_last_cmd: str | None = None
         self._build_ui()
         service.snapshotUpdated.connect(self._on_snapshot)
 
@@ -152,42 +156,67 @@ class ManualPage(QWidget):
         return card
 
     def _build_blade_card(self) -> Card:
-        # PLC-HMI-20260918-06: yalnız "Yukarı/Geri Çek" gerçek, PLC-kabullü
-        # bir request'e sahip (GVL.xBladeRetractRequest, pulse). Manuel
-        # "Aşağı" için PLC'de henüz bir request tanımlı değil - ayrı, açık
-        # bir PLC görevi; tag adı uydurulup buton işlevli gösterilmez.
+        # PLC-HMI-20260921-09: dört BOOL pulse buton - Yukarı (mevcut,
+        # xBladeRetractRequest) + Aşağı (yeni, xBladeDownRequest). Aşağı için
+        # PLC-onaylı bir "kabul" biti yok - Sensör (BladeZDown) gerçek
+        # kanıttır, "Son Komut" yalnız gönderimi gösterir.
         card = Card("Bıçak")
         self._blade_retract_btn = touch_button("Bıçağı Geri Çek (Yukarı)")
-        self._blade_retract_btn.clicked.connect(self._service.request_blade_retract)
+        self._blade_retract_btn.clicked.connect(self._on_blade_retract_clicked)
         card.body_layout().addWidget(self._blade_retract_btn)
         self._blade_down_btn = touch_button("Bıçak Aşağı")
-        self._blade_down_btn.setEnabled(False)
-        self._blade_down_btn.setToolTip(
-            "PLC tarafında manuel Aşağı talebi henüz tanımlı değil (ayrı görev, açık)."
-        )
+        self._blade_down_btn.clicked.connect(self._on_blade_down_clicked)
         card.body_layout().addWidget(self._blade_down_btn)
         self._blade_status = ProcessStatusCard("Sensör")
         card.body_layout().addWidget(self._blade_status)
-        self._blade_accept_status = ProcessStatusCard("Yukarı Talebi")
+        self._blade_accept_status = ProcessStatusCard("Son Komut")
         card.body_layout().addWidget(self._blade_accept_status)
         return card
 
     def _build_clamp_card(self) -> Card:
         card = Card("Perde Baskısı")
         self._clamp_retract_btn = touch_button("Baskıyı Geri Çek (Yukarı)")
-        self._clamp_retract_btn.clicked.connect(self._service.request_clamp_retract)
+        self._clamp_retract_btn.clicked.connect(self._on_clamp_retract_clicked)
         card.body_layout().addWidget(self._clamp_retract_btn)
         self._clamp_down_btn = touch_button("Baskı Aşağı")
-        self._clamp_down_btn.setEnabled(False)
-        self._clamp_down_btn.setToolTip(
-            "PLC tarafında manuel Aşağı talebi henüz tanımlı değil (ayrı görev, açık)."
-        )
+        self._clamp_down_btn.clicked.connect(self._on_clamp_down_clicked)
         card.body_layout().addWidget(self._clamp_down_btn)
         self._clamp_status = ProcessStatusCard("Sensör")
         card.body_layout().addWidget(self._clamp_status)
-        self._clamp_accept_status = ProcessStatusCard("Yukarı Talebi")
+        self._clamp_accept_status = ProcessStatusCard("Son Komut")
         card.body_layout().addWidget(self._clamp_accept_status)
         return card
+
+    # -- blade/clamp click handlers (track last-sent direction, not proof) --
+
+    def _on_blade_retract_clicked(self) -> None:
+        self._blade_last_cmd = "up"
+        self._service.request_blade_retract()
+
+    def _on_blade_down_clicked(self) -> None:
+        self._blade_last_cmd = "down"
+        self._service.request_blade_down()
+
+    def _on_clamp_retract_clicked(self) -> None:
+        self._clamp_last_cmd = "up"
+        self._service.request_clamp_retract()
+
+    def _on_clamp_down_clicked(self) -> None:
+        self._clamp_last_cmd = "down"
+        self._service.request_clamp_down()
+
+    @staticmethod
+    def _pneumatic_feedback(retract_accepted: bool, last_cmd: str | None) -> tuple[str, str]:
+        """PLC-HMI-20260921-09: Aşağı için PLC-onaylı bir kabul biti yok -
+        Yukarı kabulünü PLC'den (kanıt), Aşağı'yı yalnız "gönderildi" olarak
+        (kanıt DEĞİL) gösterir; ikisi karıştırılmaz."""
+        if retract_accepted:
+            return "YUKARI: KABUL EDİLDİ", "ok"
+        if last_cmd == "down":
+            return "AŞAĞI: GÖNDERİLDİ", "warn"
+        if last_cmd == "up":
+            return "YUKARI: BEKLENİYOR", "inactive"
+        return "—", "inactive"
 
     # -- data binding ---------------------------------------------------------
 
@@ -216,12 +245,22 @@ class ManualPage(QWidget):
             self._y_minus,
             self._y_plus,
             self._y_center_btn,
-            self._blade_retract_btn,
-            self._clamp_retract_btn,
         ):
             btn.setEnabled(manual_allowed)
-        # Aşağı butonları kalıcı olarak devre dışı - PLC'de henüz bir
-        # request tanımlı değil (görev notu, tag adı uydurulmaz).
+
+        # PLC-HMI-20260921-09: bıçak/baskı butonları artık kendi (daha
+        # eksiksiz) "ortak izin" kontrolüyle gater - tek kaynak MachineService,
+        # burada tekrar hesaplanmaz. Aşağı, Yukarı'dan ek şartlarla (hazırlık
+        # kilidi, besleme kapalı) daha kısıtlı.
+        pneumatic_allowed = self._service.manual_pneumatic_allowed()
+        self._blade_retract_btn.setEnabled(pneumatic_allowed)
+        self._clamp_retract_btn.setEnabled(pneumatic_allowed)
+        self._blade_down_btn.setEnabled(self._service.manual_blade_down_allowed())
+        self._clamp_down_btn.setEnabled(self._service.manual_clamp_down_allowed())
+
+        if not snap.manual_mode:
+            self._blade_last_cmd = None
+            self._clamp_last_cmd = None
 
         self._x_pos_readout.set_value("--" if snap.stale else f"{snap.x_actual_pos:.1f}")
         self._y_pos_readout.set_value("--" if snap.stale else f"{snap.y_actual_pos:+.2f}")
@@ -257,10 +296,8 @@ class ManualPage(QWidget):
             "AŞAĞI" if snap.clamp_down else "YUKARI", "warn" if snap.clamp_down else "ok"
         )
         self._blade_accept_status.set_status(
-            "KABUL EDİLDİ" if snap.blade_retract_accepted else "BEKLENİYOR",
-            "ok" if snap.blade_retract_accepted else "inactive",
+            *self._pneumatic_feedback(snap.blade_retract_accepted, self._blade_last_cmd)
         )
         self._clamp_accept_status.set_status(
-            "KABUL EDİLDİ" if snap.clamp_retract_accepted else "BEKLENİYOR",
-            "ok" if snap.clamp_retract_accepted else "inactive",
+            *self._pneumatic_feedback(snap.clamp_retract_accepted, self._clamp_last_cmd)
         )
