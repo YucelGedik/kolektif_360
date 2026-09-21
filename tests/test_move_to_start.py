@@ -180,6 +180,24 @@ def test_aborted_result_tracked(tmp_path):
     assert svc.move_to_start_status() == "aborted"
 
 
+def test_busy_takes_priority_over_aborted_not_yet_a_terminal_result(tmp_path):
+    """PLC-HMI-20260921-13: gerçek PLC'de MANUAL_RETURN_STOP'ta iken Busy VE
+    Aborted aynı anda TRUE olabiliyor - bu bir ara/duruş evresi, "REDDEDİLDİ"
+    diye terminal bir sonuç gibi gösterilmemeli. Busy TRUE olduğu sürece
+    Aborted/Error/Done okunmaz, takip de kapanmaz."""
+    svc = _real_service(tmp_path)
+    svc.request_move_to_start()
+    svc._on_raw_snapshot({"move_to_start_busy": True})
+    assert svc.move_to_start_status() == "busy"
+
+    svc._on_raw_snapshot({"move_to_start_busy": True, "move_to_start_aborted": True})
+    assert svc.move_to_start_status() == "busy"  # NOT "aborted" - still busy
+
+    # Only once Busy genuinely clears does the terminal result surface.
+    svc._on_raw_snapshot({"move_to_start_busy": False, "move_to_start_aborted": True})
+    assert svc.move_to_start_status() == "aborted"
+
+
 def test_error_result_tracked(tmp_path):
     svc = _real_service(tmp_path)
     svc.request_move_to_start()

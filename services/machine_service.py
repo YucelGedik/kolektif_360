@@ -366,7 +366,14 @@ class MachineService(QObject):
         yorumlanmaz. Gönderim sonrası önce "cleared" (PLC eski latch'i
         gerçekten temizledi - ya Busy TRUE görüldü ya da üçü de FALSE
         görüldü) beklenir; ancak ondan sonra bir Done/Aborted/Error TRUE'su
-        BU isteğin sonucu sayılır."""
+        BU isteğin sonucu sayılır.
+
+        PLC-HMI-20260921-13 düzeltmesi (gerçek PLC'de yakalanan bir kullanıcı
+        senaryosu): PLC, MANUAL_RETURN_STOP'ta dururken Busy=TRUE ile
+        AYNI ANDA Aborted=TRUE de tutabiliyor - bu ara/duruş evresi, terminal
+        bir sonuç değil. Busy TRUE olduğu SÜRECE Done/Aborted/Error'a hiç
+        bakılmaz (isteğin takibi de kapanmaz) - "REDDEDİLDİ" gibi bitmiş bir
+        sonuç, makine hâlâ meşgulken asla gösterilmez."""
         if not self._move_to_start_sent:
             return
         if not self._move_to_start_cleared:
@@ -376,17 +383,18 @@ class MachineService(QObject):
                 self._move_to_start_cleared = True
         if not self._move_to_start_cleared:
             return
+        if snap.move_to_start_busy:
+            self._move_to_start_status = "busy"
+            return
         if snap.move_to_start_done:
             self._move_to_start_status = "done"
-            self._move_to_start_sent = False
         elif snap.move_to_start_aborted:
             self._move_to_start_status = "aborted"
-            self._move_to_start_sent = False
         elif snap.move_to_start_error:
             self._move_to_start_status = "error"
-            self._move_to_start_sent = False
-        elif snap.move_to_start_busy:
-            self._move_to_start_status = "busy"
+        else:
+            return  # Busy az önce kalktı, henüz bir sonuç okunmadı - bekle.
+        self._move_to_start_sent = False
 
     def _on_tick(self) -> None:
         if self.demo_mode and self._demo is not None:

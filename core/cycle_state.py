@@ -28,6 +28,13 @@ class CycleState(IntEnum):
     CLAMP_UP = 110
     CYCLE_COMPLETE = 120
 
+    # PLC-HMI-20260921-10/11 (C5, "Başlangıç Konumuna Dön") - 2026-09-21
+    # gerçek PLC exportunda (Bufera_Perde_Kesme_20260921_0830_C05) doğrulandı,
+    # ilk teslimde HMI tarafına hiç eklenmemişti (ekranda "Bilinmeyen Durum
+    # (140)" gösteriliyordu - gerçek bir HMI eksikliğiydi, PLC hatası değil).
+    MANUAL_RETURN = 130
+    MANUAL_RETURN_STOP = 140
+
     STOPPING = 500
     RECOVERY = 510
 
@@ -48,6 +55,8 @@ CYCLE_STATE_LABELS_TR: dict[CycleState, str] = {
     CycleState.RETURN_AXES: "Eksenler Dönüyor",
     CycleState.CLAMP_UP: "Baskı Kalkıyor",
     CycleState.CYCLE_COMPLETE: "Çevrim Tamamlandı",
+    CycleState.MANUAL_RETURN: "Başlangıca Dönüyor",
+    CycleState.MANUAL_RETURN_STOP: "Başlangıca Dönüş Durduruldu",
     CycleState.STOPPING: "Durduruluyor",
     CycleState.RECOVERY: "Recovery",
     CycleState.FAULT: "Arıza",

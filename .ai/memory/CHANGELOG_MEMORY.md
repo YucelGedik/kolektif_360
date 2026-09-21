@@ -3,6 +3,77 @@
 Yeni girisleri en uste ekle. Eski ve uzun detaylari `CHANGELOG_ARCHIVE.md`
 dosyasina tasi.
 
+## 2026-09-21 - Gerçek gösterim hatası: Busy sırasında "REDDEDİLDİ" yanlış terminal sonuç gösteriyordu (PLC-HMI-20260921-13)
+
+PLC tarafı, az önceki 140-sıkışma bulgusuna bağımsız incelemeyle yanıt
+verdi (`.ai/C5_RESET_140_INVESTIGATION_20260921.md`) ve HMI tarafında
+gerçek bir gösterim hatası buldu: `MachineService._update_move_to_start_
+status`, Done/Aborted/Error'ı Busy'den ÖNCE kontrol ediyordu. Gerçek PLC'de
+`MANUAL_RETURN_STOP`'ta dururken `Busy=TRUE` ile AYNI ANDA `Aborted=TRUE`
+de tutulabiliyor (ara/duruş evresi) - bu HMI'da "REDDEDİLDİ" olarak
+BİTMİŞ bir sonuç gibi gösteriliyordu, tam kullanıcının yaşadığı ekran
+görüntüsündeki durum.
+
+**Düzeltme:** Busy=TRUE olduğu SÜRECE artık Done/Aborted/Error'a hiç
+bakılmıyor (isteğin takibi de kapanmıyor, `_move_to_start_sent=True`
+kalıyor) - yalnızca Busy FALSE'a düştüğünde bir sonraki Done/Aborted/Error
+okuması terminal (kesin) sonuç sayılıyor. Önceki "stale latched Done"
+koruması (freshness/"cleared" kontrolü) aynen korundu, yalnızca Busy'nin
+önceliği düzeltildi.
+
+Kod: `services/machine_service.py::_update_move_to_start_status`. Test:
+yeni `test_busy_takes_priority_over_aborted_not_yet_a_terminal_result`
+(tam bu senaryoyu - busy+aborted birlikte, sonra busy düşünce terminal -
+doğruluyor); mevcut 24 test değişmeden geçti (yeniden izlendi, hepsi aynı
+sonuca varıyor, yalnızca Busy geçişi üzerinden). Widget smoke testiyle de
+gerçek senaryo verisiyle doğrulandı: ekran artık "HAREKET EDİYOR"
+gösteriyor, Busy düşene kadar "REDDEDİLDİ" görünmüyor. Tam suite 236/236.
+
+Kilitler/state/hareket-gönderme dokunulmadı - yalnızca görüntü mantığı
+değişti, PLC tarafının "kilitleri kaldırma, state yazma" talimatına uygun.
+
+`.ai/Codex_Codesys.md`'ye HMI -> PLC yanıtı eklendi. `xStopActive`/Reset'in
+140'tan çıkışa etkisi konusundaki asıl bulgu PLC tarafının doğrulamasını
+bekliyor - bu ayrı, hâlâ açık.
+
+## 2026-09-21 - Kullanıcı canlı PLC'de MANUAL_RETURN_STOP (140)'ta sıkıştı - kök neden bulundu
+
+Kullanıcı: "Sıfır noktasına gönderirken resete ve stopa bastım bu şekilde
+program kaldı. manuel moddan çıkamıyorum tekrar reset atamıyorum..." +
+ekran görüntüleri (ana ekranda "Bilinmeyen Durum (140)", Manuel sayfada
+"BAŞLANGIÇ KONUMU: REDDEDİLDİ") + gerçek PLC export dosyasının yolu
+(`Bufera_Perde_Kesme_20260921_0830_C05.export`, proje dışında,
+`C:\Users\agedik\Documents\ChatGPT\Bufera Tekstil PLC\...\plc_export\`).
+
+**HMI tarafı bulgusu (gerçek eksiklik, düzeltildi):** `core/cycle_state.py`
+'deki `CycleState` enum'unda `MANUAL_RETURN=130`/`MANUAL_RETURN_STOP=140`
+hiç yoktu - C5 export'unda (`E_MachineState`) olduğu doğrulandı ama ilk C5
+teslimimizde ekrana hiç eklenmemiş. Bu yüzden "Bilinmeyen Durum (140)"
+gösteriliyordu. İkisi de eklendi, Türkçe etiketlerle ("Başlangıca
+Dönüyor"/"Başlangıca Dönüş Durduruldu"); `xCycleActive` export'ta FALSE
+kaldığı için `AUTO_CYCLE_ACTIVE_STATES`'e eklenmedi (zaten `move_to_start_
+busy` ayrı kilitliyor, davranışta değişiklik yok, yalnızca doğru etiket).
+
+**PLC tarafı bulgusu (aday tanı, export incelemesiyle):** `MANUAL_RETURN_
+STOP`'un TEK çıkış koşulu (export satır ~149-179) uzun bir AND zinciri;
+en olası donma nedeni `xStopActive := GVL.Stop OR xDI_StopPB` - anlık,
+latch'siz bir seviye sinyali. Fiziksel panel Stop butonu latch'li
+(bas-kilitle/çevir-bırak) tipteyse, operatör bırakana kadar bu asla FALSE
+olmaz ve 140'tan çıkış imkansızlaşır. Ayrıca bağımsız doğrulandı: **Reset
+bu duruma hiçbir etki yapmıyor** - `xAlarmResetAccepted` yalnızca
+`eMachineState=FAULT` iken hesaplanıyor, 140 FAULT olmadığı için Reset
+etkisiz kalıyor (kullanıcının "reset atamıyorum" deneyimiyle birebir
+örtüşüyor). Bu, PLC tarafına bulgu olarak iletildi - HMI'den düzeltilecek
+bir şey değil, PLC state machine'inin kendi tasarım kararı/muhtemel gap'i.
+
+Kod: `core/cycle_state.py` (2 yeni enum değeri + etiket). Test: 235/235
+aynen geçti (yeni state'ler mevcut hiçbir kontrolü etkilemiyor - `move_to_
+start_busy` zaten ayrı kilitliyordu).
+
+`.ai/Codex_Codesys.md`'ye PLC tarafına yönelik yeni bir bulgu raporu
+eklendi (yanıt bekleniyor - bu bir PLC->HMI görev teslimine yanıt değil,
+HMI'nin kendi başlattığı bir bug bulgusu).
+
 ## 2026-09-21 - C5 gerçek config eksiği tamamlandı (PLC-HMI-20260921-12)
 
 Kullanıcı: "HMI'ya 11 numaralı görevi iletildi kontrol et eksikler yazıyor

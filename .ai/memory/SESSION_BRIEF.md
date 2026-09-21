@@ -5,51 +5,62 @@
 
 ## Aktif Durum
 
-**PLC-HMI-20260921-12: C5 ("Başlangıç Konumuna Dön") gerçek config eksiği
-tamamlandı.** Kullanıcı PLC'de elle `xMoveToStartRequest=TRUE` yazıp iki
-eksenin hedefe gittiğini doğruladı - PLC kod incelemesinde buton mantığının
-zaten doğru olduğu, yalnızca 6 NodeId'nin gerçek `config/opcua.json`'a hiç
-eklenmediği bulundu (önceki turda C5 online doğrulanmadığı için kasıtlı
-bırakılmıştı). Artık gerçek config'e eklendi (example ile birebir).
-Eksik-tag durumunda "Başlangıç Konumu" kartı artık "—" değil "TAG EKSİK"
-gösteriyor. **Kullanıcıya iletildi:** PLC'de elle TRUE bırakılan request
-varsa önce FALSE'a çekilmeli (HMI pulse'u zaten-TRUE bitten yeni kenar
-oluşturmayabilir). Butonun PLC'ye karşı uçtan uca çalıştığını (Allowed/
-Busy/Done readback dahil) doğrulamak kullanıcının sıradaki adımı.
+**ACİL, devam ediyor - Kullanıcı canlı PLC'de sıkıştı: MANUAL_RETURN_STOP
+(140)'ta donuk kaldı.** "Başlangıç Konumuna Dön" sürerken Reset+Stop'a
+basınca oluştu. Kullanıcının paylaştığı gerçek PLC export'unu inceledim,
+PLC tarafı da bağımsız inceleyip yanıt verdi - şu ana kadar 2 HMI-tarafı
+gösterim hatası bulundu ve düzeltildi:
+1. `CycleState` enum'unda 130/140 hiç yoktu -> "Bilinmeyen Durum (140)"
+   gösteriyordu. Eklendi + Türkçe etiketler.
+2. **PLC'nin bulduğu gerçek hata:** Busy=TRUE iken Aborted=TRUE de
+   olabiliyor (ara/duruş evresi) - HMI bunu "REDDEDİLDİ" diye BİTMİŞ bir
+   sonuç gibi gösteriyordu. Düzeltildi: Busy TRUE olduğu sürece artık
+   Done/Aborted/Error hiç okunmuyor.
 
-**Aynı gün, önceki tamamlanan işler (detay CHANGELOG_MEMORY.md'de,
-kronolojik sırayla):** PLC-HMI-20260921-09 (manuel Aşağı talepleri) ->
-C0.4 takibi (gerçek config + eksik-tag koruması) -> PLC-HMI-20260921-10/11
-(C5 "Başlangıç Konumuna Dön" 3s tek buton) -> kullanıcı UI geri bildirimi
-(buton yerleşimi, X/Y hizalama, jog hızı girişi) -> bugünkü C5 config fix.
+**Hâlâ AÇIK:** 140'tan çıkışın asıl nedeni (aday: `xStopActive` anlık/
+latch'siz sinyali, fiziksel Stop latch'liyse asla temizlenmez; Reset bu
+state'e hiç etki etmiyor) - PLC tarafının canlı veriyle doğrulaması
+bekleniyor. Kullanıcının makinesi muhtemelen HÂLÂ sıkışık durumda.
 
-**Ayrı bulgu (beklemede, kullanıcı talimatı):** VisionCut'tan 3 yeni mesaj
-(07/08/09) geldi - ayrı süreç mimarisi, paketlenmiş exe + 4 kusur yaması,
-pencere başlığı/build sahipliği. Kullanıcı: "önce biz işimizi bitirelim" -
-dokunulmadı.
+Detay: CHANGELOG_MEMORY.md en üst iki giriş.
+
+**Aynı gün, önceki tamamlanan işler (kronolojik, detay CHANGELOG_MEMORY.md):**
+PLC-HMI-20260921-09 (Aşağı talepleri) -> C0.4 takibi -> PLC-HMI-20260921-
+10/11 (C5 "Başlangıç Konumuna Dön") -> UI geri bildirimi -> C5 config fix
+(12) -> bugünkü MANUAL_RETURN_STOP bulgusu.
+
+**Ayrı bulgu (beklemede):** VisionCut'tan 3 yeni mesaj (07/08/09) - ayrı
+süreç mimarisi, paketlenmiş exe, build sahipliği. Kullanıcı: "sonra
+ilgilenelim" - dokunulmadı.
 
 ## Siradaki Gorevler
 
-- [ ] Kullanıcı: "Başlangıç Konumuna Dön" butonunu HMI üzerinden gerçek
-      PLC'ye karşı uçtan uca denemeli (config artık tam; önce PLC'deki elle
-      bırakılmış TRUE'yu FALSE'a çekmeli).
-- [ ] VisionCut 07/08/09 mesajları: kullanıcı "sonra ilgilenelim" dedi.
-- [ ] H4/H7: PLC C2 (alarm) kararı gelince başlanacak (H7 iptal edildi).
+- [ ] Kullanıcı: canlı PLC'de watch'ta `xStopActive`/`xDI_StopPB`/`xX_
+      StopDone`/`xY_StopDone`/`xAxesStopped`/`xJogRequestsReleased`'ı
+      izleyip hangisinin takılı olduğunu bulmalı (fiziksel Stop butonu
+      latch'li mi kontrol etsin).
+- [ ] PLC tarafı: `MANUAL_RETURN_STOP`'un Reset ile de çıkılabilir bir yolu
+      olmalı mı kararı bekleniyor.
+- [ ] "Başlangıç Konumuna Dön" gerçek PLC'ye karşı uçtan uca test edilmeli
+      (bu sıkışma çözülünce).
+- [ ] VisionCut 07/08/09 mesajları bekliyor.
+- [ ] H4/H7: PLC C2 (alarm) kararı gelince başlanacak.
 - [ ] SettingsStore `data/bufera.db` test-izolasyonu kararı bekliyor.
 - [ ] Gerçek kamera devrede: `vision_simulator_enabled` kapalı tutulmalı.
 
 ## Son Build/Test
 
-- `pytest`: 235/235 (2026-09-21).
+- `pytest`: 236/236 (2026-09-21).
 
 ## Son Degisiklikler
 
-- 2026-09-21 - PLC-HMI-20260921-12: C5 gerçek config eksiği + "TAG EKSİK"
-  gösterimi (detay: CHANGELOG_MEMORY.md aynı tarihli en üst girişi).
-- 2026-09-21 - Manuel sayfa UI geri bildirimi: buton yerleşimi/hizalama +
-  jog hızı girişi.
-- 2026-09-21 - PLC-HMI-20260921-10/11: "Başlangıç Konumuna Dön" tek buton.
-- 2026-09-21 - C0.4 takibi + PLC-HMI-20260921-09: manuel Aşağı talepleri.
+- 2026-09-21 - Busy/Aborted önceliği düzeltildi (PLC-HMI-20260921-13,
+  PLC'nin bulduğu gerçek hata) - "REDDEDİLDİ" artık Busy'de gösterilmiyor.
+- 2026-09-21 - MANUAL_RETURN_STOP (140) sıkışma bulgusu: CycleState
+  enum eksiği düzeltildi + PLC'ye xStopActive/Reset bulgu raporu.
+- 2026-09-21 - PLC-HMI-20260921-12: C5 gerçek config eksiği + "TAG EKSİK".
+- 2026-09-21 - Manuel sayfa UI geri bildirimi + PLC-HMI-20260921-10/11
+  ("Başlangıç Konumuna Dön") + C0.4 takibi + PLC-HMI-20260921-09.
 
 ## Kisa Notlar
 
@@ -59,6 +70,10 @@ dokunulmadı.
 - Vision simülatörü PLC state/sensör/motion/valf taglarına ASLA yazmaz.
 - Yeni, online doğrulanmamış PLC NodeId'sini gerçek `config/opcua.json`'a
   eklemeden önce PLC tarafının online doğrulamasını bekle (C0.4/C5 dersi).
+- Gerçek PLC export dosyaları proje dışında tutuluyor (`C:\Users\agedik\
+  Documents\ChatGPT\Bufera Tekstil PLC\...\plc_export\`) - kod/tag sorusu
+  şüpheliyse kullanıcı yolu verirse doğrudan incelenebilir (büyük XML,
+  `Select-String`/chunk ile).
 - VisionCut'ın gerçek mesaj kanalı `muratturan19/Brode_Vision_PLC` (dış
   repo) - bizim `visioncut_message/` klasörümüz onun el ile senkronlanan
   bir aynası, otomatik güncellenmiyor.
