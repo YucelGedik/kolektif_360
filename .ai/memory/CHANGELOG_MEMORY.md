@@ -3,6 +3,86 @@
 Yeni girisleri en uste ekle. Eski ve uzun detaylari `CHANGELOG_ARCHIVE.md`
 dosyasina tasi.
 
+## 2026-09-21 - Hata/Uyarı/Mesaj kataloğu, Reset bug fix, çoklu Start engelleri (PLC-HMI-20260921-14/15/16)
+
+Kullanıcı: "Sana yeni görevler iletildi sanırım 11 16 arası kontrol et
+bakalım alarmlarla ilgili görevler gönderildi." -> "tamam bunları uygula."
+Kaynak: `.ai/Codex_Codesys.md` (mesaj 14/15/16) + `.ai/HMI_C5_ALARM_
+MESSAGES_20260921.md` + `.ai/HMI_C6_NOTIFICATION_CLASSES_20260921.md` +
+`.ai/C6_ALARM_WARNING_MESSAGE_CATALOG_20260921.md`. Bu oturumun en büyük
+tek paketi - üç mesajı birlikte kapsıyor.
+
+**1) Gerçek bug düzeltildi:** `MachineService.request_reset()` gerçek
+modda artık `_alarms.clear_active()` çağırmıyor - Reset PLC tarafından
+kabul edilmeden aktif HATA ekrandan kaybolmuyor. Temizlik yalnız PLC'nin
+kendi okuması (ilgili GVL biti gerçekten FALSE) ile olur.
+
+**2) Yeni HATA edge-detection motoru:** `MachineService._update_alarm_
+conditions` - `ALARM_CATALOG` (H01-H18, veri odaklı `_AlarmCondition`
+listesi) her `_on_raw_snapshot`/demo tick'te taranır; bir koşul ilk kez
+TRUE görüldüğünde (rising edge) `AlarmRepository`'ye BİR KEZ yazılır
+(`_active_alarm_events: dict[katalog_id -> event.id]` ile takip edilir),
+koşul FALSE'a dönünce (falling edge) yalnız O kayıt (`AlarmRepository.
+clear_event`, yeni - `clear_active()`'ın aksine tek kaydı etkiler) kapatılır.
+H19 (FAULT + bilinen neden yok) jenerik yedek - bilinen bir HATA zaten
+varsa AYRICA sayılmaz. H12-H15 (5 yeni aday tag - `xOperatorStopActive`,
+`xX_StopError`, `xY_StopError`, `xX_AxisError`, `xY_AxisError`) kod olarak
+hazır ama yalnız `config/opcua.example.json`'da - PLC henüz build/export
+etmedi, gerçek config'e eklenmedi (C0.4/C5 disiplini). Diğer 8 tag (4
+pnömatik alarm + 4 motion hatası) gerçek PLC export'unda (`Bufera_Perde_
+Kesme_20260921_0830_C05`) zaten var olduğu doğrulanarak hem gerçek hem
+example config'e eklendi.
+
+**3) Ana ekran ALARM sayacı gerçek hale geldi:** Yeni `MachineService.
+active_alarm_count()` - hayali `snap.alarm_count`'a (GVL'de karşılığı yok)
+değil, gerçek aktif HATA (severity=ALARM) kayıtlarına dayanıyor; Uyarı/
+Mesaj sayılmıyor.
+
+**4) `compute_start_inhibit_reasons` tamamen yeniden yazıldı - artık
+İLK engelde return etmiyor:** Eskiden manuel mod/çevrim aktif TEK BİR
+nedenle erken dönüyordu (diğer geçerli nedenler gizleniyordu). Şimdi tüm
+U01-U09 birlikte listeleniyor (X/Y konum, manuel mod, hazırlık - somut
+eksik listesiyle, bıçak aşağı, servo, Vision heartbeat/ready). Stale artık
+sessizce boş liste değil, kendi UYARI'sını gösteriyor (U10 - "izin/konum
+bilgisi doğrulanamıyor"). Aktif çevrimde hiç UYARI üretilmiyor (görev
+notu: normal durum, alarm yağmuru değil). Emniyet ve gerçek servo/motion
+arızaları burada TEKRAR gösterilmiyor - zaten HATA panosunda var.
+
+**5) Manuel sayfa - C5 arıza mesajları (mesaj 14):** Genel "HATA - PLC
+REDDETTİ" kaldırıldı. Yeni "stopping" durumu (Busy+Aborted birlikte ->
+"DÖNÜŞ DURDURULUYOR") salt Busy'den ("HAREKET EDİYOR") ayrıldı - biri
+MANUAL_RETURN (130, hedefe hareket), diğeri MANUAL_RETURN_STOP (140,
+durduruluyor). Terminal sonuçta Error önceliklidir ("BAŞLANGICA DÖNÜŞ
+ARIZASI"); yalnız Aborted -> "TALEP REDDEDİLDİ VEYA DÖNÜŞ İPTAL EDİLDİ"
+(kaynakta tek bit, ayrıştırılamıyor - ikisi birlikte söylenir). H05'in
+alarm mesajı tam mesaj 14'teki yönlendirme metnini içeriyor (Reset->
+Manuel->iki Yukarı->3sDön).
+
+**Yan bulgu, bizim tarafımızda (kaynakta değil):** Alarm kaydını
+`code=None` ile yazmaya başlayınca, yerel `data/bufera.db`'nin eski
+şemasında `code`'un hâlâ fiziksel olarak NOT NULL olduğu ortaya çıktı
+(model her zaman nullable tanımlıydı ama SQLite `ALTER TABLE` ile bunu
+gevşetemiyor - `create_all()`'ın da yapamadığı bir sınıf sorun). Yeni
+`persistence/db.py::_migrate_alarm_events_code_nullable` tabloyu veri
+kaybı olmadan yeniden kuruyor (rename+create+copy+drop), regresyon
+testiyle kilitlendi.
+
+Kod: `core/models.py` (13 yeni alan), `config/opcua.json`/`.example.json`
+(8 confirmed + 5 aday tag), `services/machine_service.py` (`ALARM_CATALOG`,
+`_update_alarm_conditions`, `active_alarm_count`, Reset fix, move-to-start
+"stopping"/Error-önceliği), `persistence/alarms.py` (`clear_event`),
+`persistence/db.py` (code-nullable migration), `ui/machine/machine_page.py`
+(`compute_start_inhibit_reasons` yeniden yazıldı, `_manual_preparation_
+reason`, ALARM sayacı), `ui/machine/manual_page.py` (yeni durum metinleri).
+
+Test: `tests/test_alarm_catalog.py` (11, yeni), `tests/test_start_inhibit_
+reasons.py` (19, yeniden yazıldı), `tests/test_alarm_severity.py` (+1,
+migration), `tests/test_move_to_start.py` (+1, Error önceliği, 1 test
+"stopping" için güncellendi). Tam suite 256/256. Gerçek PLC'ye kendi
+kendine yazılmadı - kullanıcı sonucu bildirecek.
+
+`.ai/Codex_Codesys.md`'ye HMI -> PLC yanıtı (14/15/16 birleşik) eklendi.
+
 ## 2026-09-21 - Gerçek gösterim hatası: Busy sırasında "REDDEDİLDİ" yanlış terminal sonuç gösteriyordu (PLC-HMI-20260921-13)
 
 PLC tarafı, az önceki 140-sıkışma bulgusuna bağımsız incelemeyle yanıt

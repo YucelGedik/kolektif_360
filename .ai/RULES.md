@@ -363,3 +363,29 @@ henüz online doğrulanmadığı için kasıtlı bırakılmıştı).
       içerdiği + dolu/eksik config senaryoları widget smoke testiyle
       doğrulandı. Gerçek PLC'ye bağlı bir bağlantımız yok - butonun uçtan
       uca çalıştığını onaylamak kullanıcının sıradaki adımı.
+
+### 2026-09-21 — PLC-HMI-20260921-14/15/16: Hata/Uyarı/Mesaj kataloğu + Reset bug fix (tamamlandı)
+Kaynak: `.ai/HMI_C5_ALARM_MESSAGES_20260921.md` + `.ai/HMI_C6_NOTIFICATION_
+CLASSES_20260921.md` + `.ai/C6_ALARM_WARNING_MESSAGE_CATALOG_20260921.md`.
+- [x] **Bug fix:** `request_reset()` gerçek modda artık `_alarms.clear_
+      active()` çağırmıyor - Reset kabul edilmeden aktif HATA kaybolmuyor.
+- [x] `MachineService.ALARM_CATALOG`/`_update_alarm_conditions` - H01-H18
+      (confirmed tag'lerle) + H19 (FAULT fallback, çift saymadan) rising/
+      falling edge ile `AlarmRepository`'ye yazılıyor/kapatılıyor.
+      H12-H15 (5 aday tag) kod hazır, yalnız example config'te - PLC
+      build/export bekleniyor.
+- [x] `active_alarm_count()` - ana ekran ALARM sayacı artık hayali `snap.
+      alarm_count` değil, gerçek aktif HATA listesinden.
+- [x] `compute_start_inhibit_reasons` yeniden yazıldı - artık ilk engelde
+      return etmiyor, U01-U11 tüm geçerli UYARI'ları birlikte listeliyor;
+      stale kendi UYARI'sını gösteriyor (eskiden sessizce boştu); aktif
+      çevrimde hiç UYARI yok (normal durum).
+- [x] Manuel sayfa: move-to-start için "stopping" (Busy+Aborted) durumu
+      eklendi, terminal sonuçta Error önceliği; H05 alarm mesajı mesaj
+      14'teki tam yönlendirme metnini içeriyor.
+- [x] Yan bulgu: yerel `data/bufera.db`'de `code` sütunu hâlâ fiziksel
+      NOT NULL'dı (model nullable tanımlasa da) - tablo yeniden kurularak
+      (veri kaybı yok) düzeltildi.
+- [x] Testler: `test_alarm_catalog.py` (11, yeni), `test_start_inhibit_
+      reasons.py` (19, yeniden yazıldı), `test_alarm_severity.py` (+1),
+      `test_move_to_start.py` (+1). Tam suite 256/256.

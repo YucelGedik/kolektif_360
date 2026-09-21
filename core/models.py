@@ -108,3 +108,26 @@ class MachineSnapshot:
     alarm_active: bool = False
     alarm_code: int = 0
     alarm_count: int = 0
+
+    # PLC-HMI-20260921-16 (C6.1 Hata/Uyarı/Mesaj kataloğu): PLC-üretimli,
+    # latched HATA bitleri - yalnız xAlarmResetAccepted (gerçek Reset kabulü)
+    # ile FALSE olurlar, HMI'nin kendi Reset tıklaması ile değil.
+    alarm_clamp_lost_during_cut: bool = False
+    alarm_blade_lost_during_cut: bool = False
+    alarm_clamp_down_timeout: bool = False
+    alarm_blade_down_timeout: bool = False
+
+    # Zaten var olan GVL motion hata bitleri - önceden HMI'ya hiç okunmuyordu.
+    x_cut_error: bool = False
+    x_return_error: bool = False
+    y_move_error: bool = False
+    y_follow_error: bool = False
+
+    # C6.1: PLC'nin aday (henüz build/export edilmemiş) 5 yeni RO tag'i -
+    # config'te eşleme olmadığı sürece hep False kalır (güvenli varsayılan,
+    # C0.4/C5 dersi). PLC online doğrulayınca gerçek config'e eklenecek.
+    operator_stop_active: bool = False
+    x_stop_error: bool = False
+    y_stop_error: bool = False
+    x_axis_error: bool = False
+    y_axis_error: bool = False

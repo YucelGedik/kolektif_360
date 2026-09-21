@@ -67,47 +67,87 @@ CONNECTION_CHIP_STATE = {
 }
 
 
+def _manual_preparation_reason(snap: MachineSnapshot) -> str:
+    """U04 (PLC-HMI-20260921-16, C6.1): "eksik retract/sensör/konum
+    koşullarını belirt" - PLC'nin `xManualPreparationRequired`'ı FALSE'a
+    çekme formülünden (Alarm_Control/Logic_Control) türetilmiş, somut/
+    kanıtlı bir eksik listesi; jenerik bir "hazırlık gerekiyor" değil."""
+    missing: list[str] = []
+    if not snap.blade_retract_accepted:
+        missing.append("bıçak Yukarı kabulü bekleniyor")
+    if not snap.clamp_retract_accepted:
+        missing.append("baskı Yukarı kabulü bekleniyor")
+    if snap.blade_down:
+        missing.append("bıçak hâlâ aşağıda")
+    if snap.clamp_down:
+        missing.append("baskı hâlâ aşağıda")
+    if not snap.x_at_start:
+        missing.append("X başlangıç konumunda değil")
+    if not snap.y_at_center:
+        missing.append("Y merkez konumunda değil")
+    if not (snap.x_servo_ready and snap.y_servo_ready):
+        missing.append("servo hazır değil")
+    if not missing:
+        return "Manuel hazırlığı tamamlayın."
+    return "Manuel hazırlığı tamamlayın: " + ", ".join(missing) + "."
+
+
 def compute_start_inhibit_reasons(
     snap: MachineSnapshot, x_start_pos: float, y_center_pos: float
 ) -> list[str]:
-    """H3 (2026-09-18, kullanıcı test notu): "eksik olan koşul açık şekilde
-    bildirilmelidir" - StartPermitted=FALSE iken PLC'nin zaten yayınladığı
-    alt bileşenlerden (MachineReady'yi oluşturan servo/vision/emergency,
-    ayrıca xX_AtStart/xY_AtCenter) bir açıklama üretir. PLC'nin kendi
-    `xStartPermitted` formülünü (MachineReady AND NOT xManualMode AND NOT
-    xCycleActive AND xX_AtStart AND xY_AtCenter) YENİDEN HESAPLAMAZ/ikame
-    etmez - Start butonu hâlâ tek başına `snap.start_permitted`'e bakar; bu
-    liste salt bilgilendirmedir, arıza/alarm mesajından ayrıdır.
+    """H3 (2026-09-18) + C6/U-katalog (PLC-HMI-20260921-15/16, 2026-09-21):
+    "eksik olan koşul açık şekilde bildirilmelidir" VE "ilk engelde return
+    edip diğerlerini gizleme" - StartPermitted=FALSE iken PLC'nin zaten
+    yayınladığı alt bileşenlerden TÜM geçerli UYARI'ları birlikte üretir
+    (yalnız ilkini değil). PLC'nin kendi `xStartPermitted` formülünü
+    YENİDEN HESAPLAMAZ/ikame etmez - Start butonu hâlâ tek başına
+    `snap.start_permitted`'e bakar; bu liste salt bilgilendirmedir.
+
+    Emniyet (H16) ve gerçek servo/motion arızaları (H06/H07 vb.) burada
+    TEKRAR gösterilmez - onlar zaten `_update_alarm_conditions`'ın HATA
+    kaydı/panosuyla bildiriliyor, aynı nedeni iki yerde ikiletmemek için.
 
     Bilinen sınırlama: fiziksel/HMI Stop butonunun "şu an basılı" durumu
     için ayrı, gerçek bir PLC tagı yayınlanmıyor - bu nedenle "Stop basılı"
     nedeni burada YOKTUR (bulunmayan tag için tahmin yapılmaz, görev notu).
     """
-    if snap.start_permitted or snap.stale:
+    if snap.start_permitted:
         return []
-    if snap.manual_mode:
-        return ["Manuel modda — Start otomatik modda kullanılır."]
+    if snap.stale:
+        # U10: veri güncel değilken izin/konum nedeni UYDURULMAZ, veri
+        # eksikliği ayrı bir UYARI olarak açıkça belirtilir.
+        return ["PLC verisi güncel değil; izin/konum bilgisi doğrulanamıyor."]
     if snap.cycle_active:
-        return ["Çevrim zaten aktif."]
+        # Görev notu: "aktif çevrimde Start uygun değil" normal bir durumdur,
+        # alarm yağmuruna çevrilmez - hiç gösterilmez.
+        return []
 
     reasons: list[str] = []
-    if snap.emergency_active:
-        reasons.append("Acil durdurma aktif.")
-    if not snap.x_servo_ready:
-        reasons.append("X servo hazır değil.")
-    if not snap.y_servo_ready:
-        reasons.append("Y servo hazır değil.")
-    if not (snap.vision_ready and snap.vision_heartbeat_ok and not snap.vision_fault):
-        reasons.append("Vision hazır değil.")
-    if not snap.x_at_start:
+    if not snap.x_at_start:  # U01
         reasons.append(f"X başlangıç konumunda değil (ayarlı: {x_start_pos:g} mm).")
-    if not snap.y_at_center:
+    if not snap.y_at_center:  # U02
         reasons.append(f"Y merkez konumunda değil (ayarlı: {y_center_pos:g} mm).")
+    if snap.manual_mode:  # U03
+        reasons.append("Start için Otomatik modu seçin.")
+    if snap.manual_preparation_required:  # U04
+        reasons.append(_manual_preparation_reason(snap))
+    if snap.blade_down:  # U05 (yalnız bıçak - baskı için EKLENMEDİ, görev notu)
+        reasons.append("Start için bıçağı kaldırın.")
+    if snap.operator_stop_active:  # U06 - PLC henüz build/export etmedi, hep False
+        reasons.append("Stop talebi aktif; Start engelli.")
+    if not snap.x_servo_ready and not snap.x_fault:  # U07 (gerçek arıza H06'da ayrı gösterilir)
+        reasons.append("X servo hazır değil.")
+    if not snap.y_servo_ready and not snap.y_fault:  # U07
+        reasons.append("Y servo hazır değil.")
+    if not snap.vision_heartbeat_ok:  # U08
+        reasons.append("Vision heartbeat alınmıyor/güncellenmiyor. PLC bağlantısı taze olmalı.")
+    if not snap.vision_ready and not snap.vision_fault:  # U09 (gerçek arıza H17'de ayrı)
+        reasons.append("Vision hazır değil.")
     if not reasons:
-        # PLC'nin gördüğümüz tüm alt bileşenleri TRUE görünüyor ama
-        # MachineReady/StartPermitted hâlâ FALSE - HMI'nin görmediği bir
-        # PLC-içi koşul var; bunu KESİN bir neden gibi sunmuyoruz.
-        reasons.append("Makine hazır değil (bilinen koşulların dışında bir PLC koşulu olabilir).")
+        # U11: PLC'nin gördüğümüz tüm alt bileşenleri TRUE görünüyor ama
+        # StartPermitted hâlâ FALSE - HMI'nin görmediği bir PLC-içi koşul
+        # var; bunu KESİN bir neden gibi sunmuyoruz, PLC'nin iznini aşmıyoruz.
+        reasons.append("PLC Start izni yok; ek koşul bilgisi gerekli.")
     return reasons
 
 
@@ -324,7 +364,10 @@ class MachinePage(QWidget):
             "Y SERVO: HATA" if snap.y_fault else ("Y SERVO: HAZIR" if snap.y_servo_ready else "Y SERVO: --"),
         )
         self._mode_chip.set_state("ok" if snap.auto_mode else "warn", "MOD: AUTO" if snap.auto_mode else "MOD: MANUEL")
-        self._alarm_chip.set_state("fault" if snap.alarm_count > 0 else "ok", f"ALARM: {snap.alarm_count}")
+        # PLC-HMI-20260921-16 (C6.1 bulgusu): sayaç hayali `snap.alarm_count`
+        # (GVL'de karşılığı yok) yerine gerçek aktif HATA kayıtlarından.
+        alarm_count = self._service.active_alarm_count()
+        self._alarm_chip.set_state("fault" if alarm_count > 0 else "ok", f"ALARM: {alarm_count}")
 
         self._clamp_card.set_status(
             "AŞAĞI" if snap.clamp_down else "YUKARI", "warn" if snap.clamp_down else "ok"

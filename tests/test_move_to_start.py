@@ -184,14 +184,16 @@ def test_busy_takes_priority_over_aborted_not_yet_a_terminal_result(tmp_path):
     """PLC-HMI-20260921-13: gerçek PLC'de MANUAL_RETURN_STOP'ta iken Busy VE
     Aborted aynı anda TRUE olabiliyor - bu bir ara/duruş evresi, "REDDEDİLDİ"
     diye terminal bir sonuç gibi gösterilmemeli. Busy TRUE olduğu sürece
-    Aborted/Error/Done okunmaz, takip de kapanmaz."""
+    Aborted/Error/Done okunmaz, takip de kapanmaz. PLC-HMI-20260921-14:
+    Busy+Aborted birlikte "stopping" (dönüş durduruluyor) - salt Busy'den
+    ("busy", hedefe hareket) ayrı bir token, ama ikisi de terminal DEĞİL."""
     svc = _real_service(tmp_path)
     svc.request_move_to_start()
     svc._on_raw_snapshot({"move_to_start_busy": True})
     assert svc.move_to_start_status() == "busy"
 
     svc._on_raw_snapshot({"move_to_start_busy": True, "move_to_start_aborted": True})
-    assert svc.move_to_start_status() == "busy"  # NOT "aborted" - still busy
+    assert svc.move_to_start_status() == "stopping"  # NOT "aborted" - still busy
 
     # Only once Busy genuinely clears does the terminal result surface.
     svc._on_raw_snapshot({"move_to_start_busy": False, "move_to_start_aborted": True})
@@ -203,6 +205,17 @@ def test_error_result_tracked(tmp_path):
     svc.request_move_to_start()
     svc._on_raw_snapshot({"move_to_start_done": False, "move_to_start_aborted": False, "move_to_start_error": False})
     svc._on_raw_snapshot({"move_to_start_error": True})
+    assert svc.move_to_start_status() == "error"
+
+
+def test_error_takes_priority_over_aborted_once_terminal(tmp_path):
+    """PLC-HMI-20260921-14: kaynakta talep reddi ile iptal aynı bitten
+    (Aborted) geldiği için ayrıştırılamaz, ama Error ayrı bir bit - ikisi
+    birlikte TRUE geldiğinde Error öncelikli gösterilir."""
+    svc = _real_service(tmp_path)
+    svc.request_move_to_start()
+    svc._on_raw_snapshot({"move_to_start_done": False, "move_to_start_aborted": False, "move_to_start_error": False})
+    svc._on_raw_snapshot({"move_to_start_aborted": True, "move_to_start_error": True})
     assert svc.move_to_start_status() == "error"
 
 

@@ -134,3 +134,42 @@ def test_migration_adds_severity_column_to_a_pre_existing_table(tmp_path):
         assert events[0].severity == SEVERITY_ALARM  # migration default
     finally:
         db_module.init_engine()
+
+
+def test_migration_makes_code_nullable_on_a_pre_existing_table(tmp_path):
+    """PLC-HMI-20260921-16: C6.1 katalog kayıtları `code=None` yazar (katalog
+    ID'si bir PLC alarm numarası değil). Modelde `code` hep nullable
+    tanımlıydı ama SQLite bunu ALTER TABLE ile gevşetemez - eski bir
+    `data/bufera.db`'de fiziksel olarak hâlâ NOT NULL olabilir (bu, gerçek
+    yerel DB'de yaşanan bir bug'dı). Tablo verisi kaybolmadan yeniden
+    kurulmalı ve sonraki `code=None` yazımı başarılı olmalı."""
+    import sqlite3
+
+    db_path = tmp_path / "legacy_not_null_code.db"
+    con = sqlite3.connect(db_path)
+    con.execute(
+        "CREATE TABLE alarm_events ("
+        "id INTEGER PRIMARY KEY, occurred_at DATETIME, cleared_at DATETIME, "
+        "code INTEGER NOT NULL, source VARCHAR(32), message VARCHAR(200), "
+        "severity VARCHAR(16))"
+    )
+    con.execute(
+        "INSERT INTO alarm_events (occurred_at, code, source, message, severity) "
+        "VALUES ('2026-01-01 00:00:00', 1001, 'X AXIS', 'eski satır', 'ALARM')"
+    )
+    con.commit()
+    con.close()
+
+    db_module.init_engine(db_path)
+    try:
+        repo = AlarmRepository()
+        events = repo.recent()
+        assert len(events) == 1
+        assert events[0].message == "eski satır"  # veri korunmuş
+
+        # code=None ile yeni bir kayıt artık IntegrityError vermemeli.
+        new_event = repo.log_event(SEVERITY_WARNING, "Y AXIS", "yeni kod'suz kayıt")
+        assert new_event.code is None
+        assert len(repo.recent()) == 2
+    finally:
+        db_module.init_engine()

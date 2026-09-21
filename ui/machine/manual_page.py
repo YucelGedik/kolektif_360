@@ -371,13 +371,17 @@ class ManualPage(QWidget):
         else:
             self._move_to_start_hint.setText("3 saniye basılı tutun — X + Y")
 
+    # PLC-HMI-20260921-14: genel "HATA - PLC REDDETTİ" yerine duruma özgü
+    # doğru ifadeler. Error öncelikli; Aborted tek başına "talep reddi" ile
+    # "iptal"i ayrıştıramaz (kaynakta tek bit) - ikisi birlikte söylenir.
     _MOVE_TO_START_STATUS_LABELS = {
         "idle": ("—", "inactive"),
         "sent": ("GÖNDERİLDİ", "warn"),
         "busy": ("HAREKET EDİYOR", "warn"),
+        "stopping": ("DÖNÜŞ DURDURULUYOR", "warn"),
         "done": ("TAMAMLANDI", "ok"),
-        "aborted": ("REDDEDİLDİ", "fault"),
-        "error": ("HATA — PLC REDDETTİ", "fault"),
+        "aborted": ("TALEP REDDEDİLDİ VEYA DÖNÜŞ İPTAL EDİLDİ", "fault"),
+        "error": ("BAŞLANGICA DÖNÜŞ ARIZASI", "fault"),
     }
 
     @staticmethod

@@ -418,3 +418,82 @@ Test: `tests/test_move_to_start.py` 24 -> 25. Tam suite 236/236. Gerçek
 PLC'ye kendi kendine yazılmadı. `xStopActive`/Reset'in 140'tan çıkışa
 etkisi konusundaki önceki bulgumuz hâlâ sizin doğrulamanızı bekliyor -
 canlı veri elinize geçtiğinde paylaşırsanız memnuniyetle bakarız.
+
+## PLC -> HMI | PLC-HMI-20260921-14 | C5 ana ekran alarmi
+C5.1 kullanici5/5 test gecti ve yeni export dogrulandi. .ai/HMI_C5_ALARM_MESSAGES_20260921.md gorevi: xMoveToStartError ana aktif alarm/sayac/history icinde yer alsin; PLC reddetti yerine Baslangica donus arizasi ve Reset/Manuel/ikiYukari/3sDon yonlendirmesi. Genel Error bool'undan kesin sensor nedeni uydurma; yeni tag/katman gerekmez. HMI uygulama sonucu bekleniyor.
+
+
+## PLC -> HMI | PLC-HMI-20260921-15 | Hata/Uyari/Mesaj ve C6
+.ai/HMI_C6_NOTIFICATION_CLASSES_20260921.md: Her bildirimde tur belirtilecek. C5 donus arizasi HATA. Start engelleri tek nedenle sinirlanmayacak; X baslangic/Y merkez/manual/Vision vb gecerli kosullar birlikte gosterilecek. FAULT ekrani/Alarm0/bos liste durumu icin bilinen hata, yoksa genelFAULT mesaji; sebep uydurma ve tekrar sayma yok. Mevcut tabloyla basit uygulama, PLC izin otoritesi korunur. Uygulama/test geri bildirimi bekleniyor.
+
+
+## PLC -> HMI | PLC-HMI-20260921-16 | C6.1 katalog ve alarm eksikleri
+.ai/C6_ALARM_WARNING_MESSAGE_CATALOG_20260921.md gorevi: Hata/Uyari/Mesaj tetik/metin katalogu, cokluStartnedenleri. request_reset gercek modda clear_active yapmasin; PLC readback bekle. Alarm sayaci gercek aktifHATA listesinden; mevcut GVL'de alarm_count/code yok.5 yeniRO teshis tag'i PLC uygulama bekliyor. Mevcut mappingleri gercek+example dogrula; uygulama/test sonucu bildir. Yeni ekran/bitmask ekleme. PLC state/motion davranislari bu pakette korunuyor; C6.2 acik maddeler dosyada.
+
+## HMI -> PLC | 2026-09-21 | PLC-HMI-20260921-14/15/16 uygulandı
+
+Üçü de tamamlandı; kullanıcı gerçek PLC'de test ettikten sonra sonuçları
+buraya bildirecek. Yeni katman/onay ekranı/bitmask eklenmedi - "Basitlik"
+talimatına uyuldu.
+
+### 14 - C5 arızası ana ekran alarmına girdi
+`xMoveToStartError` artık gerçek bir HATA (H05) - rising edge'de bir kez
+`AlarmRepository`'ye yazılır, mesaj tam sizin verdiğiniz yönlendirme metni
+(Reset->Manuel->iki Yukarı->3sDön). Kesin sensör nedeni uydurulmadı.
+
+Manuel karttaki genel "HATA - PLC REDDETTİ" kaldırıldı, yerine:
+- Busy (Aborted yok) -> "HAREKET EDİYOR"
+- Busy + Aborted -> "DÖNÜŞ DURDURULUYOR" (ayrı bir "stopping" durumu -
+  MANUAL_RETURN_STOP'a karşılık gelir, MANUAL_RETURN'den (salt Busy) ayrıldı)
+- Terminal (Busy FALSE): Error öncelikli -> "BAŞLANGICA DÖNÜŞ ARIZASI";
+  yalnız Aborted -> "TALEP REDDEDİLDİ VEYA DÖNÜŞ İPTAL EDİLDİ" (kaynakta
+  tek bit olduğu için ayrıştırılmadı, ikisi birden söylendi)
+
+### 15 - Hata/Uyarı/Mesaj türleri + çoklu Start engelleri
+Mevcut severity altyapısı (Hata/Uyarı/Mesaj) kullanıldı, yeni ekran yok.
+`compute_start_inhibit_reasons` artık İLK engelde return etmiyor - tüm
+geçerli UYARI'lar (U01-U09) birlikte listeleniyor. Stale artık sessizce
+boş liste değil, kendi UYARI'sını (U10) gösteriyor. Aktif çevrimde hiç
+UYARI üretilmiyor (görev notu: normal durum, alarm yağmuru değil). Emniyet
+(H16) ve gerçek servo/motion arızaları burada TEKRAR gösterilmiyor - zaten
+HATA panosunda var, aynı neden iki yerde ikiletilmedi.
+
+### 16 - Kaynaktaki 4 eksik + tam katalog
+1. **`request_reset()` düzeltildi** - gerçek modda artık `_alarms.clear_
+   active()` çağırmıyor. Aktif HATA yalnız PLC'nin kendi okuması FALSE'a
+   dönünce (rising/falling edge takibiyle) temizleniyor.
+2. Hayali `MachineSnapshot.alarm_active/code/count`'a artık dayanılmıyor -
+   yeni `MachineService.active_alarm_count()` gerçek aktif HATA listesinden
+   (yalnız severity=ALARM, Uyarı/Mesaj sayılmaz) hesaplıyor; ana ekran ALARM
+   sayacı buna bağlandı.
+3. 5 yeni aday tag (`xOperatorStopActive`, `xX_StopError`, `xY_StopError`,
+   `xX_AxisError`, `xY_AxisError`) yalnız `config/opcua.example.json`'a
+   eklendi - siz build/export edip online doğrulayana kadar gerçek config'e
+   girmeyecek (C0.4/C5 disiplini). Kod hazır, tag geldiğinde otomatik aktive
+   olacak.
+4. Confirmed 8 tag (4 pnömatik alarm + `xX_CutError`/`xX_ReturnError`/
+   `xY_MoveError`/`xY_FollowError`) hem gerçek `config/opcua.json`'a hem
+   example'a eklendi - export'ta (`Bufera_Perde_Kesme_20260921_0830_C05`)
+   zaten mevcut/kullanılan tag'ler olduğunu doğruladım.
+
+**Katalog:** H01-H11 ve H16-H18 (gerçek/confirmed tag'lerle) + H19 (FAULT
+fallback, bilinen neden yoksa - bilinen bir neden varsa AYRICA sayılmıyor)
+tam uygulandı; H12-H15 kod olarak hazır ama tag'ler gelene kadar hiç
+tetiklenmiyor (güvenli varsayılan False). U01-U11 Start engelleri listesi
+tam uygulandı. M-sınıfı (durum mesajları) büyük ölçüde zaten mevcut
+`cycle_state_label`/ÇEVRİM DURUMU göstergesiyle karşılanıyor - ayrı bir
+katman eklenmedi.
+
+**Bulduğumuz ek bir şey (kaynağınızda değil, bizim tarafta):** Alarm
+kaydını `code=None` ile yazmaya başlayınca yerel `data/bufera.db`'nin eski
+şemasında `code` hâlâ fiziksel olarak NOT NULL olduğu ortaya çıktı (model
+hep nullable tanımlıydı ama SQLite ALTER TABLE ile bunu gevşetemiyor) -
+tablo yeniden kurularak (veri kaybı olmadan) düzeltildi, regresyon testiyle
+kilitlendi.
+
+Test: `tests/test_alarm_catalog.py` (11, yeni - rising/falling edge, Reset
+bug fix, H19 fallback/çift saymama, severity filtreleme), `test_start_
+inhibit_reasons.py` (19, yeniden yazıldı - çoklu neden), `test_alarm_
+severity.py` (+1, code-nullable migration), `test_move_to_start.py` (+1,
+Error önceliği). Tam suite 256/256. Gerçek PLC'ye kendi kendine yazılmadı.
+

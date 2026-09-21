@@ -20,13 +20,14 @@ from __future__ import annotations
 import logging
 import re
 import time
+from dataclasses import dataclass
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
 from core.cycle_state import AUTO_CYCLE_ACTIVE_STATES, CycleState
 from core.models import ConnectionState, MachineSnapshot
 from core.parameters import PARAMETER_SPECS
-from persistence.alarms import AlarmEvent, AlarmRepository
+from persistence.alarms import SEVERITY_ALARM, AlarmEvent, AlarmRepository
 from persistence.settings_store import SettingsStore
 from plc.opcua_client import OpcUaWorker
 from plc.tag_map import TagMap, load_config, save_config
@@ -75,6 +76,56 @@ PNEUMATIC_COMMAND_TAGS = frozenset(
 # PLC-HMI-20260921-10/11 (C5, "Başlangıç Konumuna Dön" tek buton, 3s basılı
 # tutuş): aynı "gerçek yazma sonucunu göster" ilkesi bu komut için de geçerli.
 MOTION_COMMAND_TAGS = frozenset({"cmd_move_to_start"})
+
+
+@dataclass(frozen=True)
+class _AlarmCondition:
+    """PLC-HMI-20260921-16 (C6.1 katalog): HATA sınıfı bildirimlerin PLC
+    tarafındaki tek gerçek kaynağı - `MachineSnapshot` üzerindeki bir BOOL
+    alan (gerekirse tersiyle, örn. H16: NOT xEmergencyOK). Kesin sensör/parça
+    nedeni burada UYDURULMAZ - metinler görev notundaki katalogla birebir."""
+
+    catalog_id: str
+    attr: str
+    invert: bool
+    source: str
+    message: str
+
+
+# H12-H15 (xX_StopError/xY_StopError/xX_AxisError/xY_AxisError) PLC'de henüz
+# build/export edilmedi (C6.1 aday tag'leri) - config'te eşleme yok, bu
+# yüzden ilgili `MachineSnapshot` alanları hep False kalır ve bu dört madde
+# online doğrulanana kadar hiç tetiklenmez (C0.4/C5 dersiyle aynı disiplin).
+ALARM_CATALOG: tuple[_AlarmCondition, ...] = (
+    _AlarmCondition("H01", "alarm_clamp_lost_during_cut", False, "PNEUMATIC", "Kesimde baskı aşağı sensörü kayboldu."),
+    _AlarmCondition("H02", "alarm_blade_lost_during_cut", False, "PNEUMATIC", "Kesimde bıçak aşağı sensörü kayboldu."),
+    _AlarmCondition("H03", "alarm_clamp_down_timeout", False, "PNEUMATIC", "Baskı belirtilen sürede aşağı konuma ulaşamadı."),
+    _AlarmCondition("H04", "alarm_blade_down_timeout", False, "PNEUMATIC", "Bıçak belirtilen sürede aşağı konuma ulaşamadı."),
+    _AlarmCondition(
+        "H05",
+        "move_to_start_error",
+        False,
+        "X AXIS",
+        "Başlangıç konumuna dönüş sırasında arıza oluştu. Eksenlerin durmasını "
+        "bekleyin. Bıçak/baskı konumlarını ve eksen arızasını kontrol edin. "
+        "Nedeni giderdikten sonra Reset verin. Manuel modda Bıçak Yukarı ve "
+        "Baskı Yukarı düğmelerine istediğiniz sırada basın. Açıklıklar "
+        "sağlanınca Başlangıç Konumuna Dön düğmesini 3 saniye basılı tutun.",
+    ),
+    _AlarmCondition("H06", "x_fault", False, "X AXIS", "X servo etkinleştirme hatası."),
+    _AlarmCondition("H07", "y_fault", False, "Y AXIS", "Y servo etkinleştirme hatası."),
+    _AlarmCondition("H08", "x_cut_error", False, "X AXIS", "X kesim hareketi hatası."),
+    _AlarmCondition("H09", "x_return_error", False, "X AXIS", "X dönüş hareketi hatası."),
+    _AlarmCondition("H10", "y_move_error", False, "Y AXIS", "Y konumlandırma hatası."),
+    _AlarmCondition("H11", "y_follow_error", False, "Y AXIS", "Y takip hareketi hatası."),
+    _AlarmCondition("H12", "x_stop_error", False, "X AXIS", "X durdurma bloğu hata verdi. Tam duruşu kontrol edin."),
+    _AlarmCondition("H13", "y_stop_error", False, "Y AXIS", "Y durdurma bloğu hata verdi."),
+    _AlarmCondition("H14", "x_axis_error", False, "X AXIS", "X eksen/sürücü arıza durumu."),
+    _AlarmCondition("H15", "y_axis_error", False, "Y AXIS", "Y eksen/sürücü arıza durumu."),
+    _AlarmCondition("H16", "emergency_ok", True, "PLC", "Emniyet geri bildirimi yok. Acil stop/emniyet zincirini kontrol edin."),
+    _AlarmCondition("H17", "vision_fault", False, "VISION", "Vision uygulaması arıza bildiriyor."),
+    _AlarmCondition("H18", "trajectory_fault", False, "VISION", "Yorumlanan hedef/çizgi geçersiz."),
+)
 
 
 class MachineService(QObject):
@@ -150,6 +201,13 @@ class MachineService(QObject):
         self._move_to_start_sent = False
         self._move_to_start_cleared = False
         self._move_to_start_status = "idle"
+
+        # PLC-HMI-20260921-16 (C6.1): katalog kimliği -> o an açık olan
+        # AlarmEvent'in id'si. Bir HATA koşulu ilk kez TRUE görüldüğünde
+        # (rising edge) buraya eklenir ve AlarmRepository'ye bir kez yazılır;
+        # PLC'nin kendi okuması FALSE'a döndüğünde (falling edge - HMI'nin
+        # Reset tıklamasıyla DEĞİL) buradan çıkarılır ve o kayıt kapatılır.
+        self._active_alarm_events: dict[str, int] = {}
 
         from services.demo_simulator import DemoSimulator
 
@@ -247,6 +305,20 @@ class MachineService(QObject):
         snap.manual_preparation_required = b(
             "manual_preparation_required", snap.manual_preparation_required
         )
+        # PLC-HMI-20260921-16 (C6.1): C0.3 pnömatik alarm bitleri - latched,
+        # yalnız gerçek xAlarmResetAccepted ile FALSE olurlar.
+        snap.alarm_clamp_lost_during_cut = b(
+            "alarm_clamp_lost_during_cut", snap.alarm_clamp_lost_during_cut
+        )
+        snap.alarm_blade_lost_during_cut = b(
+            "alarm_blade_lost_during_cut", snap.alarm_blade_lost_during_cut
+        )
+        snap.alarm_clamp_down_timeout = b(
+            "alarm_clamp_down_timeout", snap.alarm_clamp_down_timeout
+        )
+        snap.alarm_blade_down_timeout = b(
+            "alarm_blade_down_timeout", snap.alarm_blade_down_timeout
+        )
         # PLC-HMI-20260921-10/11 (C5): "Başlangıç Konumuna Dön" salt okunur
         # durumu. Allowed PLC'nin nihai izni - HMI bunu yeniden üretmez.
         snap.move_to_start_allowed = b("move_to_start_allowed", snap.move_to_start_allowed)
@@ -273,12 +345,21 @@ class MachineService(QObject):
         snap.x_actual_pos = f("x_actual_pos", snap.x_actual_pos)
         snap.x_actual_vel = f("x_actual_vel", snap.x_actual_vel)
         snap.x_at_start = b("x_at_start", snap.x_at_start)  # diagnostic only
+        snap.x_cut_error = b("x_cut_error", snap.x_cut_error)
+        snap.x_return_error = b("x_return_error", snap.x_return_error)
+        snap.x_stop_error = b("x_stop_error", snap.x_stop_error)
+        snap.x_axis_error = b("x_axis_error", snap.x_axis_error)
 
         y_power_status = b("y_power_status", snap.y_servo_ready)
         y_power_error = b("y_power_error", snap.y_fault)
         snap.y_servo_ready = y_power_status and not y_power_error
         snap.y_fault = y_power_error
         snap.y_fault_code = i("y_fault_code", snap.y_fault_code)
+        snap.y_move_error = b("y_move_error", snap.y_move_error)
+        snap.y_follow_error = b("y_follow_error", snap.y_follow_error)
+        snap.y_stop_error = b("y_stop_error", snap.y_stop_error)
+        snap.y_axis_error = b("y_axis_error", snap.y_axis_error)
+        snap.operator_stop_active = b("operator_stop_active", snap.operator_stop_active)
         snap.y_actual_pos = f("y_actual_pos", snap.y_actual_pos)
         snap.y_actual_vel = f("y_actual_vel", snap.y_actual_vel)
         snap.y_set_pos = f("y_set_pos", snap.y_set_pos)
@@ -358,6 +439,58 @@ class MachineService(QObject):
             # optimistic value in _param_cache (set by set_parameter) so the
             # UI doesn't flicker back to the old value while we wait.
 
+        self._update_alarm_conditions(snap)
+
+    def _update_alarm_conditions(self, snap: MachineSnapshot) -> None:
+        """PLC-HMI-20260921-16 (C6.1): HATA sınıfı bildirimleri PLC'nin
+        kendi latched bitlerinden üretir. Rising edge'de (koşul ilk kez
+        TRUE görülür) `AlarmRepository`'ye BİR KEZ yazılır; falling edge'de
+        (PLC'nin kendi okuması FALSE'a döner - HMI'nin Reset'e tıklamasıyla
+        DEĞİL) yalnız O kayıt kapatılır. İlk okuma zaten TRUE ise (örn.
+        bağlantı/reconnect sonrası) yine aktif listede görünür - bu bir
+        kayıp değil, doğru davranıştır."""
+        changed = False
+        known_cause_active = False
+        for cond in ALARM_CATALOG:
+            value = getattr(snap, cond.attr)
+            active = (not value) if cond.invert else value
+            if active:
+                known_cause_active = True
+            is_open = cond.catalog_id in self._active_alarm_events
+            if active and not is_open:
+                event = self._alarms.log_event(SEVERITY_ALARM, cond.source, cond.message)
+                self._active_alarm_events[cond.catalog_id] = event.id
+                changed = True
+            elif not active and is_open:
+                self._alarms.clear_event(self._active_alarm_events.pop(cond.catalog_id))
+                changed = True
+
+        # H19: FAULT'tayken yukarıdaki bilinen nedenlerin hiçbiri aktif
+        # değilse jenerik yedek mesaj - sahte bir neden uydurmak yerine.
+        # Bilinen bir neden VARSA burada ikinci kez saydırılmaz.
+        fault_no_known_cause = snap.cycle_state == int(CycleState.FAULT) and not known_cause_active
+        is_h19_open = "H19" in self._active_alarm_events
+        if fault_no_known_cause and not is_h19_open:
+            event = self._alarms.log_event(
+                SEVERITY_ALARM, "PLC", "PLC arıza durumunda; ayrıntılı neden bilgisi mevcut değil."
+            )
+            self._active_alarm_events["H19"] = event.id
+            changed = True
+        elif not fault_no_known_cause and is_h19_open:
+            self._alarms.clear_event(self._active_alarm_events.pop("H19"))
+            changed = True
+
+        if changed:
+            self.alarmsChanged.emit()
+
+    def active_alarm_count(self) -> int:
+        """C6.1: ana ekranın ALARM sayacı, hayali `MachineSnapshot.alarm_
+        count`'a değil, gerçek aktif HATA kayıtlarına dayanır (Uyarı/Mesaj
+        sayılmaz)."""
+        return sum(
+            1 for e in self._alarms.recent() if e.active and e.severity == SEVERITY_ALARM
+        )
+
     def _update_move_to_start_status(self, snap: MachineSnapshot) -> None:
         """PLC-HMI-20260921-11: "yeni isteğin readback geçişlerini izle,
         belirsizse tamamlandı iddia etme". Bir pulse gönderilmemişse (`_move_
@@ -373,7 +506,14 @@ class MachineService(QObject):
         AYNI ANDA Aborted=TRUE de tutabiliyor - bu ara/duruş evresi, terminal
         bir sonuç değil. Busy TRUE olduğu SÜRECE Done/Aborted/Error'a hiç
         bakılmaz (isteğin takibi de kapanmaz) - "REDDEDİLDİ" gibi bitmiş bir
-        sonuç, makine hâlâ meşgulken asla gösterilmez."""
+        sonuç, makine hâlâ meşgulken asla gösterilmez.
+
+        PLC-HMI-20260921-14: Busy+Aborted birlikteyse ayrı bir "stopping"
+        durumu ("Dönüş durduruluyor") - salt Busy'den (MANUAL_RETURN, 130,
+        hedefe doğru hareket) ayırt edilir; Busy+Aborted MANUAL_RETURN_STOP
+        (140)'a karşılık gelir. Terminal sonuçlarda Error önceliklidir -
+        kaynakta talep reddi ile iptal aynı bitten geldiği için Aborted TEK
+        BAŞINA ayrıştırılamaz ("talep reddedildi VEYA dönüş iptal edildi")."""
         if not self._move_to_start_sent:
             return
         if not self._move_to_start_cleared:
@@ -384,14 +524,14 @@ class MachineService(QObject):
         if not self._move_to_start_cleared:
             return
         if snap.move_to_start_busy:
-            self._move_to_start_status = "busy"
+            self._move_to_start_status = "stopping" if snap.move_to_start_aborted else "busy"
             return
-        if snap.move_to_start_done:
+        if snap.move_to_start_error:
+            self._move_to_start_status = "error"
+        elif snap.move_to_start_done:
             self._move_to_start_status = "done"
         elif snap.move_to_start_aborted:
             self._move_to_start_status = "aborted"
-        elif snap.move_to_start_error:
-            self._move_to_start_status = "error"
         else:
             return  # Busy az önce kalktı, henüz bir sonuç okunmadı - bekle.
         self._move_to_start_sent = False
@@ -400,6 +540,7 @@ class MachineService(QObject):
         if self.demo_mode and self._demo is not None:
             self._demo.tick(UI_TICK_MS / 1000.0, self._snapshot, self._alarms, self.alarmsChanged.emit)
             self._update_move_to_start_status(self._snapshot)
+            self._update_alarm_conditions(self._snapshot)
         else:
             age_ms = (time.monotonic() - self._snapshot.timestamp) * 1000
             self._snapshot.stale = age_ms > self._config.stale_timeout_ms
@@ -441,7 +582,11 @@ class MachineService(QObject):
             return
         if self._worker is not None:
             self._worker.request_pulse("cmd_reset")
-        self._alarms.clear_active()
+        # PLC-HMI-20260921-16 (C6.1 bulgusu, gerçek hata): burada ARTIK
+        # `_alarms.clear_active()` çağrılmıyor. Reset kabul edilmeden aktif
+        # hata ekrandan kaybolmamalı - temizlik yalnızca PLC'nin kendi
+        # readback'i (alarm biti gerçekten FALSE okunduğunda) ile olur,
+        # `_update_alarm_conditions`'ta ele alınır.
         self.alarmsChanged.emit()
 
     def _mode_change_allowed(self) -> bool:

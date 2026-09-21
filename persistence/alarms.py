@@ -90,6 +90,16 @@ class AlarmRepository:
             session.refresh(event)
             return event
 
+    def clear_event(self, event_id: int) -> None:
+        """Tek bir aktif kaydı kapatır (PLC-HMI-20260921-16, C6.1) - Reset
+        tıklamasıyla DEĞİL, o kaydın PLC koşulunun gerçekten FALSE okunduğu
+        an çağrılır. `clear_active()`'ın aksine yalnız BU kaydı etkiler."""
+        with get_session() as session:
+            event = session.get(AlarmEvent, event_id)
+            if event is not None and event.cleared_at is None:
+                event.cleared_at = dt.datetime.now()
+                session.commit()
+
     def clear_active(self) -> int:
         with get_session() as session:
             active = (
