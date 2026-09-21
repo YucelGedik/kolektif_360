@@ -8,12 +8,22 @@ brief section 6 & 26)."""
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtWidgets import QApplication, QHBoxLayout, QLabel, QMessageBox, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QApplication,
+    QCheckBox,
+    QDoubleSpinBox,
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QVBoxLayout,
+    QWidget,
+)
 
 from core.cycle_state import AUTO_CYCLE_ACTIVE_STATES, CycleState
 from core.models import MachineSnapshot
+from core.parameters import PARAMETER_SPECS
 from services.machine_service import MachineService
-from ui.machine.theme import COLORS, MIN_TOUCH_HEIGHT, base_font
+from ui.machine.theme import COLORS, base_font
 from ui.machine.widgets import Card, HoldButton, ProcessStatusCard, Readout, touch_button
 
 # PLC-HMI-20260921-11: "3 saniye basılı tutulunca iki eksen otomatik
@@ -27,8 +37,12 @@ class ManualPage(QWidget):
     def __init__(self, service: MachineService, parent: QWidget | None = None):
         super().__init__(parent)
         self._service = service
-        self._x_jog_fast = False
-        self._y_jog_fast = False
+        # Kullanıcı isteği (2026-09-21): jog hızı artık ayrı bir "JOG Yavaş/
+        # Hızlı" seçimi değil, doğrudan ilgili eksenin gerçek PLC parametresi
+        # (`lr_x_jog_velocity`/`lr_y_jog_velocity`) - kazara değiştirmeyi
+        # önlemek için bir "Düzenle" tik kutusu açılmadan alan düzenlenemez.
+        self._jog_dirty: set[str] = set()
+        self._jog_velocity_widgets: dict[str, tuple[QDoubleSpinBox, QCheckBox]] = {}
         # PLC-HMI-20260921-09: Aşağı için PLC-onaylı bir "kabul" biti yok -
         # yalnız son gönderilen komutu (kanıt değil) göstermek için yerel iz.
         self._blade_last_cmd: str | None = None
@@ -104,24 +118,23 @@ class ManualPage(QWidget):
         row = QHBoxLayout()
         self._x_minus = HoldButton("X -")
         self._x_plus = HoldButton("X +")
-        self._x_minus.held.connect(lambda active: self._service.jog_x(-1, active, self._x_jog_fast))
-        self._x_plus.held.connect(lambda active: self._service.jog_x(1, active, self._x_jog_fast))
+        self._x_minus.held.connect(lambda active: self._service.jog_x(-1, active))
+        self._x_plus.held.connect(lambda active: self._service.jog_x(1, active))
         row.addWidget(self._x_minus)
         row.addWidget(self._x_plus)
         card.body_layout().addLayout(row)
-        card.body_layout().addLayout(self._build_jog_speed_row(lambda fast: setattr(self, "_x_jog_fast", fast)))
+        card.body_layout().addLayout(self._build_jog_velocity_row("lr_x_jog_velocity"))
 
-        # X ekseninde Y'deki "MERKEZE GİT" gibi bir referans komutu yok (brif
-        # bölüm 8); alttaki Actual Position/Servo satırlarının Y kartıyla
-        # aynı hizada kalması için o butonun yüksekliğinde boş alan bırakılır.
-        spacer = QWidget()
-        spacer.setFixedHeight(MIN_TOUCH_HEIGHT)
-        card.body_layout().addWidget(spacer)
+        # PLC-HMI-20260921-11 + kullanıcı isteği (2026-09-21): "Başlangıç
+        # Konumuna Dön" butonu buraya (sol/X kartı) taşındı; durum bilgisi
+        # sağda (Y kartı) kalıyor.
+        card.body_layout().addWidget(self._build_move_to_start_button())
 
         self._x_pos_readout = Readout("Actual Position", "0.0", "mm")
         card.body_layout().addWidget(self._x_pos_readout)
         self._x_servo_status = ProcessStatusCard("Servo")
         card.body_layout().addWidget(self._x_servo_status)
+        card.body_layout().addStretch(1)
         return card
 
     def _build_y_axis_card(self) -> Card:
@@ -129,24 +142,13 @@ class ManualPage(QWidget):
         row = QHBoxLayout()
         self._y_minus = HoldButton("Y -")
         self._y_plus = HoldButton("Y +")
-        self._y_minus.held.connect(lambda active: self._service.jog_y(-1, active, self._y_jog_fast))
-        self._y_plus.held.connect(lambda active: self._service.jog_y(1, active, self._y_jog_fast))
+        self._y_minus.held.connect(lambda active: self._service.jog_y(-1, active))
+        self._y_plus.held.connect(lambda active: self._service.jog_y(1, active))
         row.addWidget(self._y_minus)
         row.addWidget(self._y_plus)
         card.body_layout().addLayout(row)
-        card.body_layout().addLayout(self._build_jog_speed_row(lambda fast: setattr(self, "_y_jog_fast", fast)))
+        card.body_layout().addLayout(self._build_jog_velocity_row("lr_y_jog_velocity"))
 
-        # PLC-HMI-20260921-11: eski "MERKEZE GİT / Y=0" (yalnız Y) tek bir
-        # "Başlangıç Konumuna Dön" (X+Y) butonuyla değiştirildi - kullanıcı
-        # talebi, kazara dokunmayı önlemek için 3 saniye basılı tutuş şartlı.
-        self._move_to_start_btn = HoldButton("Başlangıç Konumuna Dön")
-        self._move_to_start_btn.held.connect(self._on_move_to_start_held)
-        card.body_layout().addWidget(self._move_to_start_btn)
-        self._move_to_start_hint = QLabel()
-        self._move_to_start_hint.setFont(base_font(10))
-        self._move_to_start_hint.setStyleSheet(f"color: {COLORS['text_secondary']};")
-        self._move_to_start_hint.setWordWrap(True)
-        card.body_layout().addWidget(self._move_to_start_hint)
         self._move_to_start_status = ProcessStatusCard("Başlangıç Konumu")
         card.body_layout().addWidget(self._move_to_start_status)
 
@@ -154,24 +156,84 @@ class ManualPage(QWidget):
         card.body_layout().addWidget(self._y_pos_readout)
         self._y_servo_status = ProcessStatusCard("Servo")
         card.body_layout().addWidget(self._y_servo_status)
+        card.body_layout().addStretch(1)
         return card
 
-    def _build_jog_speed_row(self, set_fast) -> QHBoxLayout:
+    def _build_move_to_start_button(self) -> HoldButton:
+        # PLC-HMI-20260921-11: eski "MERKEZE GİT / Y=0" (yalnız Y) tek bir
+        # "Başlangıç Konumuna Dön" (X+Y) butonuyla değiştirildi - kullanıcı
+        # talebi, kazara dokunmayı önlemek için 3 saniye basılı tutuş şartlı.
+        # "3 sn basılı tutun" bilgisi butonun kendi içinde, sağ-alt köşede.
+        self._move_to_start_btn = HoldButton("")
+        btn_layout = QVBoxLayout(self._move_to_start_btn)
+        btn_layout.setContentsMargins(12, 6, 12, 4)
+        btn_layout.setSpacing(2)
+        self._move_to_start_label = QLabel("Başlangıç Konumuna Dön")
+        self._move_to_start_label.setFont(base_font(12, bold=True))
+        self._move_to_start_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        btn_layout.addWidget(self._move_to_start_label)
+        btn_layout.addStretch(1)
+        self._move_to_start_hint = QLabel()
+        self._move_to_start_hint.setFont(base_font(8))
+        self._move_to_start_hint.setStyleSheet(f"color: {COLORS['text_secondary']};")
+        self._move_to_start_hint.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom)
+        btn_layout.addWidget(self._move_to_start_hint)
+        self._move_to_start_btn.held.connect(self._on_move_to_start_held)
+        return self._move_to_start_btn
+
+    def _build_jog_velocity_row(self, key: str) -> QHBoxLayout:
+        """Kullanıcı isteği (2026-09-21): "JOG Yavaş/Hızlı" yerine, ilgili
+        eksenin gerçek PLC jog hızı parametresine (zaten Ayarlar'da var olan
+        `lr_x_jog_velocity`/`lr_y_jog_velocity`) doğrudan bağlı bir giriş -
+        yanındaki "Düzenle" tik kutusu işaretlenmeden alan düzenlenemez,
+        yanlışlıkla değiştirmeyi önlemek için."""
+        spec = next(s for s in PARAMETER_SPECS if s.key == key)
         row = QHBoxLayout()
-        slow_btn = touch_button("JOG Yavaş", checkable=True)
-        fast_btn = touch_button("JOG Hızlı", checkable=True)
-        slow_btn.setChecked(True)
-
-        def pick(fast: bool) -> None:
-            set_fast(fast)
-            slow_btn.setChecked(not fast)
-            fast_btn.setChecked(fast)
-
-        slow_btn.clicked.connect(lambda: pick(False))
-        fast_btn.clicked.connect(lambda: pick(True))
-        row.addWidget(slow_btn)
-        row.addWidget(fast_btn)
+        label = QLabel(f"{spec.label_tr}:")
+        spin = QDoubleSpinBox()
+        spin.setRange(spec.min_value, spec.max_value)
+        spin.setDecimals(1)
+        spin.setSuffix(f" {spec.unit}")
+        spin.setEnabled(False)
+        spin.blockSignals(True)
+        spin.setValue(self._service.get_parameter_value(key))
+        spin.blockSignals(False)
+        # Yalnız gerçek kullanıcı düzenlemesinde tetiklenir - programatik
+        # setValue çağrıları blockSignals ile korunuyor (settings_page.py'deki
+        # aynı "dirty" deseni, 2026-09-16 bug fix).
+        spin.valueChanged.connect(lambda _v, k=key: self._jog_dirty.add(k))
+        spin.editingFinished.connect(lambda k=key: self._commit_jog_velocity(k))
+        checkbox = QCheckBox("Düzenle")
+        checkbox.toggled.connect(lambda checked, k=key: self._on_jog_edit_toggled(k, checked))
+        row.addWidget(label)
+        row.addWidget(spin, 1)
+        row.addWidget(checkbox)
+        self._jog_velocity_widgets[key] = (spin, checkbox)
         return row
+
+    def _on_jog_edit_toggled(self, key: str, checked: bool) -> None:
+        spin, _checkbox = self._jog_velocity_widgets[key]
+        spin.setEnabled(checked)
+        if not checked:
+            # Kilitlenince yarım kalmış bir düzenleme varsa atılır - canlı
+            # PLC değerine geri dönülür, yanlışlıkla kaydedilmez.
+            self._jog_dirty.discard(key)
+            spin.blockSignals(True)
+            spin.setValue(self._service.get_parameter_value(key))
+            spin.blockSignals(False)
+
+    def _commit_jog_velocity(self, key: str) -> None:
+        if key not in self._jog_dirty:
+            return  # editingFinished odak kaybında da tetiklenir, değişiklik olmayabilir
+        spin, _checkbox = self._jog_velocity_widgets[key]
+        try:
+            self._service.set_parameter(key, spin.value())
+        except ValueError as exc:
+            QMessageBox.warning(self, "Geçersiz Değer", str(exc))
+            spin.blockSignals(True)
+            spin.setValue(self._service.get_parameter_value(key))
+            spin.blockSignals(False)
+        self._jog_dirty.discard(key)
 
     def _build_feed_card(self) -> Card:
         card = Card("Perde Besleme (Diagnostic)")
@@ -362,6 +424,15 @@ class ManualPage(QWidget):
             self._y_plus,
         ):
             btn.setEnabled(manual_allowed)
+
+        # Kilitliyken (Düzenle işaretsiz) her zaman canlı PLC değerini
+        # göster; işaretliyken kullanıcının bitirmediği bir düzenlemenin
+        # üzerine yazma (settings_page.py'deki "dirty" deseniyle aynı).
+        for key, (spin, _checkbox) in self._jog_velocity_widgets.items():
+            if key not in self._jog_dirty:
+                spin.blockSignals(True)
+                spin.setValue(self._service.get_parameter_value(key))
+                spin.blockSignals(False)
 
         # PLC-HMI-20260921-11: "İzin HMI'da yeniden üretilmez" - yalnız
         # servisin `move_to_start_allowed_now()`'u (Allowed okunur, ayrıntılı

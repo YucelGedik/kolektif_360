@@ -463,25 +463,25 @@ class MachineService(QObject):
         elif self._worker is not None:
             self._worker.request_write("manual_mode", manual)
 
-    def jog_x(self, direction: int, active: bool, fast: bool = False) -> None:
+    def jog_x(self, direction: int, active: bool) -> None:
         if active and not self._manual_allowed():
             return
         self._jog_x_active = active
         if self.demo_mode and self._demo is not None:
-            self._demo.set_jog_x(direction, active, fast)
+            self._demo.set_jog_x(direction, active)
         elif self._worker is not None:
-            # NOTE (brief section 28, open point): no PLC tag for jog speed
-            # select is defined yet; both speeds currently map to the same
-            # *Request tag until a fast/slow contract is agreed.
+            # Kullanıcı isteği (2026-09-21): ayrı "JOG Yavaş/Hızlı" seçimi
+            # kaldırıldı - gerçek jog hızı artık doğrudan PLC parametresinden
+            # (`lr_x_jog_velocity`) geliyor, Manuel sayfasında düzenlenebilir.
             tag = "jog_x_plus_request" if direction > 0 else "jog_x_minus_request"
             self._worker.request_write(tag, active)
 
-    def jog_y(self, direction: int, active: bool, fast: bool = False) -> None:
+    def jog_y(self, direction: int, active: bool) -> None:
         if active and not self._manual_allowed():
             return
         self._jog_y_active = active
         if self.demo_mode and self._demo is not None:
-            self._demo.set_jog_y(direction, active, fast)
+            self._demo.set_jog_y(direction, active)
         elif self._worker is not None:
             tag = "jog_y_plus_request" if direction > 0 else "jog_y_minus_request"
             self._worker.request_write(tag, active)

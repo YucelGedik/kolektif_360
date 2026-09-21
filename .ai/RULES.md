@@ -318,3 +318,25 @@ bağlantıyı riske atabilir).
       doğrulandı (erken bırakma, tam 3s, basılı kalırken ikinci pulse yok).
       Tam suite 235/235. Gerçek PLC'ye kendi kendine yazılmadı/hareket
       başlatılmadı - H5-HOLD-T08 (fiziksel hareket) kullanıcıyı bekliyor.
+
+### 2026-09-21 — Manuel sayfa UI geri bildirimi: yerleşim/hizalama/jog hızı girişi (tamamlandı)
+Kullanıcı ekran görüntüsüyle 4 istek iletti (bkz. CHANGELOG_MEMORY.md aynı
+tarihli en üst giriş için tam gerekçe).
+- [x] "Başlangıç Konumuna Dön" X Ekseni kartına taşındı (eski boş spacer'ın
+      yerine); "BAŞLANGIÇ KONUMU" durum kartı Y Ekseni kartında kaldı.
+      Hint metni artık butonun kendi içinde (`HoldButton` üzerine
+      `QVBoxLayout`), sağ-alt köşede.
+- [x] X-/X+ ile Y-/Y+ hizası: her iki kartın `body_layout()`'una `addStretch
+      (1)` eklendi - kök neden (kartlar eşit yüksekliğe zorlanıyordu ama
+      hiçbiri kendi içinde stretch kullanmıyordu) düzeltildi.
+- [x] "JOG Yavaş/Hızlı" (gerçek modda zaten etkisizdi) kaldırıldı; yerine
+      `lr_x_jog_velocity`/`lr_y_jog_velocity` ayar parametresine bağlı,
+      "Düzenle" tik kutusuyla kilitli `QDoubleSpinBox`. Kilit açıkken
+      `editingFinished`'da `MachineService.set_parameter()` (Ayarlar'la AYNI
+      yol) çağrılır; Ayarlar'daki "dirty" deseni birebir tekrarlandı. Demo
+      simülatörünün jog hızı da artık bu parametreden okunuyor.
+- [x] `jog_x`/`jog_y`/`DemoSimulator.set_jog_x`/`set_jog_y`'den etkisiz
+      `fast` parametresi tamamen kaldırıldı.
+- [x] Testler: mevcut 235 test aynen geçti. Yeni davranış (kilit aç/kapa,
+      dirty-commit, geçersiz değer reddi) + hizalama widget smoke testi ve
+      gerçek render edilmiş ekran görüntüsüyle doğrulandı.

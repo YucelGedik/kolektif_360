@@ -3,6 +3,65 @@
 Yeni girisleri en uste ekle. Eski ve uzun detaylari `CHANGELOG_ARCHIVE.md`
 dosyasina tasi.
 
+## 2026-09-21 - Manuel sayfa düzeni: buton yerleşimi, hizalama, jog hızı girişi (kullanıcı UI geri bildirimi)
+
+Kullanıcı ekran görüntüsüyle 4 istek iletti: (1) "Başlangıç Konumuna Dön"
+butonunu sol (X) karttaki boş kutuya taşı, boyut/hizalamayı düzelt; durum
+bilgisi sağda (Y kartı) kalsın, "3 sn basılı tutun" bilgisini butonun içine
+bir köşeye koy. (2) X+/- ile Y+/- aynı hizaya gelsin (X kontrollerini
+yukarı taşı). (3) "JOG Yavaş/JOG Hızlı" butonları yerine iki eksen için
+ayrı jog hızı girişi - zaten var olan `lr_x_jog_velocity`/`lr_y_jog_
+velocity` ayar parametrelerine bağlı, yanına yanlışlıkla değiştirmeyi
+önleyen bir "Düzenle" tik kutusu.
+
+**Buton taşındı:** "Başlangıç Konumuna Dön" artık X Ekseni kartında (eski
+boş spacer'ın yerinde); "BAŞLANGIÇ KONUMU" durum kartı Y Ekseni kartında
+kalıyor. Hint metni artık ayrı bir satır değil, `HoldButton`'ın kendi
+içine yerleştirilmiş bir `QVBoxLayout` (ana etiket ortada, "3 saniye basılı
+tutun — X=.. Y=.. mm" sağ-alt köşede, küçük punto) - buton tıklama/basılı
+tutma davranışı değişmedi, yalnızca görünüm.
+
+**Hizalama kök nedeni düzeltildi:** X ve Y kartlarının içerikleri farklı
+yükseklikte olduğu için (`QHBoxLayout` iki kartı eşit yüksekliğe zorluyor,
+ama hiçbir kart kendi içinde `addStretch` kullanmıyordu) üst kısımlar
+hizasız görünüyordu. Her iki kartın `body_layout()`'unun SONUNA `addStretch
+(1)` eklendi - artık boşluk her zaman EN ALTTA kalıyor, X-/X+ ile Y-/Y+
+pixel-hizalı (ekran görüntüsüyle doğrulandı).
+
+**JOG Yavaş/Hızlı kaldırıldı - gerçek jog hızı parametresine bağlı giriş
+geldi:** Bu iki buton gerçek modda zaten hiçbir PLC etkisi yaratmıyordu
+(brif §28 açık notu: "jog hız seçimi için PLC tag'ı yok"; yalnız demo'nun
+kendi sabit 30/90 ve 10/30 mm/s değerlerini seçiyordu). Kullanıcının
+belirttiği gibi jog hızı zaten gerçek bir ayar parametresi olarak var
+(`lr_x_jog_velocity`/`lr_y_jog_velocity`, GVL.lrX_JogVelocity/lrY_
+JogVelocity) - şimdi Manuel sayfasında doğrudan bu parametreye bağlı bir
+`QDoubleSpinBox` var, varsayılan kilitli (disabled); yanındaki "Düzenle"
+tik kutusu işaretlenmeden değiştirilemez. Kilit açıkken `editingFinished`'da
+`MachineService.set_parameter()` (Ayarlar sayfasıyla AYNI yol - aralık
+doğrulama, `move_to_start_busy` kilidi, gerçek PLC yazma onayı/reddi dahil)
+çağrılır; kilit kapatılınca yarım kalmış bir düzenleme atılır, canlı PLC
+değerine geri dönülür. Ayarlar sayfasındaki "dirty" deseni (`valueChanged`
+sadece gerçek kullanıcı düzenlemesinde işaretlenir, programatik `setValue`
+`blockSignals` ile korunur) birebir tekrarlandı. Demo simülatörü de artık
+jog hareketinde sabit hız yerine bu aynı parametreyi kullanıyor - Ayarlar'da
+görülen değerle tutarlı.
+
+`MachineService.jog_x`/`jog_y` ve `DemoSimulator.set_jog_x`/`set_jog_y`'den
+artık hiçbir zaman etkisi olmayan `fast` parametresi tamamen kaldırıldı
+(yarım bırakılmış bir soyutlama olarak tutulmadı).
+
+Kod: `ui/machine/manual_page.py` (kart yeniden düzenleme, `_build_move_to_
+start_button`, `_build_jog_velocity_row`, `_on_jog_edit_toggled`, `_commit_
+jog_velocity`), `services/machine_service.py` + `services/demo_simulator.py`
+(`fast` parametresi kaldırıldı, demo jog hızı gerçek parametreye bağlandı).
+
+Test: mevcut 235 test aynen geçti (jog `fast` parametresinin kaldırılması
+hiçbir testi bozmadı - zaten hiçbiri `fast=` geçmiyordu). Yeni davranış
+(kilit aç/kapa, dirty-commit, geçersiz değer reddi, hizalama) widget smoke
+testi + gerçek render edilmiş ekran görüntüsüyle doğrulandı - bu projede
+UI widget davranışı için süregelen desen (servis katmanı pytest, ekran
+davranışı smoke test).
+
 ## 2026-09-21 - "Başlangıç Konumuna Dön" tek buton, 3s basılı tutuş (PLC-HMI-20260921-10/11, C5)
 
 Kullanıcı: "Sana 11 numaralı görevi iletti ajan kontrol et. HMI manuel

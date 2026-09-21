@@ -31,8 +31,6 @@ class DemoSimulator:
 
         self.jog_x_dir = 0
         self.jog_y_dir = 0
-        self.jog_x_fast = False
-        self.jog_y_fast = False
         self.blade_retract_requested = False
         self.clamp_retract_requested = False
         self.blade_down_requested = False
@@ -78,13 +76,11 @@ class DemoSimulator:
         self.auto_mode = auto
         self.manual_mode = not auto
 
-    def set_jog_x(self, direction: int, active: bool, fast: bool = False) -> None:
+    def set_jog_x(self, direction: int, active: bool) -> None:
         self.jog_x_dir = direction if active else 0
-        self.jog_x_fast = fast
 
-    def set_jog_y(self, direction: int, active: bool, fast: bool = False) -> None:
+    def set_jog_y(self, direction: int, active: bool) -> None:
         self.jog_y_dir = direction if active else 0
-        self.jog_y_fast = fast
 
     def request_y_center(self) -> None:
         self.y_center_requested = True
@@ -165,11 +161,14 @@ class DemoSimulator:
             return
         cut_end = self.params["lr_x_cut_end_pos"]
         if self.jog_x_dir:
-            x_speed = 90.0 if self.jog_x_fast else 30.0
+            # Kullanıcı isteği (2026-09-21): ayrı Yavaş/Hızlı seçimi yerine
+            # gerçek jog hızı parametresi kullanılır - demo da Ayarlar'da
+            # görülen/düzenlenen değerle tutarlı davranır.
+            x_speed = self.params["lr_x_jog_velocity"]
             snap.x_actual_pos = max(0.0, min(cut_end, snap.x_actual_pos + self.jog_x_dir * x_speed * 0.05))
         if self.jog_y_dir:
             lo, hi = self.params["lr_y_software_min"], self.params["lr_y_software_max"]
-            y_speed = 30.0 if self.jog_y_fast else 10.0
+            y_speed = self.params["lr_y_jog_velocity"]
             snap.y_actual_pos = max(lo, min(hi, snap.y_actual_pos + self.jog_y_dir * y_speed * 0.05))
             snap.y_set_pos = snap.y_actual_pos
         if self.y_center_requested:
