@@ -34,6 +34,7 @@ def init_engine(db_path: Path | str | None = None):
     Base.metadata.create_all(_engine)
     _migrate_alarm_events_severity(_engine)
     _migrate_alarm_events_code_nullable(_engine)
+    _migrate_alarm_events_catalog_id(_engine)
     _SessionFactory = sessionmaker(bind=_engine, future=True, expire_on_commit=False)
     return _engine
 
@@ -90,6 +91,22 @@ def _migrate_alarm_events_code_nullable(engine) -> None:
         )
         conn.exec_driver_sql("DROP TABLE alarm_events_pre_nullable_code")
         conn.commit()
+
+
+def _migrate_alarm_events_catalog_id(engine) -> None:
+    """PLC-HMI-20260922-18 (HMI-A02, C06_1 audit): `_active_alarm_events`
+    (RAM only) can no longer be the sole record of which catalog entry
+    (H01, H20, ...) a persisted, still-open row belongs to - after a
+    restart that dict is empty and a stuck/duplicate active alarm can
+    result. Persist the catalog id too so the service can reconcile
+    against the real DB on startup (`MachineService._reconcile_alarm_
+    state_with_persisted_events`). A nullable ADD COLUMN needs no table
+    rebuild in SQLite (unlike loosening a NOT NULL constraint)."""
+    with engine.connect() as conn:
+        columns = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(alarm_events)")}
+        if columns and "catalog_id" not in columns:
+            conn.exec_driver_sql("ALTER TABLE alarm_events ADD COLUMN catalog_id VARCHAR(8)")
+            conn.commit()
 
 
 def get_session() -> Session:

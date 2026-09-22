@@ -45,6 +45,19 @@ def test_no_reasons_when_start_is_permitted():
     assert compute_start_inhibit_reasons(snap, 0.0, 0.0) == []
 
 
+def test_audit_repro_stale_with_stale_true_start_permitted_shows_u10():
+    """PLC-HMI-20260922-18 (HMI-A03, C06_1 audit): bağlantı koptuğunda
+    `snap.start_permitted` PLC'den gelen SON (artık bayat) değeri taşımaya
+    devam eder - TRUE idiyse eskiden fonksiyon start_permitted kontrolünü
+    stale'DEN ÖNCE yaptığı için [] dönüyordu (eski, artık geçersiz izin
+    U10'u bastırıyordu). Audit repro: stale=True + start_permitted=True."""
+    snap = _ready_snapshot(stale=True, start_permitted=True)
+
+    reasons = compute_start_inhibit_reasons(snap, 0.0, 0.0)
+
+    assert reasons == ["[U10] PLC verisi güncel değil; izin/konum bilgisi doğrulanamıyor."]
+
+
 def test_stale_shows_its_own_warning_instead_of_hiding():
     """U10 (2026-09-21 değişikliği): eskiden stale iken liste tamamen boştu
     (hiçbir şey gösterilmiyordu) - artık veri eksikliği açıkça belirtiliyor,
@@ -158,8 +171,9 @@ def test_blade_down_blocks_start_clamp_does_not():
 
 
 def test_operator_stop_active_reason():
-    """U06 - PLC henüz bu tag'i build/export etmedi (aday), ama kod hazır;
-    tag config'e eklenince otomatik aktive olur."""
+    """U06 - PLC-HMI-20260922-18 (C06_1 audit) ile export'ta var olduğu
+    doğrulandı, yalnız online node/erişim testi bekliyor (aday); kod hazır,
+    tag gerçek config'e eklenince otomatik aktive olur."""
     snap = _ready_snapshot(operator_stop_active=True)
 
     reasons = compute_start_inhibit_reasons(snap, 0.0, 0.0)
@@ -215,8 +229,9 @@ def test_fallback_reason_when_nothing_known_explains_it():
 def test_stop_pressed_is_never_fabricated_as_a_reason():
     """Görev notu: bulunmayan tag için bool tahmini yapılmaz - fiziksel
     Stop'un "şu an basılı" durumu için gerçek bir PLC tagı yok (xOperator
-    StopActive PLC'de henüz build/export edilmedi, hep False), dolayısıyla
-    hiçbir koşulda "Stop basılı" metni üretilmemeli."""
+    StopActive export'ta var ama online node/erişim testi hâlâ bekliyor,
+    gerçek config'e eklenene kadar hep False), dolayısıyla hiçbir koşulda
+    "Stop basılı" metni üretilmemeli."""
     snap = _ready_snapshot(x_at_start=False, y_at_center=False)
 
     reasons = compute_start_inhibit_reasons(snap, 0.0, 0.0)

@@ -211,6 +211,82 @@ def test_h20_h22_reset_click_does_not_clear_only_plc_readback_does(tmp_path):
             assert svc.active_alarm_count() == 0
 
 
+def test_h19_not_double_counted_when_h20_h22_is_the_known_cause(tmp_path):
+    """PLC-HMI-20260922-18 (HMI-A04 kabul kriteri): H20-H22 de H01-H18 gibi
+    ALARM_CATALOG'un bir parçası - H19 jenerik yedek onlar aktifken de
+    AYRICA sayılmamalı (zaten aynı `known_cause_active` bayrağıyla garanti
+    altında, bu test bunu H20-H22 için açıkça kilitler)."""
+    for attr in ("alarm_mode_changed_during_cycle", "alarm_clamp_lost_during_cycle", "alarm_blade_not_clear_during_return"):
+        db_module.init_engine(tmp_path / f"test_h19_vs_{attr}.db")
+        try:
+            svc = _real_service(tmp_path)
+
+            svc._on_raw_snapshot({"cycle_state": int(CycleState.FAULT), attr: True})
+
+            active = [e for e in svc._alarms.recent() if e.active]
+            assert len(active) == 1  # yalnız H20/H21/H22 - H19 yedek AYRICA yok
+        finally:
+            db_module.init_engine()
+
+
+def test_pending_candidate_catalog_ids_lists_only_unconfigured_ones(tmp_path):
+    """PLC-HMI-20260922-18 (HMI-A04): H01 gerçek config'te var (bu testin
+    nodes'unda da var), H12 ve H20 yok - yalnız gerçekten eksik olanlar
+    dönmeli, config'ten canlı okunur."""
+    with _isolated_engine(tmp_path):
+        cfg = tmp_path / "opcua.json"
+        cfg.write_text(
+            json.dumps(
+                {
+                    "endpoint": "opc.tcp://192.168.0.2:4840",
+                    "nodes": {"alarm_clamp_lost_during_cut": "ns=4;s=x"},  # H01 only
+                }
+            ),
+            encoding="utf-8",
+        )
+        svc = MachineService(config_path=cfg)
+
+        pending = svc.pending_candidate_catalog_ids()
+
+        assert "H01" not in pending
+        assert "H12" in pending
+        assert "H20" in pending
+        assert "U06" in pending
+
+
+def test_pending_candidate_catalog_ids_resolves_h06_h07_derived_config_key(tmp_path):
+    """H06/H07'nin snapshot alanı (`x_fault`/`y_fault`) config'teki gerçek
+    anahtardan (`x_power_error`/`y_power_error`) farklı isimlendirilmiş -
+    yalnız `x_power_error`/`y_power_error` config'te olsa bile H06/H07
+    pending listesine YANLIŞLIKLA düşmemeli."""
+    with _isolated_engine(tmp_path):
+        cfg = tmp_path / "opcua.json"
+        cfg.write_text(
+            json.dumps(
+                {
+                    "endpoint": "opc.tcp://192.168.0.2:4840",
+                    "nodes": {"x_power_error": "ns=4;s=x", "y_power_error": "ns=4;s=y"},
+                }
+            ),
+            encoding="utf-8",
+        )
+        svc = MachineService(config_path=cfg)
+
+        pending = svc.pending_candidate_catalog_ids()
+
+        assert "H06" not in pending
+        assert "H07" not in pending
+
+
+def test_pending_candidate_catalog_ids_empty_in_demo_mode(tmp_path):
+    with _isolated_engine(tmp_path):
+        cfg = tmp_path / "opcua.json"
+        cfg.write_text(json.dumps({"endpoint": "", "nodes": {}}), encoding="utf-8")
+        svc = MachineService(config_path=cfg)
+
+        assert svc.pending_candidate_catalog_ids() == []
+
+
 def test_active_alarm_count_ignores_warning_and_message_severity(tmp_path):
     with _isolated_engine(tmp_path):
         svc = _real_service(tmp_path)

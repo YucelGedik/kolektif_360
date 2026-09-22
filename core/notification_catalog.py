@@ -47,19 +47,19 @@ NOTIFICATION_CATALOG: tuple[NotificationCatalogEntry, ...] = (
     NotificationCatalogEntry("H10", SEVERITY_ALARM, "Y konumlandırma sırasında", "Y konumlandırma hatası."),
     NotificationCatalogEntry("H11", SEVERITY_ALARM, "Kesim sırasında (Y takip)", "Y takip hareketi hatası."),
     NotificationCatalogEntry(
-        "H12", SEVERITY_ALARM, "Durdurma sırasında (PLC aday tag - henüz build/export edilmedi, bu HATA şu an hiç tetiklenmez)",
+        "H12", SEVERITY_ALARM, "Durdurma sırasında (PLC aday tag - export'ta var, online node/erişim testi bekliyor, bu HATA şu an hiç tetiklenmez)",
         "X durdurma bloğu hata verdi. Tam duruşu kontrol edin.",
     ),
     NotificationCatalogEntry(
-        "H13", SEVERITY_ALARM, "Durdurma sırasında (PLC aday tag - henüz build/export edilmedi, bu HATA şu an hiç tetiklenmez)",
+        "H13", SEVERITY_ALARM, "Durdurma sırasında (PLC aday tag - export'ta var, online node/erişim testi bekliyor, bu HATA şu an hiç tetiklenmez)",
         "Y durdurma bloğu hata verdi.",
     ),
     NotificationCatalogEntry(
-        "H14", SEVERITY_ALARM, "Her an (PLC aday tag - henüz build/export edilmedi, bu HATA şu an hiç tetiklenmez)",
+        "H14", SEVERITY_ALARM, "Her an (PLC aday tag - export'ta var, online node/erişim testi bekliyor, bu HATA şu an hiç tetiklenmez)",
         "X eksen/sürücü arıza durumu.",
     ),
     NotificationCatalogEntry(
-        "H15", SEVERITY_ALARM, "Her an (PLC aday tag - henüz build/export edilmedi, bu HATA şu an hiç tetiklenmez)",
+        "H15", SEVERITY_ALARM, "Her an (PLC aday tag - export'ta var, online node/erişim testi bekliyor, bu HATA şu an hiç tetiklenmez)",
         "Y eksen/sürücü arıza durumu.",
     ),
     NotificationCatalogEntry("H16", SEVERITY_ALARM, "Her an", "Emniyet geri bildirimi yok. Acil stop/emniyet zincirini kontrol edin."),
@@ -69,21 +69,22 @@ NOTIFICATION_CATALOG: tuple[NotificationCatalogEntry, ...] = (
         "H19", SEVERITY_ALARM, "Arıza durumunda, bilinen bir neden (H01-H18) yoksa",
         "PLC arıza durumunda; ayrıntılı neden bilgisi mevcut değil.",
     ),
-    # H20-H22: PLC-HMI-20260922-17 (C6 toplu teslim) - kod/test teslim edildi,
-    # PLC tarafında build/online doğrulama henüz YAPILMADI (aday tag).
+    # H20-H22: PLC-HMI-20260922-17 (C6 toplu teslim) - kod/test teslim edildi;
+    # PLC-HMI-20260922-18 (C06_1 audit) ile export'ta VAR olduğu doğrulandı,
+    # yalnız online node/erişim testi hâlâ bekliyor (aday tag).
     NotificationCatalogEntry(
         "H20", SEVERITY_ALARM,
-        "Çalışan çevrimde (PLC aday tag - henüz build/online doğrulama yapılmadı, bu HATA şu an hiç tetiklenmez)",
+        "Çalışan çevrimde (PLC aday tag - export'ta var, online node/erişim testi bekliyor, bu HATA şu an hiç tetiklenmez)",
         "Çalışan çevrimde mod değiştirme talebi alındı; makine durduruldu.",
     ),
     NotificationCatalogEntry(
         "H21", SEVERITY_ALARM,
-        "Çevrim sırasında, baskı tutulması gereken adımlarda (PLC aday tag - henüz build/online doğrulama yapılmadı, bu HATA şu an hiç tetiklenmez)",
+        "Çevrim sırasında, baskı tutulması gereken adımlarda (PLC aday tag - export'ta var, online node/erişim testi bekliyor, bu HATA şu an hiç tetiklenmez)",
         "Çevrim sırasında baskı aşağı sensörü kayboldu; makine durduruldu.",
     ),
     NotificationCatalogEntry(
         "H22", SEVERITY_ALARM,
-        "Eksenler başlangıca dönerken (PLC aday tag - henüz build/online doğrulama yapılmadı, bu HATA şu an hiç tetiklenmez)",
+        "Eksenler başlangıca dönerken (PLC aday tag - export'ta var, online node/erişim testi bekliyor, bu HATA şu an hiç tetiklenmez)",
         "Eksenler dönerken bıçak açıklığı kayboldu; makine durduruldu.",
     ),
     # -- UYARI (ui/machine/machine_page.py::compute_start_inhibit_reasons ile birebir) --
@@ -97,7 +98,7 @@ NOTIFICATION_CATALOG: tuple[NotificationCatalogEntry, ...] = (
     ),
     NotificationCatalogEntry("U05", SEVERITY_WARNING, "Start istenirken, bıçak aşağıdaysa", "Start için bıçağı kaldırın."),
     NotificationCatalogEntry(
-        "U06", SEVERITY_WARNING, "Stop aktifken (PLC aday tag - henüz build/export edilmedi, bu UYARI şu an hiç tetiklenmez)",
+        "U06", SEVERITY_WARNING, "Stop aktifken (PLC aday tag - export'ta var, online node/erişim testi bekliyor, bu UYARI şu an hiç tetiklenmez)",
         "Stop talebi aktif; Start engelli.",
     ),
     NotificationCatalogEntry("U07", SEVERITY_WARNING, "Servo hazır değilken (bilinen bir HATA yoksa)", "X servo hazır değil. / Y servo hazır değil."),
@@ -111,8 +112,8 @@ NOTIFICATION_CATALOG: tuple[NotificationCatalogEntry, ...] = (
     NotificationCatalogEntry("M03", SEVERITY_MESSAGE, "\"Baskı/Bıçak İniyor\" durumunda", "Baskı/bıçak aşağı sensörü bekleniyor."),
     NotificationCatalogEntry("M04", SEVERITY_MESSAGE, "\"Bıçak/Baskı Kalkıyor\" durumunda", "Bıçak/baskı aşağı sensöründen çıkış bekleniyor."),
     NotificationCatalogEntry("M05", SEVERITY_MESSAGE, "\"Başlangıca Dönüyor\" durumunda", "Başlangıç konumuna dönülüyor."),
-    NotificationCatalogEntry("M06", SEVERITY_MESSAGE, "\"Başlangıca Dönüş Durduruldu\" durumunda", "Dönüş durduruluyor; talepleri bırakın."),
-    NotificationCatalogEntry("M07", SEVERITY_MESSAGE, "\"Recovery\" durumunda", "Manuel modu seçerek hazırlığı yapın."),
+    NotificationCatalogEntry("M06", SEVERITY_MESSAGE, "\"Başlangıca Dönüş Durduruluyor\" durumunda", "Dönüş durduruluyor; talepleri bırakın."),
+    NotificationCatalogEntry("M07", SEVERITY_MESSAGE, "\"Manuel Hazırlık Bekleniyor\" durumunda", "Manuel modu seçerek hazırlığı yapın."),
     NotificationCatalogEntry("M08", SEVERITY_MESSAGE, "\"Başlangıç Konumuna Dön\" tamamlanınca", "Başlangıç konumuna dönüş tamamlandı."),
     NotificationCatalogEntry("M09", SEVERITY_MESSAGE, "\"Durduruluyor\" durumunda", "Otomatik çevrim durduruluyor; mevcut devam yolu bıçak yukarı/eksen dönüşü."),
 )

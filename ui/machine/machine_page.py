@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core.cycle_state import cycle_state_label
+from core.cycle_state import CycleState, cycle_state_label
 from core.models import ConnectionState, MachineSnapshot
 from persistence.alarms import (
     SEVERITY_ALARM,
@@ -111,8 +111,11 @@ def compute_start_inhibit_reasons(
     için ayrı, gerçek bir PLC tagı yayınlanmıyor - bu nedenle "Stop basılı"
     nedeni burada YOKTUR (bulunmayan tag için tahmin yapılmaz, görev notu).
     """
-    if snap.start_permitted:
-        return []
+    # PLC-HMI-20260922-18 (HMI-A03, C06_1 audit): stale kontrolü start_
+    # permitted'DEN ÖNCE gelmeli. Eskiden sıra tersti - `snap.start_
+    # permitted` bağlantı koptuğunda PLC'den gelen SON (artık bayat) değeri
+    # taşımaya devam ediyor; TRUE idiyse fonksiyon erken [] dönüyor ve U10
+    # hiç görünmüyordu (repro: stale=True + start_permitted=True -> []).
     if snap.stale:
         # U10: veri güncel değilken izin/konum nedeni UYDURULMAZ, veri
         # eksikliği ayrı bir UYARI olarak açıkça belirtilir. Kod, operatörün
@@ -120,6 +123,8 @@ def compute_start_inhibit_reasons(
         # catalog.py) satırla eşleştirebilmesi için baştaki [Uxx] etiketiyle
         # gösterilir (kullanıcı geri bildirimi, 2026-09-22).
         return ["[U10] PLC verisi güncel değil; izin/konum bilgisi doğrulanamıyor."]
+    if snap.start_permitted:
+        return []
     if snap.cycle_active:
         # Görev notu: "aktif çevrimde Start uygun değil" normal bir durumdur,
         # alarm yağmuruna çevrilmez - hiç gösterilmez.
@@ -134,9 +139,17 @@ def compute_start_inhibit_reasons(
         reasons.append("[U03] Start için Otomatik modu seçin.")
     if snap.manual_preparation_required:  # U04
         reasons.append("[U04] " + _manual_preparation_reason(snap))
-    if snap.blade_down:  # U05 (yalnız bıçak - baskı için EKLENMEDİ, görev notu)
+    # U05 (yalnız bıçak - baskı için EKLENMEDİ, görev notu). PLC-HMI-
+    # 20260922-18 (HMI-A06, C06_1 audit) bulgusu: PLC sözleşmesi bu koşulu
+    # `BladeZDown OR xBladeValveCmd` olarak tanımlıyor ama `xBladeValveCmd`
+    # hiç yayınlanmış/config'e eklenmiş bir HMI tag'i değil - HMI yalnız
+    # `BladeZDown` sensörünü (blade_down) görüyor. Görmediğimiz bir valf
+    # komutu tahmin EDİLMEZ; genel U11 "PLC Start izni yok" yedeği zaten bu
+    # boşluğu dürüstçe kapatıyor (PLC'nin `start_permitted` hesabı kendi
+    # xBladeValveCmd bilgisini içerir, HMI onu yeniden üretmez).
+    if snap.blade_down:  # U05
         reasons.append("[U05] Start için bıçağı kaldırın.")
-    if snap.operator_stop_active:  # U06 - PLC henüz build/export etmedi, hep False
+    if snap.operator_stop_active:  # U06 - PLC-HMI-20260922-18: export'ta var, online doğrulama bekliyor, hep False
         reasons.append("[U06] Stop talebi aktif; Start engelli.")
     if not snap.x_servo_ready and not snap.x_fault:  # U07 (gerçek arıza H06'da ayrı gösterilir)
         reasons.append("[U07] X servo hazır değil.")
@@ -154,6 +167,35 @@ def compute_start_inhibit_reasons(
     return reasons
 
 
+# PLC-HMI-20260922-18 (HMI-A05, C06_1 audit): görev notundaki eşleme -
+# "40 kamera,60 talep,30/70 sensör,90/110 çıkış,130 dönüş,140 durduruluyor,
+# 510 manuel hazırlık,500 otomatik Stop devam yolu". M08 burada YOK - tek
+# seferlik "yeni sonuç" olduğu için ayrı, geçiş (edge) tabanlı üretilir.
+_CYCLE_STATE_MESSAGE_MAP: dict[int, str] = {
+    int(CycleState.WAIT_VISION): "[M01] Kamera verisi bekleniyor.",
+    int(CycleState.WAIT_BLADE_REQUEST): "[M02] Bıçak talebi / geçerli yörünge bekleniyor.",
+    int(CycleState.CLAMP_DOWN): "[M03] Baskı/bıçak aşağı sensörü bekleniyor.",
+    int(CycleState.BLADE_DOWN): "[M03] Baskı/bıçak aşağı sensörü bekleniyor.",
+    int(CycleState.BLADE_UP): "[M04] Bıçak/baskı aşağı sensöründen çıkış bekleniyor.",
+    int(CycleState.CLAMP_UP): "[M04] Bıçak/baskı aşağı sensöründen çıkış bekleniyor.",
+    int(CycleState.MANUAL_RETURN): "[M05] Başlangıç konumuna dönülüyor.",
+    int(CycleState.MANUAL_RETURN_STOP): "[M06] Dönüş durduruluyor; talepleri bırakın.",
+    int(CycleState.RECOVERY): "[M07] Manuel modu seçerek hazırlığı yapın.",
+    int(CycleState.STOPPING): "[M09] Otomatik çevrim durduruluyor; mevcut devam yolu bıçak yukarı/eksen dönüşü.",
+}
+
+
+def compute_active_state_message(snap: MachineSnapshot) -> str | None:
+    """PLC-HMI-20260922-18 (HMI-A05): "MESAJ" sınıfı hiçbir yere canlı
+    yansımıyordu - `core/notification_catalog.py`deki M01-M09 yalnız statik
+    referanstı. `snap.cycle_state`'e karşılık gelen SÜREKLİ (o durumda
+    kaldığı sürece görünen) mesajı üretir. Bağlantı bayatken kesin bir
+    süreç mesajı UYDURULMAZ (görev notu)."""
+    if snap.stale:
+        return None
+    return _CYCLE_STATE_MESSAGE_MAP.get(snap.cycle_state)
+
+
 class MachinePage(QWidget):
     navigateRequested = Signal(str)  # "manual" | "settings" | "alarms" | "camera"
 
@@ -167,6 +209,12 @@ class MachinePage(QWidget):
         # duruyor) - yalnız her snapshot tick'inde canlı hesaplanır/kaybolur,
         # `_refresh_alarm_table`'a `_on_snapshot`'tan aktarılır.
         self._live_warning_messages: list[str] = []
+        # PLC-HMI-20260922-18 (HMI-A05): M08 diğer M-kodları gibi "durum
+        # sürerken görünen" değil, "yeni sonuç" - yalnız move_to_start_
+        # status() İLK KEZ "done" olduğu tick'te bir kez gösterilir (aynı
+        # durum sonraki tick'lerde sürse bile tekrar eklenmez).
+        self._live_message_texts: list[str] = []
+        self._move_to_start_was_done = False
         self._build_ui()
 
         service.snapshotUpdated.connect(self._on_snapshot)
@@ -321,8 +369,10 @@ class MachinePage(QWidget):
         # Kullanıcı isteği (2026-09-18): "resetle temizlendiyse ana ekrandan
         # gitmeli" - ana ekran panosu yalnız AKTİF (cleared_at yok) satırları
         # gösterir; geçmiş/temizlenmiş kayıtlar ALARMLAR sayfasının "Geçmiş
-        # Alarmlar" sekmesine ait.
-        active_events = [e for e in self._service.recent_alarms() if e.active]
+        # Alarmlar" sekmesine ait. PLC-HMI-20260922-18 (HMI-A02): SINIRSIZ
+        # `active_alarms()` - `recent_alarms()` (son 100) filtrelenirse eski
+        # bir aktif HATA gizlenebilirdi.
+        active_events = self._service.active_alarms()
         selected = {sev for sev, cb in self._alarm_filter_checks.items() if cb.isChecked()}
         events = filter_alarm_events(active_events, selected)
         rows = [
@@ -337,6 +387,12 @@ class MachinePage(QWidget):
         if SEVERITY_WARNING in selected:
             for message in self._live_warning_messages:
                 rows.append(("ŞİMDİ", SEVERITY_WARNING, "PLC", message))
+        # M01-M09 (HMI-A05, C06_1 audit, 2026-09-22): aynı desen - canlı,
+        # `AlarmRepository`'de KAYITLI DEĞİL, "Mesaj" filtresi işaretliyken
+        # görünür.
+        if SEVERITY_MESSAGE in selected:
+            for message in self._live_message_texts:
+                rows.append(("ŞİMDİ", SEVERITY_MESSAGE, "PLC", message))
         table = self._alarm_table
         table.setRowCount(len(rows))
         for row, (occurred_text, severity, source, message) in enumerate(rows):
@@ -424,4 +480,18 @@ class MachinePage(QWidget):
         # U01-U11'i alarm tablosuna da aktar (kullanıcı isteği, 2026-09-22) -
         # her snapshot'ta yeniden hesaplanır, `AlarmRepository`'ye yazılmaz.
         self._live_warning_messages = reasons
+
+        # PLC-HMI-20260922-18 (HMI-A05): M01-M07/M09 - cycle_state sürdüğü
+        # sürece görünür. M08 - move_to_start_status() İLK KEZ "done" olan
+        # tick'te bir kez (edge), sonrakilerde tekrar eklenmez.
+        messages: list[str] = []
+        state_message = compute_active_state_message(snap)
+        if state_message is not None:
+            messages.append(state_message)
+        move_to_start_done_now = self._service.move_to_start_status() == "done"
+        if move_to_start_done_now and not self._move_to_start_was_done:
+            messages.append("[M08] Başlangıç konumuna dönüş tamamlandı.")
+        self._move_to_start_was_done = move_to_start_done_now
+        self._live_message_texts = messages
+
         self._refresh_alarm_table()

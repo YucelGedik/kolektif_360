@@ -139,6 +139,17 @@ def test_release_all_jog_clears_jog_active_lock(tmp_path):
     assert svc.manual_pneumatic_allowed() is True
 
 
+def test_common_permission_refused_when_operator_stop_active(tmp_path):
+    """PLC-HMI-20260922-18 (HMI-A06, C06_1 audit): "PLC reddetse de HMI
+    butonu açık kalabilir" - operator_stop_active (U06 aday tag) artık
+    ortak izinde kontrol ediliyor. Tag gerçek config'e henüz eklenmediği
+    için varsayılan hep False (bu test bilerek True set ediyor - kod
+    hazır, davranışı şimdiden kilitliyor)."""
+    svc = _real_service(tmp_path)
+    svc.snapshot.operator_stop_active = True
+    assert svc.manual_pneumatic_allowed() is False
+
+
 # -- Down-only extra conditions ----------------------------------------------
 
 

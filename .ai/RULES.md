@@ -455,3 +455,40 @@ yükseklikte değil... genişliği farklı. Bu da sayfada yamukluk yaratıyor."
       gerekmedi. Gerçek render + widget `.geometry()` ölçümüyle doğrulandı
       (önce 64/72, sonra 72/72; alttaki satırlar piksel piksel hizalı).
       Tam suite 267/267 (değişmedi).
+
+### 2026-09-22 — PLC-HMI-20260922-18: C06_1 HMI kaynak denetimi, A01-A06 (tamamlandı)
+Kaynak: `.ai/HMI_C061_AUDIT_TASK_20260922.md` - başka bir ajanın bağımsız
+kaynak denetimi. Her madde kodda doğrulandıktan sonra uygulandı (hiçbiri
+uydurma değildi); A06'daki iki etiket önceki oturumlarda attığım gerçek
+hatalardı. Detay: `CHANGELOG_MEMORY.md` üst giriş.
+- [x] A01 (P1): `set_parameter` artık ortak `_settings_write_allowed()`
+      kapısından geçiyor - stale/bağlantı (gerçek modda) + cycle_active +
+      jog + eksen hareketi. Eskiden yalnız move_to_start_busy vardı.
+- [x] A02 (P1): restart sonrası alarm uzlaştırması - yeni `AlarmEvent.
+      catalog_id` (migration), `_reconcile_alarm_state_with_persisted_
+      events()`. Aktif sayaç/liste artık sınırsız (`active_events()`),
+      eskiden `recent(limit=100)`'e bağlıydı.
+- [x] A03 (P2): `compute_start_inhibit_reasons` stale kontrolü artık
+      start_permitted'den ÖNCE (eski sırada bayat+eski-TRUE-izin
+      kombinasyonunda U10 hiç görünmüyordu).
+- [x] A04 (P1 entegrasyon kapısı): Alarmlar sayfasında dinamik "online
+      doğrulama bekleyen kodlar" banner'ı - `pending_candidate_catalog_
+      ids()`, config'ten canlı okur (H06/H07'nin türetilmiş config
+      anahtarı için özel eşleme gerekti).
+- [x] A05 (P2): M01-M09 artık ana ekran tablosunda canlı
+      (`compute_active_state_message`); M08 edge-tabanlı (yalnız
+      move_to_start "done" olduğu ilk tick, tek seferlik).
+- [x] A06: state 140 "Durduruluyor" (PLC'nin 13 numaralı bulgusuyla
+      uyumlu), 510 "Manuel Hazırlık Bekleniyor" (PLC'nin 2026-09-18
+      talimatı - "Recovery" kelimesi kullanılmamalıydı); pnömatik ortak
+      izne operator_stop_active eklendi; U05/"build-export" yorum
+      düzeltmeleri.
+- [x] Yan bulgu: `data/bufera.db`'deki eski kod=1201 alarmları GERÇEK
+      değil - `DemoSimulator`'ın kendi test-yan-etkisi (önceki oturumda
+      yanlışlıkla "gerçek geçmiş" sanılıp korunmuştu).
+- [x] Testler: `test_settings_write_permission.py` (8, yeni), `test_
+      alarm_restart_reconciliation.py` (6, yeni), `test_active_state_
+      message.py` (10, yeni), `test_machine_page_message_table.py` (5,
+      yeni), + `test_alarm_catalog.py`/`test_cycle_state.py`/`test_
+      manual_down_requests.py`/`test_start_inhibit_reasons.py` güncellemeleri.
+      Tam suite 305/305.

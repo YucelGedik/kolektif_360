@@ -12,6 +12,7 @@ import time
 from unittest.mock import MagicMock
 
 import services.machine_service as machine_service_module
+from core.models import ConnectionState
 from services.machine_service import MachineService
 
 
@@ -26,6 +27,12 @@ def _real_mode_service(tmp_path) -> MachineService:
     # PLC write in flight" branch instead of failing immediately for having
     # no worker at all.
     svc._worker = MagicMock()
+    # PLC-HMI-20260922-18 (HMI-A01): set_parameter now refuses writes while
+    # disconnected/stale (real-mode default) - mark this fixture as a
+    # genuinely connected, fresh service, matching every other real-mode
+    # fixture in the suite (e.g. test_move_to_start.py::_real_service).
+    svc.snapshot.connection_state = ConnectionState.CONNECTED
+    svc.snapshot.stale = False
     return svc
 
 

@@ -64,6 +64,12 @@ class AlarmEvent(Base):
     source: Mapped[str] = mapped_column(String(32))
     message: Mapped[str] = mapped_column(String(200))
     severity: Mapped[str] = mapped_column(String(16), default=SEVERITY_ALARM)
+    # PLC-HMI-20260922-18 (HMI-A02): `ALARM_CATALOG` giriş kimliği (H01,
+    # H20, ...) - yalnız katalog-driven kayıtlarda dolu; restart sonrası
+    # `MachineService`'in RAM'deki `_active_alarm_events`'i DB'deki gerçek
+    # açık kayıtlarla uzlaştırabilmesi için gerekli (mesaj metnine göre
+    # eşleştirme kırılgan olurdu - katalog metni değişebilir).
+    catalog_id: Mapped[str | None] = mapped_column(String(8), nullable=True)
 
     @property
     def active(self) -> bool:
@@ -76,7 +82,12 @@ class AlarmRepository:
         return self.log_event(SEVERITY_ALARM, source, alarm_text(code), code=code)
 
     def log_event(
-        self, severity: str, source: str, message: str, code: int | None = None
+        self,
+        severity: str,
+        source: str,
+        message: str,
+        code: int | None = None,
+        catalog_id: str | None = None,
     ) -> AlarmEvent:
         """Genel giriş - Uyarı/Mesaj için de kullanılır; bunların sabit bir
         kod tablosu olmak zorunda değil (görev notu: kullanıcı satırları
@@ -84,7 +95,9 @@ class AlarmRepository:
         if severity not in SEVERITIES:
             raise ValueError(f"Bilinmeyen severity: {severity}")
         with get_session() as session:
-            event = AlarmEvent(code=code, source=source, message=message, severity=severity)
+            event = AlarmEvent(
+                code=code, source=source, message=message, severity=severity, catalog_id=catalog_id
+            )
             session.add(event)
             session.commit()
             session.refresh(event)
@@ -121,10 +134,35 @@ class AlarmRepository:
                 .all()
             )
 
-    def active_count(self) -> int:
+    def active_events(self) -> list[AlarmEvent]:
+        """PLC-HMI-20260922-18 (HMI-A02, C06_1 audit): `recent(limit=100)`
+        geçmiş görünümü için doğru bir sınırdır, ama bir kaydın AKTİF
+        (henüz kapanmamış) olması bu sınırdan bağımsız olmalı - 100'den
+        fazla geçmiş/temizlenmiş olay birikirse `recent()` gerçekten aktif
+        eski bir HATA'yı listeden düşürebilir. "Güncel Alarmlar" ve ALARM
+        sayacı bu yüzden ayrı, SINIRSIZ bir sorgu kullanır."""
         with get_session() as session:
             return (
                 session.query(AlarmEvent)
                 .filter(AlarmEvent.cleared_at.is_(None))
-                .count()
+                .order_by(AlarmEvent.occurred_at.desc())
+                .all()
             )
+
+    def open_catalog_events(self) -> list[AlarmEvent]:
+        """PLC-HMI-20260922-18 (HMI-A02): hâlâ açık (cleared_at IS NULL) VE
+        bir `catalog_id` taşıyan kayıtlar - `MachineService` başlangıçta
+        bunları RAM'deki `_active_alarm_events`'e geri yükleyerek DB ile
+        uzlaşır. En yeniden en eskiye sıralı (aynı catalog_id için birden
+        fazla açık kayıt varsa - eski bir bug'ın kalıntısı - en yenisi
+        tutulur, eskiler ayrı temizlenir)."""
+        with get_session() as session:
+            return (
+                session.query(AlarmEvent)
+                .filter(AlarmEvent.cleared_at.is_(None), AlarmEvent.catalog_id.isnot(None))
+                .order_by(AlarmEvent.occurred_at.desc())
+                .all()
+            )
+
+    def active_count(self) -> int:
+        return len(self.active_events())

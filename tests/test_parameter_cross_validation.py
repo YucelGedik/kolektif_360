@@ -83,12 +83,18 @@ def test_failed_cross_validation_does_not_write_to_plc(tmp_path):
 def test_valid_edit_still_writes_normally(tmp_path):
     from unittest.mock import MagicMock
 
+    from core.models import ConnectionState
+
     cfg = tmp_path / "opcua.json"
     cfg.write_text(
         '{"endpoint": "opc.tcp://192.168.0.2:4840", "nodes": {}}', encoding="utf-8"
     )
     svc = MachineService(config_path=cfg)
     svc._worker = MagicMock()
+    # PLC-HMI-20260922-18 (HMI-A01): real-mode set_parameter now requires a
+    # fresh, connected snapshot - mark this fixture as such.
+    svc.snapshot.connection_state = ConnectionState.CONNECTED
+    svc.snapshot.stale = False
 
     svc.set_parameter("lr_x_cut_start_pos", 100.0)  # valid: < end (3600)
 

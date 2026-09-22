@@ -94,11 +94,11 @@ class _AlarmCondition:
 
 # H12-H15 (xX_StopError/xY_StopError/xX_AxisError/xY_AxisError) ve H20-H22
 # (xAlarmModeChangedDuringCycle/xAlarmClampLostDuringCycle/
-# xAlarmBladeNotClearDuringReturn, PLC-HMI-20260922-17) PLC'de henüz build/
-# online doğrulama tamamlanmadı (C6.1/C6 aday tag'leri) - config'te eşleme
-# yok, bu yüzden ilgili `MachineSnapshot` alanları hep False kalır ve bu
-# maddeler online doğrulanana kadar hiç tetiklenmez (C0.4/C5 dersiyle aynı
-# disiplin).
+# xAlarmBladeNotClearDuringReturn, PLC-HMI-20260922-17) - PLC-HMI-20260922-
+# 18 (C06_1 audit) ile export'ta VAR olduğu doğrulandı, yalnız online node/
+# erişim testi hâlâ bekliyor (C6.1/C6 aday tag'leri) - config'te eşleme yok,
+# bu yüzden ilgili `MachineSnapshot` alanları hep False kalır ve bu maddeler
+# online doğrulanana kadar hiç tetiklenmez (C0.4/C5 dersiyle aynı disiplin).
 ALARM_CATALOG: tuple[_AlarmCondition, ...] = (
     _AlarmCondition("H01", "alarm_clamp_lost_during_cut", False, "PNEUMATIC", "Kesimde baskı aşağı sensörü kayboldu."),
     _AlarmCondition("H02", "alarm_blade_lost_during_cut", False, "PNEUMATIC", "Kesimde bıçak aşağı sensörü kayboldu."),
@@ -232,6 +232,11 @@ class MachineService(QObject):
         # PLC'nin kendi okuması FALSE'a döndüğünde (falling edge - HMI'nin
         # Reset tıklamasıyla DEĞİL) buradan çıkarılır ve o kayıt kapatılır.
         self._active_alarm_events: dict[str, int] = {}
+        # PLC-HMI-20260922-18 (HMI-A02): yukarıdaki dict RAM'de başlar - her
+        # yeniden başlatmada boş, ama alttaki SQLite kalıcı. İlk gerçek koşul
+        # değerlendirmesinden önce DB'deki hâlâ açık kayıtlarla bir kez
+        # uzlaştırılır (`_reconcile_alarm_state_with_persisted_events`).
+        self._alarm_state_reconciled = False
 
         from services.demo_simulator import DemoSimulator
 
@@ -484,6 +489,10 @@ class MachineService(QObject):
         DEĞİL) yalnız O kayıt kapatılır. İlk okuma zaten TRUE ise (örn.
         bağlantı/reconnect sonrası) yine aktif listede görünür - bu bir
         kayıp değil, doğru davranıştır."""
+        if not self._alarm_state_reconciled:
+            self._reconcile_alarm_state_with_persisted_events()
+            self._alarm_state_reconciled = True
+
         changed = False
         known_cause_active = False
         for cond in ALARM_CATALOG:
@@ -493,7 +502,9 @@ class MachineService(QObject):
                 known_cause_active = True
             is_open = cond.catalog_id in self._active_alarm_events
             if active and not is_open:
-                event = self._alarms.log_event(SEVERITY_ALARM, cond.source, cond.message)
+                event = self._alarms.log_event(
+                    SEVERITY_ALARM, cond.source, cond.message, catalog_id=cond.catalog_id
+                )
                 self._active_alarm_events[cond.catalog_id] = event.id
                 changed = True
             elif not active and is_open:
@@ -507,7 +518,10 @@ class MachineService(QObject):
         is_h19_open = "H19" in self._active_alarm_events
         if fault_no_known_cause and not is_h19_open:
             event = self._alarms.log_event(
-                SEVERITY_ALARM, "PLC", "PLC arıza durumunda; ayrıntılı neden bilgisi mevcut değil."
+                SEVERITY_ALARM,
+                "PLC",
+                "PLC arıza durumunda; ayrıntılı neden bilgisi mevcut değil.",
+                catalog_id="H19",
             )
             self._active_alarm_events["H19"] = event.id
             changed = True
@@ -518,13 +532,68 @@ class MachineService(QObject):
         if changed:
             self.alarmsChanged.emit()
 
+    def _reconcile_alarm_state_with_persisted_events(self) -> None:
+        """PLC-HMI-20260922-18 (HMI-A02, C06_1 audit): `_active_alarm_events`
+        RAM'de her yeniden başlatmada boş başlar ama alttaki SQLite kalıcı.
+        Uzlaştırma olmadan: (a) önceki oturumdan kalan hâlâ-açık bir kayıt,
+        PLC şimdi FALSE okusa bile hiç kapanmaz (servis onun varlığından
+        habersiz - falling edge asla tetiklenmez, kayıt sonsuza dek "aktif"
+        görünür); (b) koşul hâlâ TRUE ise ikinci bir kopya kayıt açılır.
+        İlk gerçek koşul değerlendirmesinden ÖNCE, bir kez çağrılır: DB'deki
+        hâlâ açık VE bir catalog_id taşıyan kayıtlar belleğe geri yüklenir.
+        DB'ye hiçbir YENİ satır yazılmaz - yalnız eski bug'lardan kalma
+        (aynı catalog_id için birden fazla açık kayıt) varsa en yenisi
+        tutulur, geri kalanı `clear_event` ile kapatılır (SİLİNMEZ,
+        yalnız cleared_at set edilir - geçmiş korunur)."""
+        seen: set[str] = set()
+        for event in self._alarms.open_catalog_events():  # en yeniden en eskiye
+            if event.catalog_id in seen:
+                self._alarms.clear_event(event.id)
+                continue
+            seen.add(event.catalog_id)
+            self._active_alarm_events[event.catalog_id] = event.id
+
     def active_alarm_count(self) -> int:
         """C6.1: ana ekranın ALARM sayacı, hayali `MachineSnapshot.alarm_
         count`'a değil, gerçek aktif HATA kayıtlarına dayanır (Uyarı/Mesaj
-        sayılmaz)."""
-        return sum(
-            1 for e in self._alarms.recent() if e.active and e.severity == SEVERITY_ALARM
-        )
+        sayılmaz). PLC-HMI-20260922-18 (HMI-A02): `recent(limit=100)`
+        DEĞİL, sınırsız `active_events()` - 100+ geçmiş kayıt varken bile
+        aktif bir HATA gizlenmez."""
+        return sum(1 for e in self._alarms.active_events() if e.severity == SEVERITY_ALARM)
+
+    # H06/H07'nin `MachineSnapshot` alanı (`x_fault`/`y_fault`) türetilmiş -
+    # gerçek config anahtarı `x_power_error`/`y_power_error`'dır (bkz.
+    # `_on_raw_snapshot`: `snap.x_fault = x_power_error`). Diğer tüm katalog
+    # `attr`'ları config anahtarıyla birebir aynı isimdedir.
+    _CATALOG_ATTR_TO_CONFIG_KEY = {"x_fault": "x_power_error", "y_fault": "y_power_error"}
+
+    def pending_candidate_catalog_ids(self) -> list[str]:
+        """PLC-HMI-20260922-18 (HMI-A04, C06_1 audit): hangi H/U kodlarının
+        gerçek `config/opcua.json`'da HENÜZ bir NodeId eşlemesi olmadığını
+        (bu yüzden hiç tetiklenemeyeceğini) döndürür - config'ten canlı
+        okunur, statik bir metne bağlı değildir; PLC online doğrulayıp
+        gerçek config'e eklendiği an otomatik listeden düşer. Katalogdaki
+        her giriş kendi config anahtarının config'te olup olmadığıyla
+        kontrol edilir - H01-H11/H16-H19 zaten eşlenmiş olduğu için listeye
+        hiç girmez, yalnız gerçek adaylar (H12-H15/H20-H22) çıkar. U06
+        (operator_stop_active) ALARM_CATALOG'da değildir (bir UYARI, HATA
+        değil), ayrıca kontrol edilir."""
+        if self.demo_mode:
+            return []
+        ids = [
+            cond.catalog_id
+            for cond in ALARM_CATALOG
+            if self._CATALOG_ATTR_TO_CONFIG_KEY.get(cond.attr, cond.attr) not in self._config.nodes
+        ]
+        if "operator_stop_active" not in self._config.nodes:
+            ids.append("U06")
+        return ids
+
+    def active_alarms(self) -> list[AlarmEvent]:
+        """PLC-HMI-20260922-18 (HMI-A02): "Güncel Alarmlar" ve ana ekranın
+        Hata/Uyarı/Mesaj panosu için - `recent_alarms()`'ın aksine (geçmiş
+        görünümü, son 100 ile sınırlı) burada bir üst sınır YOK."""
+        return self._alarms.active_events()
 
     def _update_move_to_start_status(self, snap: MachineSnapshot) -> None:
         """PLC-HMI-20260921-11: "yeni isteğin readback geçişlerini izle,
@@ -732,6 +801,41 @@ class MachineService(QObject):
             return False
         # PLC-HMI-20260921-10: move-to-start busy'de pnömatik de kilitli.
         if snap.move_to_start_busy:
+            return False
+        # PLC-HMI-20260922-18 (HMI-A06, C06_1 audit): "PLC reddetse de HMI
+        # butonu açık kalabilir" - operator_stop_active aday tag (U06),
+        # gerçek config'e eklenene kadar hep False (C0.4/C5 disiplini) -
+        # bu satır online doğrulanana kadar hiçbir şeyi etkilemez, yalnız
+        # tag geldiğinde otomatik aktive olur.
+        if snap.operator_stop_active:
+            return False
+        return True
+
+    def _settings_write_allowed(self) -> bool:
+        """PLC-HMI-20260922-18 (HMI-A01, C06_1 audit): mühendislik ayar
+        yazmalarının (`set_parameter`) paylaştığı ortak izin - `_pneumatic_
+        common_allowed`'la aynı disiplin, ayarlar için: veri taze/bağlı
+        olmalı, otomatik çevrim aktif olmamalı, jog talebi veya gerçek eksen
+        hareketi sürmemeli. C5 (move_to_start_busy) `set_parameter`'da ayrı,
+        özel bir mesajla zaten kontrol ediliyor - burada TEKRAR edilmez."""
+        snap = self._snapshot
+        # Demo modda gerçek bir bağlantı/tazelik kavramı yok (görev notu:
+        # "gerçek modda taze/bağlı") - `.start()` çağrılmadan (birçok testte
+        # olduğu gibi) `stale` varsayılanı hep True kalır; bu iki şart yalnız
+        # gerçek modda anlamlıdır. cycle_active/jog/eksen hareketi HER İKİ
+        # modda da kontrol edilir (demo simülatörü de bunları üretebilir).
+        if not self.demo_mode:
+            if snap.stale:
+                return False
+            if snap.connection_state != ConnectionState.CONNECTED:
+                return False
+        if snap.cycle_active:
+            return False
+        if self._jog_x_active or self._jog_y_active:
+            return False
+        if abs(snap.x_actual_vel) > AXIS_STOPPED_VELOCITY_TOLERANCE:
+            return False
+        if abs(snap.y_actual_vel) > AXIS_STOPPED_VELOCITY_TOLERANCE:
             return False
         return True
 
@@ -959,6 +1063,18 @@ class MachineService(QObject):
         # Active bunu kapsamaz).
         if self._snapshot.move_to_start_busy:
             raise ValueError("Başlangıç konumuna dönüş sürüyor - ayar değişikliği şu an kilitli.")
+        # PLC-HMI-20260922-18 (HMI-A01, C06_1 audit): yalnız move_to_start_
+        # busy kontrolü yetersizdi - cycle_active/stale/bağlantı/jog/eksen
+        # hareketi şartları eksikti. UI (SettingsPage) yalnız cycle_active'i
+        # ve yalnız onay penceresi AÇILIRKEN kontrol ediyor - onay penceresi
+        # açıkken koşullar değişebilir; gerçek kaynak burası olmalı. UI zaten
+        # bu ValueError'ı yakalayıp gösteriyor (_apply_parameter), yeni bir
+        # UI katmanı gerekmez.
+        if not self._settings_write_allowed():
+            raise ValueError(
+                "Şu an ayar yazılamaz - bağlantı taze/bağlı değil, otomatik "
+                "çevrim aktif veya eksen hareket ediyor."
+            )
         spec = next((s for s in PARAMETER_SPECS if s.key == key), None)
         if spec is None:
             raise ValueError(f"Bilinmeyen parametre: {key}")

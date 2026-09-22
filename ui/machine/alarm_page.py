@@ -128,6 +128,18 @@ class AlarmPage(QWidget):
         header.addWidget(back_btn)
         root.addLayout(header)
 
+        # PLC-HMI-20260922-18 (HMI-A04, C06_1 audit): "eksik eşlemeler için
+        # görünür eksik/bilinmiyor açıklaması ver" - hangi H/U kodlarının
+        # gerçek config'te henüz bir NodeId'si olmadığını (bu yüzden hiç
+        # tetiklenemeyeceğini), config'ten CANLI okuyarak gösterir. Statik
+        # bir metin değil - PLC online doğrulayıp gerçek config'e eklenince
+        # otomatik kaybolur.
+        self._pending_tags_label = QLabel()
+        self._pending_tags_label.setWordWrap(True)
+        self._pending_tags_label.setStyleSheet(f"color: {COLORS['warning']};")
+        self._pending_tags_label.setVisible(False)
+        root.addWidget(self._pending_tags_label)
+
         self._tabs = QTabWidget()
         self._current_table = _build_alarm_table()
         self._history_table = _build_alarm_table()
@@ -142,9 +154,23 @@ class AlarmPage(QWidget):
     def showEvent(self, event) -> None:  # noqa: N802 (Qt override)
         super().showEvent(event)
         self._refresh()
+        self._refresh_pending_tags()
+
+    def _refresh_pending_tags(self) -> None:
+        pending = self._service.pending_candidate_catalog_ids()
+        if pending:
+            self._pending_tags_label.setText(
+                "Online doğrulama bekleyen kodlar (gerçek config'te tag eşlemesi "
+                "yok, bu yüzden hiç tetiklenmez): " + ", ".join(pending)
+            )
+            self._pending_tags_label.setVisible(True)
+        else:
+            self._pending_tags_label.setVisible(False)
 
     def _refresh(self) -> None:
-        events = self._service.recent_alarms()
-        current = [e for e in events if e.active]
-        _fill_alarm_table(self._current_table, current)
-        _fill_alarm_table(self._history_table, events)
+        # PLC-HMI-20260922-18 (HMI-A02): "Güncel Alarmlar" `active_alarms()`
+        # kullanır (SINIRSIZ) - `recent_alarms()` (Geçmiş Alarmlar için,
+        # bilinçli olarak son 100 ile sınırlı) filtrelenirse, 100'den fazla
+        # geçmiş kayıt birikince gerçekten aktif eski bir HATA gizlenebilirdi.
+        _fill_alarm_table(self._current_table, self._service.active_alarms())
+        _fill_alarm_table(self._history_table, self._service.recent_alarms())

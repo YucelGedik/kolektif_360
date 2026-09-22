@@ -3,6 +3,92 @@
 Yeni girisleri en uste ekle. Eski ve uzun detaylari `CHANGELOG_ARCHIVE.md`
 dosyasina tasi.
 
+## 2026-09-22 - PLC-HMI-20260922-18: C06_1 HMI kaynak denetimi (A01-A06), 6 gerçek bulgu düzeltildi
+
+Kaynak: `.ai/HMI_C061_AUDIT_TASK_20260922.md` - başka bir ajanın HMI kod
+tabanını PLC C06_1 export'uyla karşılaştıran bağımsız denetimi. Her madde
+kodda DOĞRULANDI önce (hiçbiri uydurma değildi); ikisi (A06'daki state
+140/510 etiketleri) benim ÖNCEKİ oturumlarda attığım gerçek hatalardı -
+PLC'nin kendi 2026-09-18/09-21 talimatlarına aykırı yazılmışlardı.
+
+**A01 (P1) - `set_parameter` ayar yazma izni eksikti:** yalnız `move_to_
+start_busy` kontrol ediliyordu; `cycle_active`/stale/bağlantı/jog/eksen
+hareketi HİÇ kontrol edilmiyordu (repro: cycle_active=True+stale=True+
+DISCONNECTED iken yazma worker'a ulaşıyordu). Yeni `_settings_write_
+allowed()` - `_pneumatic_common_allowed`'la aynı disiplin, ama stale/
+bağlantı kontrolü yalnız GERÇEK modda (demo'da `.start()` çağrılmadığı
+sürece `stale` varsayılanı hep True kalır - bu ayrım olmadan tüm demo-mod
+testleri kırılıyordu, empirik olarak bulundu). UI zaten `ValueError`'ı
+yakalayıp gösteriyor, yeni katman gerekmedi.
+
+**A02 (P1) - Restart sonrası alarm uzlaştırması yoktu:** `_active_alarm_
+events` RAM'de başlar, SQLite kalıcıdır - restart sonrası PLC FALSE okunan
+eski bir aktif kayıt hiç kapanmıyordu (servis onun varlığından habersiz);
+TRUE kalan bir koşul ikinci bir kopya kayıt açıyordu. `AlarmEvent`'e yeni
+`catalog_id` sütunu (nullable ADD COLUMN migration, tablo yeniden kurmaya
+gerek yok), `_reconcile_alarm_state_with_persisted_events()` ilk gerçek
+okumada DB'deki açık kayıtları belleğe geri yüklüyor (eski kopyalar varsa
+en yenisi tutulur, gerisi `clear_event` ile kapatılır - silinmez). Ayrı
+bulgu: `active_alarm_count()`/"Güncel Alarmlar" `recent(limit=100)`
+kullanıyordu - 100+ geçmiş kayıt birikince eski bir aktif HATA gizlenebi-
+liyordu. Yeni sınırsız `AlarmRepository.active_events()`/`MachineService.
+active_alarms()`.
+
+**A03 (P2) - U10 sıralaması ters:** `compute_start_inhibit_reasons` `snap.
+start_permitted`'i stale'DEN ÖNCE kontrol ediyordu - bağlantı koptuğunda
+`start_permitted` PLC'den gelen SON (artık bayat) TRUE değerini taşımaya
+devam ettiği için fonksiyon erken `[]` dönüyor, U10 hiç görünmüyordu.
+Sıra değiştirildi (stale önce).
+
+**A04 (P1 entegrasyon kapısı) - eksik tag'ler görünmüyordu:** 8 aday alan
+(H12-H15/H20-H22/U06) config'te yoksa sessizce hep False kalıyordu - "sağ-
+lıklı okuma" ile "hiç tetiklenemez" ayrımı operatöre hiç gösterilmiyordu.
+Yeni `MachineService.pending_candidate_catalog_ids()` - config'ten CANLI
+okur (statik metne bağlı değil), Alarmlar sayfasında dinamik bir banner
+gösterir. İnce nokta: H06/H07'nin snapshot alanı (`x_fault`/`y_fault`)
+config anahtarından (`x_power_error`/`y_power_error`) farklı isimlendiril-
+miş - `_CATALOG_ATTR_TO_CONFIG_KEY` ile çözüldü (ilk taslak H06/H07'yi
+YANLIŞLIKLA "eksik" listeliyordu, gerçek config'te render ederek yakalandı).
+
+**A05 (P2) - MESAJ sınıfı hiç canlı değildi:** `core/notification_catalog.
+py`deki M01-M09 yalnız statik referanstı, ana ekran tablosuna hiç yansımı-
+yordu. Yeni `compute_active_state_message()` - `cycle_state`'e göre M01-
+M07/M09'u (görev notundaki eşleme: 40/60/30-70/90-110/130/140/510/500)
+cycle_state süresince gösterir; M08 ayrı - "yalnız yeni sonuç" (görev notu)
+olduğu için `move_to_start_status()` İLK KEZ "done" olduğu tick'te bir kez
+(edge-tracking), durum "done" kalsa bile tekrarlanmaz. Hepsi U-serisiyle
+aynı desen: `AlarmRepository`'ye YAZILMAZ, canlı görünüp kaybolur.
+
+**A06 - dört küçük düzeltme:** (1) `CycleState.MANUAL_RETURN_STOP` (140)
+etiketi "Durduruldu" (tamamlanmış, YANLIŞ) yerine "Durduruluyor" - PLC'nin
+kendi 13 numaralı bulgusu zaten "durduruluyor" diyordu, ben yanlış yazmı-
+şım. `RECOVERY` (510) "Recovery" yerine "Manuel Hazırlık Bekleniyor" - PLC
+2026-09-18'de açıkça "eski recovery ifadesi kullanılmamalı" demişti, yine
+benim hatam. (2) `_pneumatic_common_allowed`'a `operator_stop_active`
+kontrolü eklendi (aday tag, şimdilik inert). (3) U05'in bilinen sınırlaması
+(`xBladeValveCmd` hiç yayınlanmamış bir tag - HMI yalnız `BladeZDown`
+görüyor) yorumla netleştirildi, U11 genel yedeğin bu boşluğu zaten kapat-
+tığı belirtildi. (4) "henüz build/export edilmedi" yorumları "export'ta
+var, online node/erişim testi bekliyor" olarak düzeltildi (8 alanın da
+export'ta VAR olduğu bu denetimle doğrulandı).
+
+**Yan bulgu (test altyapısı):** `data/bufera.db`'deki eski numaralı-kod
+alarmları (örn. 1201 "Vision Heartbeat Kayboldu") GERÇEK PLC verisi değil,
+`DemoSimulator`'ın kendi `raise_alarm(1201, ...)` çağrısından - paylaşımlı
+DB + izole olmayan demo-mod testleri yüzünden. Önceki oturumlarda "gerçek
+geçmiş" sanılıp KORUNMUŞTU - yanlış varsayımdı, düzeltildi (bkz. SESSION_
+BRIEF Kısa Notlar).
+
+Test: `test_settings_write_permission.py` (8, yeni), `test_alarm_restart_
+reconciliation.py` (6, yeni), `test_active_state_message.py` (10, yeni),
+`test_machine_page_message_table.py` (5, yeni), `test_alarm_catalog.py`
+(+4), `test_cycle_state.py` (+2), `test_manual_down_requests.py` (+1),
+`test_start_inhibit_reasons.py` (+1, yorumlar güncellendi), `test_
+parameter_write_confirmation.py`/`test_parameter_cross_validation.py`
+(fixture'lara connection_state=CONNECTED/stale=False eklendi - A01'in
+gerçek-mod gereksinimiyle tutarlı olmaları için). Tam suite 305/305.
+`.ai/Codex_Codesys.md`'ye yanıt yazıldı.
+
 ## 2026-09-22 - Manuel sayfa: "Başlangıç Konumuna Dön" satırı X/Y kartları arasında yamuktu (kullanıcı ekran görüntüsü)
 
 Kullanıcı: "sıfıra gönder butonu ile başlangıç konumu yanyana ama aynı

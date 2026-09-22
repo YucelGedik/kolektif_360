@@ -56,9 +56,18 @@ CYCLE_STATE_LABELS_TR: dict[CycleState, str] = {
     CycleState.CLAMP_UP: "Baskı Kalkıyor",
     CycleState.CYCLE_COMPLETE: "Çevrim Tamamlandı",
     CycleState.MANUAL_RETURN: "Başlangıca Dönüyor",
-    CycleState.MANUAL_RETURN_STOP: "Başlangıca Dönüş Durduruldu",
+    # PLC-HMI-20260922-18 (HMI-A06, C06_1 audit): "Durduruldu" yanlıştı -
+    # süreç TAMAMLANMADI (hâlâ devam eden bir durdurma evresi). PLC'nin
+    # kendi 13 numaralı bulgusundaki orijinal öneri de zaten bu: "Başlangıca
+    # dönüş durduruluyor / taleplerin bırakılması bekleniyor" (.ai/C5_
+    # RESET_140_INVESTIGATION_20260921.md).
+    CycleState.MANUAL_RETURN_STOP: "Başlangıca Dönüş Durduruluyor",
     CycleState.STOPPING: "Durduruluyor",
-    CycleState.RECOVERY: "Recovery",
+    # PLC-HMI-20260922-18 (HMI-A06): "Recovery" - PLC'nin 2026-09-18 tarihli
+    # açık talimatına aykırıydı: ".ai/HMI_OPERATOR_RECOVERY_MESSAGES_
+    # 20260918.md": "RECOVERY (510): 'Manuel hazırlık bekleniyor. Manuel
+    # modu seçin.' Eski otomatik dönüş/recovery ifadesi kullanılmamalı."
+    CycleState.RECOVERY: "Manuel Hazırlık Bekleniyor",
     CycleState.FAULT: "Arıza",
 }
 

@@ -123,9 +123,11 @@ class MachineSnapshot:
     y_move_error: bool = False
     y_follow_error: bool = False
 
-    # C6.1: PLC'nin aday (henüz build/export edilmemiş) 5 yeni RO tag'i -
-    # config'te eşleme olmadığı sürece hep False kalır (güvenli varsayılan,
-    # C0.4/C5 dersi). PLC online doğrulayınca gerçek config'e eklenecek.
+    # C6.1: PLC'nin aday 5 yeni RO tag'i - PLC-HMI-20260922-18 (C06_1 audit)
+    # ile export'ta VAR olduğu doğrulandı, yalnız online node/erişim testi
+    # hâlâ bekliyor - config'te eşleme olmadığı sürece hep False kalır
+    # (güvenli varsayılan, C0.4/C5 dersi). Online doğrulanınca gerçek
+    # config'e eklenecek.
     operator_stop_active: bool = False
     x_stop_error: bool = False
     y_stop_error: bool = False
@@ -134,8 +136,9 @@ class MachineSnapshot:
 
     # PLC-HMI-20260922-17 (C6 toplu teslim): 3 yeni aday latched HATA bit'i
     # (xAlarmModeChangedDuringCycle/xAlarmClampLostDuringCycle/
-    # xAlarmBladeNotClearDuringReturn) - kod/test teslim edildi ama PLC
-    # tarafında build/online doğrulama henüz YAPILMADI. Aynı disiplin: config'te
+    # xAlarmBladeNotClearDuringReturn) - kod/test teslim edildi; PLC-HMI-
+    # 20260922-18 (C06_1 audit) ile export'ta VAR olduğu doğrulandı, yalnız
+    # online node/erişim testi hâlâ bekliyor. Aynı disiplin: config'te
     # eşleme olmadığı sürece hep False kalır, online doğrulanınca gerçek
     # config'e eklenecek.
     alarm_mode_changed_during_cycle: bool = False

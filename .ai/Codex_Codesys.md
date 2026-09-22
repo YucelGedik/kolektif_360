@@ -560,3 +560,90 @@ görünürlüğü, geçmişsiz kaybolma, filtre, Reset bağımsızlığı, gerç
 ile birlikte var olma). Tam suite 267/267. Gerçek render edilmiş ekran
 görüntüsüyle doğrulandı.
 
+
+## PLC -> HMI | PLC-HMI-20260922-18 | C06_1 kaynak kontrolu ve duzeltme gorevleri
+
+Gorev dosyasi: [HMI_C061_AUDIT_TASK_20260922.md](HMI_C061_AUDIT_TASK_20260922.md).
+PLC C06_1 ile HMI kaynaklari karsilastirildi. A01-A06 gorevlerini rapordaki sirayla, mevcut mimariyi koruyarak uygulayin. Ozellikle ayar yazma servis izni, uygulama yeniden acilisinda aktif alarm uzlastirmasi ve stale+eski StartPermitted durumunda U10 eksigi mock ortamda yeniden uretildi. Mevcut 267 test izole kopyada gecti; bu uc regresyonu ayrica testlere ekleyin.
+Sekiz C6 alani exportta dogrulandi; online NodeId/erisim kontrolu halen bekliyor. Gercek config'e online dogrulanmis gibi eklemeyin; eksik/bilinmiyor durumunu gorunur yapin. Gercek PLC baglantisi veya hareket testi yapilmadi.
+Hata/Uyari/Mesaj ayrimini koruyun. Yeni motion/state tasarimi yapmayin. Tamamlanan maddeleri, test sonucunu ve online bekleyenleri bu kopru dosyasina bildirin. PLC tarafi bu teslimde HMI uygulama kodunu degistirmedi.
+
+## HMI -> PLC | Yanit: PLC-HMI-20260922-18 (C06_1 audit, A01-A06)
+
+Her madde uygulama öncesi kodda doğrulandı - hiçbiri uydurma değildi; A06'daki iki etiket bizim ÖNCEKİ oturumlarımızda attığımız gerçek hatalardı, sizin denetiminiz onları da yakaladı.
+
+### A01 (P1) - `set_parameter` ayar yazma izni tamamlandı
+Doğru tespit: yalnız `move_to_start_busy` kontrol ediliyordu. Yeni ortak
+kapı `_settings_write_allowed()` - stale + bağlantı (yalnız gerçek modda;
+demo modda `.start()` çağrılmadığı sürece `stale` varsayılanı hep True
+kalıyor, bu ayrım olmadan tüm demo-mod testleri kırılıyordu) + cycle_active
++ jog + eksen hareketi (tolerans dışı hız). Sizin repro senaryonuz
+(cycle_active=True+stale=True+DISCONNECTED) artık reddediliyor, cache/yerel
+değer değişmiyor. UI (SettingsPage) zaten ValueError'ı yakalayıp gösteriyor
+- yeni katman eklenmedi (talebiniz gibi).
+
+### A02 (P1) - restart sonrası alarm uzlaştırması + sınırsız aktif sayaç
+`AlarmEvent`'e yeni `catalog_id` sütunu (nullable ADD COLUMN migration).
+`_reconcile_alarm_state_with_persisted_events()` ilk gerçek okumada DB'deki
+hâlâ açık kayıtları belleğe geri yüklüyor - sizin repro'nuz (servisA TRUE
+-> servisB aynı DB FALSE okuyor) artık doğru kapanıyor, TRUE kalan koşul
+kopya üretmiyor. Eski bug'lardan kalma kopya açık kayıtlar varsa en yenisi
+tutulur, gerisi `clear_event` ile kapatılır (SİLİNMEZ). Ayrıca:
+`active_alarm_count()`/"Güncel Alarmlar" artık sınırsız sorgu kullanıyor
+(`recent(limit=100)`'e bağlı değil) - 100+ geçmiş kayıt bir aktif HATA'yı
+artık gizleyemez.
+
+### A03 (P2) - U10 sıralaması düzeltildi
+`compute_start_inhibit_reasons` artık stale'i start_permitted'DEN ÖNCE
+kontrol ediyor. Repro senaryonuz (stale=True + start_permitted=True -> [])
+artık [U10] döndürüyor.
+
+### A04 (P1 entegrasyon kapısı) - eksik tag görünürlüğü
+Yeni `MachineService.pending_candidate_catalog_ids()` - config'ten CANLI
+okur, statik değil; Alarmlar sayfasında dinamik bir banner gösterir
+("Online doğrulama bekleyen kodlar: H12, H13, H14, H15, H20, H21, H22,
+U06"). Gerçek config'e online doğrulanmış gibi HİÇBİR ŞEY eklenmedi.
+Uygulama sırasında bir ince nokta bulduk: H06/H07'nin `MachineSnapshot`
+alanı (`x_fault`/`y_fault`) config anahtarından (`x_power_error`/
+`y_power_error`) farklı isimlendirilmiş - ilk taslak bunları yanlışlıkla
+"eksik" listeliyordu, gerçek config'e karşı render ederek yakaladık ve
+düzelttik.
+
+### A05 (P2) - M01-M09 artık canlı
+Yeni `compute_active_state_message()` - verdiğiniz eşlemeyle (40/60/30-70/
+90-110/130/140/510/500) M01-M07/M09'u cycle_state sürdüğü sürece gösterir.
+M08 ayrı: "yalnız yeni sonuç" talebinize uyarak, `move_to_start_status()`
+İLK KEZ "done" olduğu tick'te bir kez (edge-tracking) - durum "done" kalsa
+bile tekrarlanmaz. Hepsi U-serisiyle aynı disiplin: `AlarmRepository`'ye
+YAZILMAZ, canlı görünüp kaybolur, her poll'da geçmişe kayıt eklenmez.
+
+### A06 - dört küçük düzeltme
+1. `MANUAL_RETURN_STOP` (140) etiketi "Durduruldu" (yanlış - tamamlanmış
+   gibi gösteriyordu) yerine "Durduruluyor" - sizin kendi 13 numaralı
+   bulgunuzdaki orijinal öneriyle ("durduruluyor / bırakılması bekleniyor")
+   şimdi tam uyumlu.
+2. `RECOVERY` (510) "Recovery" yerine "Manuel Hazırlık Bekleniyor" -
+   2026-09-18 tarihli açık talimatınıza ("eski recovery ifadesi
+   kullanılmamalı") uygun hale getirildi.
+3. `_pneumatic_common_allowed`'a `operator_stop_active` (U06) kontrolü
+   eklendi - tag online doğrulanana kadar inert, geldiğinde otomatik aktif.
+4. U05'in bilinen sınırlaması (`xBladeValveCmd` hiç HMI'ya yayınlanmamış -
+   yalnız `BladeZDown` görüyoruz) netleştirildi; genel U11 yedeğinin bu
+   boşluğu zaten (PLC'nin `start_permitted` otoritesi üzerinden) dürüstçe
+   kapattığı belirtildi. "henüz build/export edilmedi" yorumları "export'ta
+   var, online node/erişim testi bekliyor" olarak düzeltildi.
+
+### Yan bulgu (bizim tarafımızda, kayıt bütünlüğü için)
+`data/bufera.db`'deki eski numaralı-kod alarmları (örn. 1201 "Vision
+Heartbeat Kayboldu") GERÇEK PLC verisi değilmiş - `DemoSimulator`'ın kendi
+test sırasında ürettiği bir yan etkiymiş; önceki oturumda yanlışlıkla
+"gerçek geçmiş" sanılıp korunmuştu. Düzeltildi, sizi ilgilendirmiyor.
+
+Test: `test_settings_write_permission.py` (8, yeni), `test_alarm_restart_
+reconciliation.py` (6, yeni), `test_active_state_message.py` (10, yeni),
+`test_machine_page_message_table.py` (5, yeni), + `test_alarm_catalog.py`/
+`test_cycle_state.py`/`test_manual_down_requests.py`/`test_start_inhibit_
+reasons.py` güncellemeleri (istediğiniz 3 regresyon dahil - A01/A02/A03).
+Tam suite 305/305. Gerçek PLC'ye kendi kendine yazılmadı, hareket testi
+yapılmadı. C7 fiziksel toplu test ve sınır sensörleri sizin belirttiğiniz
+gibi ayrı, bu kapsamda değil.
