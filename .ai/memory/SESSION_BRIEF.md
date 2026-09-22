@@ -1,31 +1,31 @@
-# SESSION_BRIEF - Son guncelleme: 2026-09-21
+# SESSION_BRIEF - Son guncelleme: 2026-09-22
 
 > Bu dosya AI protokolunun birincil giris noktasidir.
 > Her anlamli kod degisikliginden sonra guncellenir. 40 satiri gecirme.
 
 ## Aktif Durum
 
-**PLC-HMI-20260921-14/15/16 (Hata/Uyarı/Mesaj kataloğu) TAMAMLANDI - bu
-oturumun en büyük paketi.** Üç mesaj birlikte:
-1. **Gerçek bug fix:** `request_reset()` artık gerçek modda `_alarms.
-   clear_active()` çağırmıyor - Reset kabul edilmeden aktif HATA
-   kaybolmuyor; temizlik yalnız PLC'nin kendi okuması FALSE olunca.
-2. Yeni `ALARM_CATALOG`/`_update_alarm_conditions` (H01-H19) - PLC'nin
-   latched bitlerinden rising/falling edge ile alarm kaydı üretir/kapatır.
-   H12-H15 (5 aday tag) hazır ama PLC henüz build/export etmedi.
-3. `active_alarm_count()` - ana ekran ALARM sayacı artık gerçek aktif
-   HATA listesinden (hayali `alarm_count` değil).
-4. `compute_start_inhibit_reasons` yeniden yazıldı - ilk engelde return
-   etmiyor, U01-U11 tüm UYARI'ları birlikte listeliyor.
-5. Manuel sayfa: move-to-start "stopping" durumu + Error önceliği + H05
-   alarm mesajı tam yönlendirme metni içeriyor.
-Yan bulgu: yerel `data/bufera.db`'de `code` sütunu fiziksel NOT NULL'dı,
-düzeltildi (veri kaybı yok). Detay: CHANGELOG_MEMORY.md en üst giriş.
+**Alarmlar sayfası UI geri bildirimi TAMAMLANDI (kullanıcı ekran
+görüntüsü, 2026-09-22).** Sekme metni okunmuyordu - `theme.py`'de hiç
+QTabWidget/QTabBar stili yoktu (Qt varsayılan açık renk çizimi + koyu tema
+metin rengi çakışıyordu), düzeltildi. Yeni "Alarm Listesi" sekmesi
+(`core/notification_catalog.py`) - operatörün her Hata/Uyarı/Mesaj'ın
+anlamını okuyabileceği statik referans, H01-19/U01-11/M01-09'un tamamı,
+gerçek kullanılan metinlerle birebir. Detay: CHANGELOG_MEMORY.md en üst
+giriş.
 
-**Aynı gün, önceki tamamlanan işler (kronolojik, detay CHANGELOG_MEMORY.md):**
-PLC-HMI-20260921-09 (Aşağı talepleri) -> C0.4 takibi -> PLC-HMI-20260921-
-10/11 (C5) -> UI geri bildirimi -> C5 config fix (12) -> MANUAL_RETURN_STOP
-sıkışma bulgusu + Busy/Aborted önceliği (13) -> bugünkü katalog (14/15/16).
+**Önceki (2026-09-21) - PLC-HMI-20260921-14/15/16 (Hata/Uyarı/Mesaj
+kataloğu) TAMAMLANDI - en büyük paket:** Reset artık aktif HATA'yı
+yanlışlıkla temizlemiyor (gerçek bug fix), yeni `ALARM_CATALOG`/`_update_
+alarm_conditions` (H01-H19) rising/falling edge ile alarm üretir/kapatır,
+`active_alarm_count()` gerçek veriye bağlandı, `compute_start_inhibit_
+reasons` çoklu UYARI (U01-U11) listeliyor. Detay: CHANGELOG_MEMORY.md.
+
+**Aynı hafta, önceki tamamlanan işler (kronolojik, detay CHANGELOG_
+MEMORY.md):** PLC-HMI-20260921-09 (Aşağı talepleri) -> C0.4 takibi ->
+PLC-HMI-20260921-10/11 (C5) -> UI geri bildirimi -> C5 config fix (12) ->
+MANUAL_RETURN_STOP sıkışma bulgusu + Busy/Aborted önceliği (13) -> katalog
+(14/15/16).
 
 **Ayrı bulgu (beklemede):** VisionCut'tan 3 yeni mesaj (07/08/09) - ayrı
 süreç mimarisi, paketlenmiş exe, build sahipliği. Kullanıcı: "sonra
@@ -51,17 +51,17 @@ ilgilenelim" - dokunulmadı.
 
 ## Son Build/Test
 
-- `pytest`: 256/256 (2026-09-21).
+- `pytest`: 260/260 (2026-09-22).
 
 ## Son Degisiklikler
 
+- 2026-09-22 - Alarmlar sayfası: "Alarm Listesi" referans sekmesi +
+  sekme metni okunmuyordu (QTabBar stil eksikliği) düzeltildi.
 - 2026-09-21 - PLC-HMI-20260921-14/15/16: Hata/Uyarı/Mesaj kataloğu,
   Reset bug fix, çoklu Start engelleri (detay: CHANGELOG_MEMORY.md).
 - 2026-09-21 - MANUAL_RETURN_STOP (140) sıkışma bulgusu + Busy/Aborted
   öncelik düzeltmesi (PLC-HMI-20260921-13).
 - 2026-09-21 - PLC-HMI-20260921-12: C5 gerçek config eksiği.
-- 2026-09-21 - Manuel sayfa UI geri bildirimi + PLC-HMI-20260921-10/11
-  ("Başlangıç Konumuna Dön") + C0.4 takibi + PLC-HMI-20260921-09.
 
 ## Kisa Notlar
 

@@ -21,12 +21,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core.notification_catalog import NOTIFICATION_CATALOG
 from persistence.alarms import SEVERITY_ALARM, SEVERITY_LABELS_TR, SEVERITY_MESSAGE, SEVERITY_WARNING
 from services.machine_service import MachineService
 from ui.machine.theme import COLORS, base_font
 from ui.machine.widgets import touch_button
 
 COLUMNS = ["Saat", "Tür", "Kod", "Kaynak", "Alarm", "Durum"]
+CATALOG_COLUMNS = ["Kod", "Tür", "Ne Zaman Görünür", "Anlamı / Yapılacak"]
 
 _SEVERITY_ROW_COLOR = {
     SEVERITY_ALARM: COLORS["danger"],
@@ -68,6 +70,37 @@ def _build_alarm_table() -> QTableWidget:
     return table
 
 
+def _build_catalog_table() -> QTableWidget:
+    """Kullanıcı isteği (2026-09-22): "Operatör alarm listesine bakıp
+    alarmların anlamlarını okuyabilsin... oradan bakıp bize feedback
+    verebilir." - CANLI veri değil, `core/notification_catalog.py`'deki
+    statik sözlüğün salt-okunur bir görünümü."""
+    table = QTableWidget(len(NOTIFICATION_CATALOG), len(CATALOG_COLUMNS))
+    table.setHorizontalHeaderLabels(CATALOG_COLUMNS)
+    table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+    table.setColumnWidth(0, 55)
+    table.setColumnWidth(1, 70)
+    table.setColumnWidth(2, 190)
+    table.verticalHeader().setVisible(False)
+    table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+    table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+    table.setWordWrap(True)
+    for row, entry in enumerate(NOTIFICATION_CATALOG):
+        values = [
+            entry.catalog_id,
+            SEVERITY_LABELS_TR.get(entry.severity, entry.severity),
+            entry.context,
+            entry.text,
+        ]
+        for col, value in enumerate(values):
+            item = QTableWidgetItem(value)
+            if col == 1:
+                item.setForeground(QColor(_SEVERITY_ROW_COLOR.get(entry.severity, COLORS["text_primary"])))
+            table.setItem(row, col, item)
+    table.resizeRowsToContents()
+    return table
+
+
 class AlarmPage(QWidget):
     navigateRequested = Signal(str)  # "machine_main"
 
@@ -100,6 +133,10 @@ class AlarmPage(QWidget):
         self._history_table = _build_alarm_table()
         self._tabs.addTab(self._current_table, "Güncel Alarmlar")
         self._tabs.addTab(self._history_table, "Geçmiş Alarmlar")
+        # Kullanıcı isteği (2026-09-22): operatörün her bildirimin anlamını
+        # okuyabileceği statik bir referans - canlı veri değil, tek seferlik
+        # doldurulur (`core/notification_catalog.py`).
+        self._tabs.addTab(_build_catalog_table(), "Alarm Listesi")
         root.addWidget(self._tabs, stretch=1)
 
     def showEvent(self, event) -> None:  # noqa: N802 (Qt override)

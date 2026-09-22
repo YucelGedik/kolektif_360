@@ -134,6 +134,38 @@ QTableWidget {{
     border: 1px solid {COLORS['border']};
 }}
 
+/* Kullanıcı bulgusu (2026-09-22): QTabWidget/QTabBar için hiç kural yoktu,
+   bu yüzden OS'nin varsayılan (açık renkli) sekme çizimi kullanılıyordu -
+   uygulamanın koyu temasındaki açık metin rengiyle üst üste binip
+   okunmuyordu. Seçili/seçili-olmayan sekmeler artık her durumda okunur. */
+QTabWidget::pane {{
+    background-color: {COLORS['navy']};
+    border: 1px solid {COLORS['border']};
+    top: -1px;
+}}
+
+QTabBar::tab {{
+    background-color: {COLORS['input_bg']};
+    color: {COLORS['text_secondary']};
+    border: 1px solid {COLORS['border']};
+    border-bottom: none;
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+    padding: 8px 16px;
+    margin-right: 2px;
+}}
+
+QTabBar::tab:selected {{
+    background-color: {COLORS['navy']};
+    color: {COLORS['accent_orange']};
+    border-color: {COLORS['accent_orange']};
+}}
+
+QTabBar::tab:!selected:hover {{
+    background-color: {COLORS['border']};
+    color: {COLORS['text_primary']};
+}}
+
 QHeaderView::section {{
     background-color: {COLORS['input_bg']};
     color: {COLORS['text_secondary']};

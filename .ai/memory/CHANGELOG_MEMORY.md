@@ -3,6 +3,40 @@
 Yeni girisleri en uste ekle. Eski ve uzun detaylari `CHANGELOG_ARCHIVE.md`
 dosyasina tasi.
 
+## 2026-09-22 - Alarmlar sayfasına "Alarm Listesi" referans sekmesi + sekme metni okunmuyordu (kullanıcı ekran görüntüsü)
+
+Kullanıcı: "geçmiş alarmlar ve güncel alarmlar yanına birde alarm liste
+ekle. Operatör alarm listesine bakıp alarmların anlamlarını okuyabilsin...
+Birde bu sekmelerin yazıları ile arka fon rengi aynı... okunmuyor."
+
+**Sekme metni görünürlük hatası (gerçek bug):** `theme.py`'nin `STYLESHEET`
+'inde `QTabWidget`/`QTabBar` için HİÇ kural yoktu - bu yüzden Qt'nin
+varsayılan (açık renkli) OS sekme çizimi kullanılıyordu, uygulamanın koyu
+temasındaki açık metin rengiyle üst üste binip seçili olmayan sekmelerde
+metin okunmuyordu. Artık hem seçili (koyu lacivert zemin, turuncu metin/
+kenarlık) hem seçili olmayan (koyu gri zemin, açık gri metin, hover'da
+belirginleşir) durumlar için açık kurallar var.
+
+**Yeni "Alarm Listesi" sekmesi:** `core/notification_catalog.py` - CANLI
+veri okumayan, statik bir referans sözlüğü. `services/machine_service.py::
+ALARM_CATALOG` (H01-H19) ve `ui/machine/machine_page.py::compute_start_
+inhibit_reasons` (U01-U11) içinde GERÇEKTEN kullanılan metinlerin birebir
+kopyası + M01-M09 (durum mesajları, mevcut `cycle_state_label` etiketleriyle
+eşleştirilmiş). Dört sütun: Kod, Tür, Ne Zaman Görünür, Anlamı/Yapılacak.
+Operatör bir alarmla karşılaştığında buradan anlamına bakıp geri bildirim
+verebilir (kullanıcının asıl amacı). H12-H15/U06 (PLC'nin henüz build/
+export etmediği aday tag'ler) satırlarında bunun açıkça belirtildiği bir
+not var - "şu an hiç tetiklenmez."
+
+Kod: `ui/machine/theme.py` (QTabWidget/QTabBar stil kuralları),
+`core/notification_catalog.py` (yeni), `ui/machine/alarm_page.py` (üçüncü
+sekme, `_build_catalog_table`).
+
+Test: `tests/test_notification_catalog.py` (4, yeni - ID benzersizliği,
+geçerli severity, boş metin yok, H01-19/U01-11/M01-09'un TAMAMININ mevcut
+olduğu). Tam suite 260/260. Gerçek render edilmiş ekran görüntüsüyle
+(sekme metni + katalog tablosu) doğrulandı.
+
 ## 2026-09-21 - Hata/Uyarı/Mesaj kataloğu, Reset bug fix, çoklu Start engelleri (PLC-HMI-20260921-14/15/16)
 
 Kullanıcı: "Sana yeni görevler iletildi sanırım 11 16 arası kontrol et

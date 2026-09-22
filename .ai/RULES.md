@@ -389,3 +389,19 @@ CLASSES_20260921.md` + `.ai/C6_ALARM_WARNING_MESSAGE_CATALOG_20260921.md`.
 - [x] Testler: `test_alarm_catalog.py` (11, yeni), `test_start_inhibit_
       reasons.py` (19, yeniden yazıldı), `test_alarm_severity.py` (+1),
       `test_move_to_start.py` (+1). Tam suite 256/256.
+
+### 2026-09-22 — Alarmlar sayfası: "Alarm Listesi" sekmesi + sekme metni okunmuyordu (tamamlandı)
+Kullanıcı ekran görüntüsü: "Güncel/Geçmiş Alarmlar" sekme metinleri arka
+fonla aynı renkte, okunmuyordu; ayrıca operatörün alarm anlamlarını
+okuyabileceği bir liste istendi.
+- [x] `theme.py`'ye `QTabWidget`/`QTabBar` stil kuralları eklendi (daha
+      önce hiç yoktu - Qt'nin varsayılan açık renk sekme çizimi koyu
+      temanın açık metin rengiyle çakışıyordu).
+- [x] Yeni `core/notification_catalog.py` - CANLI veri okumayan statik
+      referans, `ALARM_CATALOG` (H01-H19) ve `compute_start_inhibit_
+      reasons` (U01-U11) ile birebir aynı metinler + M01-M09 (durum
+      mesajları). Alarmlar sayfasına üçüncü "Alarm Listesi" sekmesi olarak
+      eklendi (Kod/Tür/Ne Zaman Görünür/Anlamı sütunları).
+- [x] Testler: `test_notification_catalog.py` (4, yeni - veri bütünlüğü).
+      Tam suite 260/260. Gerçek render edilmiş ekran görüntüsüyle
+      doğrulandı (sekme metni okunur + katalog tablosu doğru).
