@@ -160,6 +160,13 @@ class MachinePage(QWidget):
     def __init__(self, service: MachineService, parent: QWidget | None = None):
         super().__init__(parent)
         self._service = service
+        # U01-U11 (Start engelleri) - kullanıcı isteği (2026-09-22): "tabloda
+        # yazılsın ama banner gibi kalıcı olmasın... resete bağlı değil, şu
+        # an hangi mantıkla çalışıyorsa tablonun içinde de o mantıkla
+        # çalışsın." AlarmRepository'ye YAZILMAZ (alarm yağmuru hedefi aynen
+        # duruyor) - yalnız her snapshot tick'inde canlı hesaplanır/kaybolur,
+        # `_refresh_alarm_table`'a `_on_snapshot`'tan aktarılır.
+        self._live_warning_messages: list[str] = []
         self._build_ui()
 
         service.snapshotUpdated.connect(self._on_snapshot)
@@ -318,16 +325,23 @@ class MachinePage(QWidget):
         active_events = [e for e in self._service.recent_alarms() if e.active]
         selected = {sev for sev, cb in self._alarm_filter_checks.items() if cb.isChecked()}
         events = filter_alarm_events(active_events, selected)
+        rows = [
+            (event.occurred_at.strftime("%H:%M:%S"), event.severity, event.source, event.message)
+            for event in events
+        ]
+        # U01-U11: kullanıcı isteği (2026-09-22) - "Uyarı" filtresi
+        # işaretliyken, şu an aktif olan Start engellerini de aynı tabloda
+        # göster. Bunlar `AlarmRepository`'de KAYITLI DEĞİL - "ŞİMDİ" ile
+        # işaretlenir (gerçek bir olay zaman damgası değil, canlı durumdur),
+        # Reset'ten etkilenmez, koşul geçince satır anında kaybolur.
+        if SEVERITY_WARNING in selected:
+            for message in self._live_warning_messages:
+                rows.append(("ŞİMDİ", SEVERITY_WARNING, "PLC", message))
         table = self._alarm_table
-        table.setRowCount(len(events))
-        for row, event in enumerate(events):
-            values = [
-                event.occurred_at.strftime("%H:%M:%S"),
-                SEVERITY_LABELS_TR.get(event.severity, event.severity),
-                event.source,
-                event.message,
-            ]
-            color = SEVERITY_ROW_COLOR.get(event.severity, COLORS["text_primary"])
+        table.setRowCount(len(rows))
+        for row, (occurred_text, severity, source, message) in enumerate(rows):
+            values = [occurred_text, SEVERITY_LABELS_TR.get(severity, severity), source, message]
+            color = SEVERITY_ROW_COLOR.get(severity, COLORS["text_primary"])
             for col, value in enumerate(values):
                 item = QTableWidgetItem(value)
                 if col == 1:
@@ -406,3 +420,8 @@ class MachinePage(QWidget):
             self._start_inhibit_label.setVisible(True)
         else:
             self._start_inhibit_label.setVisible(False)
+
+        # U01-U11'i alarm tablosuna da aktar (kullanıcı isteği, 2026-09-22) -
+        # her snapshot'ta yeniden hesaplanır, `AlarmRepository`'ye yazılmaz.
+        self._live_warning_messages = reasons
+        self._refresh_alarm_table()

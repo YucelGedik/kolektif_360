@@ -5,103 +5,55 @@
 
 ## Aktif Durum
 
-**Start engelli banner'ına [Uxx] kodu eklendi + Uyarı geçmişi sorusu
-kullanıcıya soruldu (2026-09-22).** Kullanıcı doğru bir tutarsızlık buldu:
-U01-U11 hiç `AlarmRepository`'ye yazılmıyor, bu yüzden ana ekrandaki
-"Uyarı" filtre kutusu pratikte hep boş. Banner'a kod eklendi (küçük,
-düşük riskli düzeltme); U-serisini geçmişe de yazma kararı (H-serisi gibi
-rising-edge) kullanıcıda - henüz uygulanmadı. Detay: CHANGELOG_MEMORY.md.
-
-**Önceki (2026-09-22) - PLC-HMI-20260922-17 (C6 toplu teslim, H20/H21/H22) TAMAMLANDI.** PLC'nin
-`.ai/HMI_C6_FINAL_TASK_20260922.md` ile ilettiği 3 yeni aday latched HATA
-(mod değişimi/çevrim sırasında baskı kaybı/dönüşte bıçak açıklığı kaybı)
-H12-H15 ile AYNI disiplinle eklendi: `MachineSnapshot` alanları False
-varsayılan, `ALARM_CATALOG`'a H20-H22, yalnız `opcua.example.json`'a tag
-(gerçek config'e PLC online doğrulayana kadar girmez), "Alarm Listesi"
-sekmesine "henüz build/online doğrulama yapılmadı" notuyla eklendi. Detay:
-CHANGELOG_MEMORY.md en üst giriş.
-
-**Önceki (2026-09-22) - Alarmlar sayfası UI geri bildirimi TAMAMLANDI:**
-Sekme metni okunmuyordu (QTabBar stil eksikliği), düzeltildi. Yeni "Alarm
-Listesi" sekmesi (`core/notification_catalog.py`) - operatörün her Hata/
-Uyarı/Mesaj'ın anlamını okuyabileceği statik referans. Detay: CHANGELOG_
-MEMORY.md.
-
-**Önceki (2026-09-21) - PLC-HMI-20260921-14/15/16 (Hata/Uyarı/Mesaj
-kataloğu) TAMAMLANDI - en büyük paket:** Reset artık aktif HATA'yı
-yanlışlıkla temizlemiyor (gerçek bug fix), yeni `ALARM_CATALOG`/`_update_
-alarm_conditions` (H01-H19) rising/falling edge ile alarm üretir/kapatır,
-`active_alarm_count()` gerçek veriye bağlandı, `compute_start_inhibit_
-reasons` çoklu UYARI (U01-U11) listeliyor. Detay: CHANGELOG_MEMORY.md.
-
-**Aynı hafta, önceki tamamlanan işler (kronolojik, detay CHANGELOG_
-MEMORY.md):** PLC-HMI-20260921-09 (Aşağı talepleri) -> C0.4 takibi ->
-PLC-HMI-20260921-10/11 (C5) -> UI geri bildirimi -> C5 config fix (12) ->
-MANUAL_RETURN_STOP sıkışma bulgusu + Busy/Aborted önceliği (13) -> katalog
-(14/15/16).
-
-**Ayrı bulgu (beklemede):** VisionCut'tan 3 yeni mesaj (07/08/09) - ayrı
-süreç mimarisi, paketlenmiş exe, build sahipliği. Kullanıcı: "sonra
-ilgilenelim" - dokunulmadı.
+**Alarm/Uyarı katalog çalışması TAMAMLANDI (2026-09-22 seansı).** Sırayla:
+H20-H22 (PLC-HMI-20260922-17, C6 teslimi - 3 yeni aday latched HATA, H12-
+H15 disipliniyle) eklendi; ardından kullanıcı ana ekrandaki "Start engelli"
+banner'ının kodsuz olduğunu ve U01-U11'in hiç alarm tablosuna (Uyarı
+filtresi) düşmediğini fark etti. İkisi de düzeltildi: banner'a `[Uxx]` kod
+öneki + U01-U11 artık ana ekran tablosunda da CANLI satır olarak görünüyor
+("ŞİMDİ"/PLC/[Uxx] mesaj) - ama `AlarmRepository`'ye YAZILMIYOR (Reset'ten
+bağımsız, geçmişte iz bırakmaz, koşul kapanınca anında kaybolur - "alarm
+yağmuru olmasın" hedefiyle bilinçli). Detay: CHANGELOG_MEMORY.md üstteki
+3 giriş.
 
 ## Siradaki Gorevler
 
-- [ ] Kullanıcı kararı bekliyor: U01-U11 (Start engelleri) da H-serisi gibi
-      rising-edge ile `AlarmRepository`'ye (SEVERITY_WARNING) yazılsın mı -
-      yoksa mevcut canlı-only (banner, geçmişe düşmez) tasarım mı kalsın?
-      Şu an "Uyarı" filtre kutusu bu yüzden pratikte hep boş.
-- [ ] PLC tarafı: H20-H22 (`xAlarmModeChangedDuringCycle`/`xAlarmClamp
-      LostDuringCycle`/`xAlarmBladeNotClearDuringReturn`) build/export
-      edip online doğrulamalı; ardından gerçek `config/opcua.json`'a
-      eklenecek (C6 toplu teslim, 17 numaralı görev).
-- [ ] Kullanıcı: gerçek PLC'de yeni HATA/UYARI davranışını test etmeli
-      (Reset'in artık aktif alarmı yanlışlıkla temizlemediğini, çoklu
-      Start uyarılarının birlikte göründüğünü doğrulamak).
-- [ ] "Başlangıç Konumuna Dön" ve manuel Aşağı butonları hâlâ genel
-      online doğrulama bekliyor (bkz. önceki 12/13 girişleri).
-- [ ] PLC tarafı: MANUAL_RETURN_STOP (140)'tan Reset ile de çıkılabilir
-      bir yol olmalı mı kararı hâlâ bekleniyor (13 numaralı bulgu; C6
-      teslimindeki genel FAULT yönlendirme notlarıyla ilişkili olabilir).
-- [ ] VisionCut 07/08/09 mesajları bekliyor.
-- [ ] SettingsStore/AlarmRepository `data/bufera.db` test-izolasyonu
-      kararı bekliyor - artık yalnız Settings değil, alarm motoru da
-      neredeyse her fault-testinde şu an paylaşımlı gerçek DB'ye yazıyor
-      (bilinen sorun büyüdü, karar hâlâ kullanıcıda).
+- [ ] PLC tarafı: H20-H22 ve daha önceki H12-H15/U06 aday tag'lerini
+      build/export edip online doğrulamalı; sonra gerçek `config/opcua.json`'a
+      eklenecek.
+- [ ] Kullanıcı: gerçek PLC'de yeni HATA/UYARI davranışını test etmeli.
+- [ ] PLC tarafı: MANUAL_RETURN_STOP (140)'tan Reset ile çıkış kararı
+      hâlâ bekleniyor (13 numaralı bulgu).
+- [ ] VisionCut 07/08/09 mesajları bekliyor ("sonra ilgilenelim").
+- [ ] `data/bufera.db` paylaşımlı-engine test-izolasyonu kararı bekliyor
+      (SettingsStore + AlarmRepository etkileniyor).
 - [ ] Gerçek kamera devrede: `vision_simulator_enabled` kapalı tutulmalı.
 
 ## Son Build/Test
 
-- `pytest`: 262/262 (2026-09-22).
+- `pytest`: 267/267 (2026-09-22).
 
 ## Son Degisiklikler
 
-- 2026-09-22 - Start engelli banner'ına [Uxx] kod öneki eklendi; Uyarı
-  geçmişi (U-serisinin `AlarmRepository`'ye yazılıp yazılmayacağı) sorusu
-  kullanıcıya soruldu.
-- 2026-09-22 - PLC-HMI-20260922-17: H20/H21/H22 (3 yeni aday latched
-  HATA) - model/katalog/example config/Alarm Listesi, C0.4/C5 disiplini.
-- 2026-09-22 - Alarmlar sayfası: "Alarm Listesi" referans sekmesi +
-  sekme metni okunmuyordu (QTabBar stil eksikliği) düzeltildi.
+- 2026-09-22 - U01-U11 ana ekran alarm tablosuna canlı (kalıcı olmayan)
+  satırlar olarak eklendi; banner'a `[Uxx]` kod öneki eklendi.
+- 2026-09-22 - PLC-HMI-20260922-17: H20/H21/H22 (3 yeni aday latched HATA).
 - 2026-09-21 - PLC-HMI-20260921-14/15/16: Hata/Uyarı/Mesaj kataloğu,
-  Reset bug fix, çoklu Start engelleri (detay: CHANGELOG_MEMORY.md).
-- 2026-09-21 - MANUAL_RETURN_STOP (140) sıkışma bulgusu + Busy/Aborted
-  öncelik düzeltmesi (PLC-HMI-20260921-13).
+  Reset bug fix, çoklu Start engelleri.
 
 ## Kisa Notlar
 
 - Oturum basinda sadece bu dosya okunur; detay gerekirse `RULES.md`.
 - `config/opcua.json` GERCEK PLC endpoint'i tutuyor - testler izole config
-  kullanmali. `data/bufera.db` PAYLAŞIMLI - testler izole ETMİYOR; artık
-  hem SettingsStore hem AlarmRepository (yeni alarm motoru) etkileniyor -
-  test sonrası `data/bufera.db`'deki `alarm_events` kirliliğini elle
-  temizlemeyi unutma (`DELETE FROM alarm_events`), `engineering_settings`'e
-  DOKUNMA (gerçek kullanıcı ayarları olabilir).
+  kullanmali. `data/bufera.db` PAYLAŞIMLI - testler izole ETMİYOR; test
+  sonrası `alarm_events` kirliliğini elle temizle (`DELETE FROM
+  alarm_events`), `engineering_settings`'e DOKUNMA.
 - Vision simülatörü PLC state/sensör/motion/valf taglarına ASLA yazmaz.
 - Yeni, online doğrulanmamış PLC NodeId'sini gerçek `config/opcua.json`'a
   eklemeden önce PLC tarafının online doğrulamasını bekle (C0.4/C5 dersi).
 - Gerçek PLC export dosyaları proje dışında (`C:\Users\agedik\Documents\
-  ChatGPT\Bufera Tekstil PLC\...\plc_export\`) - kod/tag sorusu şüpheliyse
-  kullanıcı yolu verirse doğrudan incelenebilir (büyük XML, chunk ile).
+  ChatGPT\Bufera Tekstil PLC\...\plc_export\`) - kullanıcı yolu verirse
+  doğrudan incelenebilir (büyük XML, chunk ile).
 - VisionCut'ın gerçek mesaj kanalı `muratturan19/Brode_Vision_PLC` (dış
   repo) - bizim `visioncut_message/` klasörümüz onun el ile senkronlanan
   bir aynası, otomatik güncellenmiyor.

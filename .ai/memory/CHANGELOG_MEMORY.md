@@ -3,6 +3,33 @@
 Yeni girisleri en uste ekle. Eski ve uzun detaylari `CHANGELOG_ARCHIVE.md`
 dosyasina tasi.
 
+## 2026-09-22 - U01-U11 (Start engelleri) artık ana ekran alarm tablosuna da düşüyor - canlı, kalıcı DEĞİL
+
+Bir önceki [Uxx] kod düzeltmesinden sonra kullanıcıya soruldu: "U-serisi de
+tabloya (Uyarı filtresine) girsin mi?" Cevap: "tabloda yazılsın mutlaka ama
+banner gibi kalıcı olmasın uyarı sonuçta... resete falan bağlı değil şu an
+hangi mantıkla çalışıyorsa tablonun içinde de o mantıkla çalışsın... alarm
+yağmuru olmasın hedefimiz aynen devam ediyor."
+
+**Uygulama** (`ui/machine/machine_page.py`):
+- `MachinePage.__init__`'e `self._live_warning_messages: list[str] = []`.
+- `_on_snapshot` artık `compute_start_inhibit_reasons`'ın sonucunu (zaten
+  `[Uxx]` önekli) bu listeye yazıp `_refresh_alarm_table()`'ı her snapshot
+  tick'inde çağırıyor - banner ile TAM AYNI anda, aynı veriyle güncelleniyor.
+- `_refresh_alarm_table`, "Uyarı" checkbox'ı işaretliyken bu canlı mesajları
+  gerçek `AlarmEvent` satırlarıyla BİRLİKTE (aynı tabloda) gösteriyor - Saat
+  sütununda "ŞİMDİ" (gerçek bir zaman damgası değil, canlı durum olduğunu
+  belirtmek için), Kaynak "PLC". **`AlarmRepository`'ye hiç yazılmıyor** -
+  DB'de iz bırakmıyor, Reset'ten etkilenmiyor, koşul kapanınca bir sonraki
+  snapshot'ta satır anında kayboluyor (H-serisi gibi rising/falling-edge
+  loglama YOK - bilinçli, "alarm yağmuru" hedefiyle tutarlı).
+
+Testler: `tests/test_machine_page_warning_table.py` (5, yeni) - tablo
+satırı görünürlüğü, koşul kapanınca geçmişsiz kaybolma, filtre checkbox'ı,
+Reset'ten bağımsızlık, gerçek HATA ile aynı tabloda birlikte var olma. Gerçek
+render edilmiş ekran görüntüsüyle doğrulandı (ŞİMDİ/Uyarı/PLC/[U10] satırı
+doğru göründü). Tam suite 267/267.
+
 ## 2026-09-22 - Start engelli banner'ına UYARI kodu ([Uxx]) eklendi (kullanıcı sorusu)
 
 Kullanıcı: "U10 sa bu bir uyarı ? o zaman tabloda olması gerekmezmi ? ek

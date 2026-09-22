@@ -421,3 +421,21 @@ kod/test teslim etti ama build/online doğrulama henüz yapılmadı.
 - [x] Testler: `test_alarm_catalog.py` (+2 - initial/rising/falling/
       history + reset-reddi üçü için), `test_notification_catalog.py`
       (H01-H22 kapsama güncellendi). Tam suite 262/262.
+
+### 2026-09-22 — U01-U11 alarm tablosuna canlı satır olarak eklendi (kullanıcı sorusu, tamamlandı)
+Kullanıcı: "U10 bir uyarı, neden tabloda değil? kodu da görünmüyor."
+Gerçek bulgu: `SEVERITY_WARNING` hiç `AlarmRepository`'ye yazılmıyordu,
+ana ekran "Uyarı" filtresi pratikte hep boştu.
+- [x] `compute_start_inhibit_reasons` her nedeni `[Uxx]` koduyla döndürüyor
+      (`ui/machine/machine_page.py`).
+- [x] `MachinePage._on_snapshot` artık `_live_warning_messages`'ı her
+      tick'te güncelleyip `_refresh_alarm_table()`'ı çağırıyor; "Uyarı"
+      işaretliyken bu CANLI satırlar ("ŞİMDİ"/PLC/[Uxx]) gerçek HATA
+      satırlarıyla aynı tabloda görünüyor. Kullanıcı isteği gereği
+      `AlarmRepository`'ye YAZILMIYOR - Reset'ten bağımsız, geçmişte iz
+      bırakmıyor, koşul kapanınca anında kayboluyor (alarm yağmuru
+      hedefi korunuyor).
+- [x] Testler: `test_start_inhibit_reasons.py` (kod önekleri için literal
+      güncellemeler), `test_machine_page_warning_table.py` (5, yeni).
+      Tam suite 267/267. Gerçek render edilmiş ekran görüntüsüyle
+      doğrulandı.
