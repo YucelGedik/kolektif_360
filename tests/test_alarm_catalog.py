@@ -165,6 +165,52 @@ def test_h19_clears_when_leaving_fault(tmp_path):
         assert svc.active_alarm_count() == 0
 
 
+H20_H22_CASES = [
+    ("alarm_mode_changed_during_cycle", "PLC", "mod değiştirme talebi alındı"),
+    ("alarm_clamp_lost_during_cycle", "PNEUMATIC", "baskı aşağı sensörü kayboldu"),
+    ("alarm_blade_not_clear_during_return", "PNEUMATIC", "bıçak açıklığı kayboldu"),
+]
+
+
+def test_h20_h22_initial_true_rising_falling_and_history(tmp_path):
+    """PLC-HMI-20260922-17 offline test isteği: 3 yeni aday HATA (H20-H22)
+    için initial TRUE / rising / falling / history aynı desende çalışmalı -
+    henüz gerçek config'te eşleme yok ama motor mantığı önceden doğrulanabilir."""
+    with _isolated_engine(tmp_path):
+        for index, (attr, source, fragment) in enumerate(H20_H22_CASES, start=1):
+            svc = _real_service(tmp_path)
+
+            # İlk okuma zaten TRUE ise yine kaybolmadan loglanmalı.
+            svc._on_raw_snapshot({attr: True})
+            active = [e for e in svc._alarms.recent() if e.active]
+            assert len(active) == 1
+            assert active[0].source == source
+            assert fragment in active[0].message
+
+            # Falling edge - PLC'nin kendi okuması FALSE'a dönünce kapanır.
+            svc._on_raw_snapshot({attr: False})
+            assert svc.active_alarm_count() == 0
+            # Geçmişte kalmalı (silinmez, yalnız cleared_at set edilir) -
+            # `_isolated_engine` bu döngü boyunca paylaşıldığı için toplam
+            # geçmiş kayıt sayısı kümülatif artar.
+            assert len(svc._alarms.recent()) == index
+
+
+def test_h20_h22_reset_click_does_not_clear_only_plc_readback_does(tmp_path):
+    with _isolated_engine(tmp_path):
+        for attr, _source, _fragment in H20_H22_CASES:
+            svc = _real_service(tmp_path)
+            svc._on_raw_snapshot({attr: True})
+            assert svc.active_alarm_count() == 1
+
+            svc.request_reset()
+
+            assert svc.active_alarm_count() == 1  # Reset tek başına temizlemez
+
+            svc._on_raw_snapshot({attr: False})
+            assert svc.active_alarm_count() == 0
+
+
 def test_active_alarm_count_ignores_warning_and_message_severity(tmp_path):
     with _isolated_engine(tmp_path):
         svc = _real_service(tmp_path)

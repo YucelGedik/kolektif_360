@@ -69,6 +69,23 @@ NOTIFICATION_CATALOG: tuple[NotificationCatalogEntry, ...] = (
         "H19", SEVERITY_ALARM, "Arıza durumunda, bilinen bir neden (H01-H18) yoksa",
         "PLC arıza durumunda; ayrıntılı neden bilgisi mevcut değil.",
     ),
+    # H20-H22: PLC-HMI-20260922-17 (C6 toplu teslim) - kod/test teslim edildi,
+    # PLC tarafında build/online doğrulama henüz YAPILMADI (aday tag).
+    NotificationCatalogEntry(
+        "H20", SEVERITY_ALARM,
+        "Çalışan çevrimde (PLC aday tag - henüz build/online doğrulama yapılmadı, bu HATA şu an hiç tetiklenmez)",
+        "Çalışan çevrimde mod değiştirme talebi alındı; makine durduruldu.",
+    ),
+    NotificationCatalogEntry(
+        "H21", SEVERITY_ALARM,
+        "Çevrim sırasında, baskı tutulması gereken adımlarda (PLC aday tag - henüz build/online doğrulama yapılmadı, bu HATA şu an hiç tetiklenmez)",
+        "Çevrim sırasında baskı aşağı sensörü kayboldu; makine durduruldu.",
+    ),
+    NotificationCatalogEntry(
+        "H22", SEVERITY_ALARM,
+        "Eksenler başlangıca dönerken (PLC aday tag - henüz build/online doğrulama yapılmadı, bu HATA şu an hiç tetiklenmez)",
+        "Eksenler dönerken bıçak açıklığı kayboldu; makine durduruldu.",
+    ),
     # -- UYARI (ui/machine/machine_page.py::compute_start_inhibit_reasons ile birebir) --
     NotificationCatalogEntry("U01", SEVERITY_WARNING, "Start istenirken", "X başlangıç konumunda değil (ayarlı X başlangıç konumuna göre)."),
     NotificationCatalogEntry("U02", SEVERITY_WARNING, "Start istenirken", "Y merkez konumunda değil (ayarlı Y merkez konumuna göre)."),

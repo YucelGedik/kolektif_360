@@ -405,3 +405,19 @@ okuyabileceği bir liste istendi.
 - [x] Testler: `test_notification_catalog.py` (4, yeni - veri bütünlüğü).
       Tam suite 260/260. Gerçek render edilmiş ekran görüntüsüyle
       doğrulandı (sekme metni okunur + katalog tablosu doğru).
+
+### 2026-09-22 — PLC-HMI-20260922-17: C6 toplu teslim, H20/H21/H22 (tamamlandı)
+Kaynak: `.ai/HMI_C6_FINAL_TASK_20260922.md`. 3 yeni aday latched HATA - PLC
+kod/test teslim etti ama build/online doğrulama henüz yapılmadı.
+- [x] `MachineSnapshot`'a 3 yeni RO alan (`alarm_mode_changed_during_cycle`/
+      `alarm_clamp_lost_during_cycle`/`alarm_blade_not_clear_during_
+      return`), varsayılan False.
+- [x] `ALARM_CATALOG`'a H20/H21/H22 - aynı rising/falling edge motoru,
+      metinler görev dosyasıyla birebir.
+- [x] 3 tag yalnız `config/opcua.example.json`'a (H12-H15 ile aynı
+      disiplin - PLC online doğrulayana kadar gerçek config'e girmez).
+- [x] "Alarm Listesi" sekmesine H20-H22, "henüz build/online doğrulama
+      yapılmadı" notuyla eklendi.
+- [x] Testler: `test_alarm_catalog.py` (+2 - initial/rising/falling/
+      history + reset-reddi üçü için), `test_notification_catalog.py`
+      (H01-H22 kapsama güncellendi). Tam suite 262/262.

@@ -92,10 +92,13 @@ class _AlarmCondition:
     message: str
 
 
-# H12-H15 (xX_StopError/xY_StopError/xX_AxisError/xY_AxisError) PLC'de henüz
-# build/export edilmedi (C6.1 aday tag'leri) - config'te eşleme yok, bu
-# yüzden ilgili `MachineSnapshot` alanları hep False kalır ve bu dört madde
-# online doğrulanana kadar hiç tetiklenmez (C0.4/C5 dersiyle aynı disiplin).
+# H12-H15 (xX_StopError/xY_StopError/xX_AxisError/xY_AxisError) ve H20-H22
+# (xAlarmModeChangedDuringCycle/xAlarmClampLostDuringCycle/
+# xAlarmBladeNotClearDuringReturn, PLC-HMI-20260922-17) PLC'de henüz build/
+# online doğrulama tamamlanmadı (C6.1/C6 aday tag'leri) - config'te eşleme
+# yok, bu yüzden ilgili `MachineSnapshot` alanları hep False kalır ve bu
+# maddeler online doğrulanana kadar hiç tetiklenmez (C0.4/C5 dersiyle aynı
+# disiplin).
 ALARM_CATALOG: tuple[_AlarmCondition, ...] = (
     _AlarmCondition("H01", "alarm_clamp_lost_during_cut", False, "PNEUMATIC", "Kesimde baskı aşağı sensörü kayboldu."),
     _AlarmCondition("H02", "alarm_blade_lost_during_cut", False, "PNEUMATIC", "Kesimde bıçak aşağı sensörü kayboldu."),
@@ -125,6 +128,27 @@ ALARM_CATALOG: tuple[_AlarmCondition, ...] = (
     _AlarmCondition("H16", "emergency_ok", True, "PLC", "Emniyet geri bildirimi yok. Acil stop/emniyet zincirini kontrol edin."),
     _AlarmCondition("H17", "vision_fault", False, "VISION", "Vision uygulaması arıza bildiriyor."),
     _AlarmCondition("H18", "trajectory_fault", False, "VISION", "Yorumlanan hedef/çizgi geçersiz."),
+    _AlarmCondition(
+        "H20",
+        "alarm_mode_changed_during_cycle",
+        False,
+        "PLC",
+        "Çalışan çevrimde mod değiştirme talebi alındı; makine durduruldu.",
+    ),
+    _AlarmCondition(
+        "H21",
+        "alarm_clamp_lost_during_cycle",
+        False,
+        "PNEUMATIC",
+        "Çevrim sırasında baskı aşağı sensörü kayboldu; makine durduruldu.",
+    ),
+    _AlarmCondition(
+        "H22",
+        "alarm_blade_not_clear_during_return",
+        False,
+        "PNEUMATIC",
+        "Eksenler dönerken bıçak açıklığı kayboldu; makine durduruldu.",
+    ),
 )
 
 
@@ -360,6 +384,17 @@ class MachineService(QObject):
         snap.y_stop_error = b("y_stop_error", snap.y_stop_error)
         snap.y_axis_error = b("y_axis_error", snap.y_axis_error)
         snap.operator_stop_active = b("operator_stop_active", snap.operator_stop_active)
+        # PLC-HMI-20260922-17 (C6 toplu teslim): 3 yeni aday latched HATA -
+        # config'te eşleme olmadığı sürece hep False (H20-H22, ALARM_CATALOG).
+        snap.alarm_mode_changed_during_cycle = b(
+            "alarm_mode_changed_during_cycle", snap.alarm_mode_changed_during_cycle
+        )
+        snap.alarm_clamp_lost_during_cycle = b(
+            "alarm_clamp_lost_during_cycle", snap.alarm_clamp_lost_during_cycle
+        )
+        snap.alarm_blade_not_clear_during_return = b(
+            "alarm_blade_not_clear_during_return", snap.alarm_blade_not_clear_during_return
+        )
         snap.y_actual_pos = f("y_actual_pos", snap.y_actual_pos)
         snap.y_actual_vel = f("y_actual_vel", snap.y_actual_vel)
         snap.y_set_pos = f("y_set_pos", snap.y_set_pos)

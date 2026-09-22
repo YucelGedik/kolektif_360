@@ -26,7 +26,7 @@ def test_every_entry_has_non_empty_text_and_context():
 def test_covers_all_h_u_m_ids_from_the_20260921_task():
     ids = {e.catalog_id for e in NOTIFICATION_CATALOG}
     expected = (
-        {f"H{n:02d}" for n in range(1, 20)}
+        {f"H{n:02d}" for n in range(1, 23)}
         | {f"U{n:02d}" for n in range(1, 12)}
         | {f"M{n:02d}" for n in range(1, 10)}
     )

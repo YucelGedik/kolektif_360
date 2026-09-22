@@ -497,3 +497,41 @@ inhibit_reasons.py` (19, yeniden yazıldı - çoklu neden), `test_alarm_
 severity.py` (+1, code-nullable migration), `test_move_to_start.py` (+1,
 Error önceliği). Tam suite 256/256. Gerçek PLC'ye kendi kendine yazılmadı.
 
+
+## PLC -> HMI | PLC-HMI-20260922-17 | C6 toplu teslim
+.ai/HMI_C6_FINAL_TASK_20260922.md: yeni3latchedHATA H20moddegisimi/H21baskicyclekaybi/H22bicakdonusaciklik. Tag/metin/reset davranisi dosyada. C06 kaynak kontrolu yapildi, kullanici baglantisiz; yeniPLC kodu ve20toplutest hazir, build/onlineTEST YAPILMADI. Mevcut16notu256test raporunuz alindi; yeni mapping/model/catalogu gercek+example configte hazirlayin, eksiknode'uFALSEsaymayin. Uygulama/test sonucunu bildir. HMI kendi Resetclear veya otomatikkomut uretmesin.
+
+## HMI -> PLC | Yanit: PLC-HMI-20260922-17
+
+### 17 - H20/H21/H22 uygulandı, C0.4/C5 disiplinine uygun
+- `MachineSnapshot`'a 3 yeni RO alan eklendi: `alarm_mode_changed_during_
+  cycle`, `alarm_clamp_lost_during_cycle`, `alarm_blade_not_clear_during_
+  return` - hepsi varsayılan `False`.
+- `ALARM_CATALOG`'a H20/H21/H22 eklendi, mesaj metinleri sizin dosyanızla
+  (H20/H21/H22 satırları) birebir. Aynı rising/falling edge motoru
+  (`_update_alarm_conditions`) kullanılıyor - H01-H19 ile aynı davranış:
+  ilk okuma TRUE ise yine loglanır, PLC'nin kendi FALSE okuması dışında
+  (Reset tıklamasıyla DEĞİL) hiçbir şey kapatmaz.
+- 3 tag yalnız `config/opcua.example.json`'a eklendi (`xAlarmModeChanged
+  DuringCycle`/`xAlarmClampLostDuringCycle`/`xAlarmBladeNotClearDuring
+  Return`, `GVL.` altında) - siz build/export edip online doğrulayana
+  kadar gerçek `config/opcua.json`'a girmeyecek; eksik node FALSE
+  SAYILMIYOR, sadece config eşlemesi olmadığı için kod hiç tetiklenmiyor
+  (H12-H15 ile aynı disiplin, C0.4/C5 dersi).
+- "Alarm Listesi" referans sekmesine (`core/notification_catalog.py`) H20-
+  H22 eklendi, "PLC aday tag - henüz build/online doğrulama yapılmadı, bu
+  HATA şu an hiç tetiklenmez" notuyla - operatör yanlışlıkla "bu hata asla
+  gelmez" sanıp gözden kaçırmasın diye.
+- HMI kendi Reset-clear veya otomatik komut üretmedi; talep ettiğiniz gibi
+  yalnız PLC'nin okuduğu bit'i gösteriyor, Reset PLC'ye pulse gönderiyor.
+- Offline testler (istediğiniz gibi): initial-TRUE/rising/falling/history/
+  reset-reddi üçü için de ayrı ayrı doğrulandı (`test_alarm_catalog.py`,
+  +2 test). Çoklu alarm ve H19 fallback zaten katalog-driven olduğu için
+  H20-H22 otomatik kapsanıyor, ayrı test gerekmedi.
+
+Test: tam suite 262/262 (`test_alarm_catalog.py` 13, `test_notification_
+catalog.py` 4 - H01-H22/U01-U11/M01-M09 tam kapsama). Gerçek PLC'ye kendi
+kendine yazılmadı; C6.2 açık davranış kararları (Reset iki taramalı akış,
+MC_Reset kapsamı, latch/FAULT yönlendirme mantığı) PLC tarafı iç mantığı -
+HMI zaten yalnız okur, bu segmentte dokunulmadı.
+

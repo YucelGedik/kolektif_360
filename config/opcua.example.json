@@ -38,6 +38,10 @@
     "x_axis_error": "ns=4;s=|var|MAT LC-C07.Application.GVL.xX_AxisError",
     "y_axis_error": "ns=4;s=|var|MAT LC-C07.Application.GVL.xY_AxisError",
 
+    "alarm_mode_changed_during_cycle": "ns=4;s=|var|MAT LC-C07.Application.GVL.xAlarmModeChangedDuringCycle",
+    "alarm_clamp_lost_during_cycle": "ns=4;s=|var|MAT LC-C07.Application.GVL.xAlarmClampLostDuringCycle",
+    "alarm_blade_not_clear_during_return": "ns=4;s=|var|MAT LC-C07.Application.GVL.xAlarmBladeNotClearDuringReturn",
+
     "x_power_status": "ns=4;s=|var|MAT LC-C07.Application.GVL.xX_PowerStatus",
     "x_power_error": "ns=4;s=|var|MAT LC-C07.Application.GVL.xX_PowerError",
     "x_actual_pos": "ns=4;s=|var|MAT LC-C07.Application.GVL.ActualX_mm",

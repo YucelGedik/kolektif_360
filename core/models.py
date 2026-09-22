@@ -131,3 +131,13 @@ class MachineSnapshot:
     y_stop_error: bool = False
     x_axis_error: bool = False
     y_axis_error: bool = False
+
+    # PLC-HMI-20260922-17 (C6 toplu teslim): 3 yeni aday latched HATA bit'i
+    # (xAlarmModeChangedDuringCycle/xAlarmClampLostDuringCycle/
+    # xAlarmBladeNotClearDuringReturn) - kod/test teslim edildi ama PLC
+    # tarafında build/online doğrulama henüz YAPILMADI. Aynı disiplin: config'te
+    # eşleme olmadığı sürece hep False kalır, online doğrulanınca gerçek
+    # config'e eklenecek.
+    alarm_mode_changed_during_cycle: bool = False
+    alarm_clamp_lost_during_cycle: bool = False
+    alarm_blade_not_clear_during_return: bool = False

@@ -5,14 +5,20 @@
 
 ## Aktif Durum
 
-**Alarmlar sayfası UI geri bildirimi TAMAMLANDI (kullanıcı ekran
-görüntüsü, 2026-09-22).** Sekme metni okunmuyordu - `theme.py`'de hiç
-QTabWidget/QTabBar stili yoktu (Qt varsayılan açık renk çizimi + koyu tema
-metin rengi çakışıyordu), düzeltildi. Yeni "Alarm Listesi" sekmesi
-(`core/notification_catalog.py`) - operatörün her Hata/Uyarı/Mesaj'ın
-anlamını okuyabileceği statik referans, H01-19/U01-11/M01-09'un tamamı,
-gerçek kullanılan metinlerle birebir. Detay: CHANGELOG_MEMORY.md en üst
-giriş.
+**PLC-HMI-20260922-17 (C6 toplu teslim, H20/H21/H22) TAMAMLANDI.** PLC'nin
+`.ai/HMI_C6_FINAL_TASK_20260922.md` ile ilettiği 3 yeni aday latched HATA
+(mod değişimi/çevrim sırasında baskı kaybı/dönüşte bıçak açıklığı kaybı)
+H12-H15 ile AYNI disiplinle eklendi: `MachineSnapshot` alanları False
+varsayılan, `ALARM_CATALOG`'a H20-H22, yalnız `opcua.example.json`'a tag
+(gerçek config'e PLC online doğrulayana kadar girmez), "Alarm Listesi"
+sekmesine "henüz build/online doğrulama yapılmadı" notuyla eklendi. Detay:
+CHANGELOG_MEMORY.md en üst giriş.
+
+**Önceki (2026-09-22) - Alarmlar sayfası UI geri bildirimi TAMAMLANDI:**
+Sekme metni okunmuyordu (QTabBar stil eksikliği), düzeltildi. Yeni "Alarm
+Listesi" sekmesi (`core/notification_catalog.py`) - operatörün her Hata/
+Uyarı/Mesaj'ın anlamını okuyabileceği statik referans. Detay: CHANGELOG_
+MEMORY.md.
 
 **Önceki (2026-09-21) - PLC-HMI-20260921-14/15/16 (Hata/Uyarı/Mesaj
 kataloğu) TAMAMLANDI - en büyük paket:** Reset artık aktif HATA'yı
@@ -33,16 +39,19 @@ ilgilenelim" - dokunulmadı.
 
 ## Siradaki Gorevler
 
+- [ ] PLC tarafı: H20-H22 (`xAlarmModeChangedDuringCycle`/`xAlarmClamp
+      LostDuringCycle`/`xAlarmBladeNotClearDuringReturn`) build/export
+      edip online doğrulamalı; ardından gerçek `config/opcua.json`'a
+      eklenecek (C6 toplu teslim, 17 numaralı görev).
 - [ ] Kullanıcı: gerçek PLC'de yeni HATA/UYARI davranışını test etmeli
       (Reset'in artık aktif alarmı yanlışlıkla temizlemediğini, çoklu
       Start uyarılarının birlikte göründüğünü doğrulamak).
 - [ ] "Başlangıç Konumuna Dön" ve manuel Aşağı butonları hâlâ genel
       online doğrulama bekliyor (bkz. önceki 12/13 girişleri).
 - [ ] PLC tarafı: MANUAL_RETURN_STOP (140)'tan Reset ile de çıkılabilir
-      bir yol olmalı mı kararı hâlâ bekleniyor (13 numaralı bulgu).
+      bir yol olmalı mı kararı hâlâ bekleniyor (13 numaralı bulgu; C6
+      teslimindeki genel FAULT yönlendirme notlarıyla ilişkili olabilir).
 - [ ] VisionCut 07/08/09 mesajları bekliyor.
-- [ ] H4 (artık büyük ölçüde 14/15/16 ile kapandı) - PLC C2 kalan açık
-      maddeleri (C6.2, C7) ayrı PLC işleri, bizim kapsamımız dışında.
 - [ ] SettingsStore/AlarmRepository `data/bufera.db` test-izolasyonu
       kararı bekliyor - artık yalnız Settings değil, alarm motoru da
       neredeyse her fault-testinde şu an paylaşımlı gerçek DB'ye yazıyor
@@ -51,17 +60,18 @@ ilgilenelim" - dokunulmadı.
 
 ## Son Build/Test
 
-- `pytest`: 260/260 (2026-09-22).
+- `pytest`: 262/262 (2026-09-22).
 
 ## Son Degisiklikler
 
+- 2026-09-22 - PLC-HMI-20260922-17: H20/H21/H22 (3 yeni aday latched
+  HATA) - model/katalog/example config/Alarm Listesi, C0.4/C5 disiplini.
 - 2026-09-22 - Alarmlar sayfası: "Alarm Listesi" referans sekmesi +
   sekme metni okunmuyordu (QTabBar stil eksikliği) düzeltildi.
 - 2026-09-21 - PLC-HMI-20260921-14/15/16: Hata/Uyarı/Mesaj kataloğu,
   Reset bug fix, çoklu Start engelleri (detay: CHANGELOG_MEMORY.md).
 - 2026-09-21 - MANUAL_RETURN_STOP (140) sıkışma bulgusu + Busy/Aborted
   öncelik düzeltmesi (PLC-HMI-20260921-13).
-- 2026-09-21 - PLC-HMI-20260921-12: C5 gerçek config eksiği.
 
 ## Kisa Notlar
 

@@ -3,6 +3,37 @@
 Yeni girisleri en uste ekle. Eski ve uzun detaylari `CHANGELOG_ARCHIVE.md`
 dosyasina tasi.
 
+## 2026-09-22 - PLC-HMI-20260922-17: C6 toplu teslim, 3 yeni aday HATA (H20/H21/H22)
+
+Kaynak: `.ai/HMI_C6_FINAL_TASK_20260922.md` (PLC tarafı C6 export'unu
+teslim etti, henüz build/online doğrulama yapmadı - kod/test hazır).
+
+Üç yeni latched HATA, H12-H15 ile birebir aynı disiplinle eklendi:
+- H20 `xAlarmModeChangedDuringCycle`: "Çalışan çevrimde mod değiştirme
+  talebi alındı; makine durduruldu."
+- H21 `xAlarmClampLostDuringCycle`: "Çevrim sırasında baskı aşağı sensörü
+  kayboldu; makine durduruldu." (mevcut H01 `alarm_clamp_lost_during_cut`
+  ile KARIŞTIRILMAMALI - H01 yalnız CUTTING durumunu, H21 baskının aşağı
+  tutulması gereken daha geniş bir durum kümesini - WAIT_VISION/ALIGN_Y/
+  WAIT_BLADE_REQUEST/BLADE_DOWN/BLADE_UP/RETURN_AXES - kapsıyor, görev
+  notundaki C6.2 açıklamasına göre).
+- H22 `xAlarmBladeNotClearDuringReturn`: "Eksenler dönerken bıçak açıklığı
+  kayboldu; makine durduruldu."
+
+`MachineSnapshot` alanları (`alarm_mode_changed_during_cycle`/`alarm_
+clamp_lost_during_cycle`/`alarm_blade_not_clear_during_return`) varsayılan
+False; `ALARM_CATALOG`'a H20-H22 eklendi (aynı rising/falling edge
+motoru); 3 tag yalnız `config/opcua.example.json`'a (gerçek config'e PLC
+online doğrulayana kadar girmiyor, C0.4/C5 disiplini); "Alarm Listesi"
+referans sekmesine H20-H22 "henüz build/online doğrulama yapılmadı"
+notuyla eklendi.
+
+Testler: `test_alarm_catalog.py` +2 (üç yeni alarm için initial-TRUE/
+rising/falling/history + reset-reddi, parametrik), `test_notification_
+catalog.py` H01-H22 kapsamına güncellendi. Tam suite 262/262. `.ai/
+Codex_Codesys.md`'ye yanıt yazıldı; C6.2'deki PLC-içi Reset/FAULT
+yönlendirme kararları HMI kapsamı dışı (yalnız okur).
+
 ## 2026-09-22 - Alarmlar sayfasına "Alarm Listesi" referans sekmesi + sekme metni okunmuyordu (kullanıcı ekran görüntüsü)
 
 Kullanıcı: "geçmiş alarmlar ve güncel alarmlar yanına birde alarm liste
