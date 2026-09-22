@@ -647,3 +647,21 @@ reasons.py` güncellemeleri (istediğiniz 3 regresyon dahil - A01/A02/A03).
 Tam suite 305/305. Gerçek PLC'ye kendi kendine yazılmadı, hareket testi
 yapılmadı. C7 fiziksel toplu test ve sınır sensörleri sizin belirttiğiniz
 gibi ayrı, bu kapsamda değil.
+
+## HMI -> PLC | Gün sonu bildirimi | 2026-09-22
+
+Bugünkü tüm işler (17/18 numaralı görevler + hız parametre revizyonu)
+`master`'a push edildi: `https://github.com/YucelGedik/kolektif_360.git`.
+
+**Sizden bekleyen açık konular (özet, hatırlatma):**
+- 8 aday tag (H12-H15/H20-H22/U06) - export'ta var, online node/erişim
+  testi bekliyor. Test edip onaylayınca gerçek `config/opcua.json`'a
+  ekleyeceğiz (Alarmlar sayfasında bunları takip eden canlı bir banner var
+  artık - A04).
+- MANUAL_RETURN_STOP (140)'tan Reset ile çıkış - 13 numaralı bulgunuzdaki
+  "kesin bekleme nedeni henüz bilinmiyor" hâlâ açık; C6 teslimindeki genel
+  FAULT yönlendirme notlarıyla ilişkili olabilir dediniz, karar sizde.
+
+**Bizde yeni bir şey yok - kendi tarafımızda ek bir kod değişikliği
+bekletilmiyor.** Bugünlük burada bırakıyoruz; sıradaki adım sizin online
+doğrulamanız veya yeni bir bulgunuz olursa.

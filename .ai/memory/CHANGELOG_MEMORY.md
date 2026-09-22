@@ -3,6 +3,30 @@
 Yeni girisleri en uste ekle. Eski ve uzun detaylari `CHANGELOG_ARCHIVE.md`
 dosyasina tasi.
 
+## 2026-09-22 - Gün sonu: master push'landı, VisionCut/PLC tarafına bildirim yazıldı (kullanıcı talebi)
+
+Kullanıcı: "son halini commit push et. visioncut kısmınada mesaj gönder
+yeni repoyu çeksin kullansın. plc tarafınada gerekli mesajları at
+kendinede kayıtlarını al bugünlük mola."
+
+- `git push origin master` - 15 commit (`d0c8f14..35d7aec`) GitHub'a
+  (`kolektif_360`) gönderildi.
+- `visioncut_message/mesajlar/2026-09-22_10_bufera.md` (yeni) - VisionCut'a
+  repo güncellemesi bildirimi. Numaralandırma: son local mesaj `06`
+  (bufera) idi ama VisionCut'ın `07`/`08`/`09` numaralı mesajları henüz bu
+  yerel aynaya senkronlanmamış (gerçek kanal `muratturan19/Brode_Vision_
+  PLC`, dış repo) - çakışmayı önlemek için yeni mesaj `10` numaralandı.
+  İçerik: bugünkü değişikliklerin hiçbirinin OPC UA tag sözleşmesini
+  etkilemediği (hepsi HMI-içi), yalnız bilgilendirme amaçlı repo güncelleme
+  daveti. Bu dosya yalnız YEREL AYNAYA yazıldı - gerçek dış repoya
+  ulaşması için kullanıcının elle senkronlaması gerekiyor (README'nin
+  kendi kuralı: "Kaynak depoya yazma bu klasörden yapılmaz").
+- `.ai/Codex_Codesys.md`'ye gün sonu özeti eklendi - push bildirimi +
+  PLC tarafında açık kalan iki konunun (8 aday tag online testi,
+  MANUAL_RETURN_STOP Reset kararı) hatırlatması.
+- Hafıza dosyaları (bu dosya + SESSION_BRIEF.md) güncellendi, oturum
+  "bugünlük mola" olarak kapatıldı.
+
 ## 2026-09-22 - Hız parametre sınırları gerçek mekaniğe göre revize edildi (kullanıcı talebi)
 
 Kullanıcı: "HIZ SINIRLARINI BU ŞEKİLDE REVİZE ET MEKANİĞE BAĞLANDIK VE BU

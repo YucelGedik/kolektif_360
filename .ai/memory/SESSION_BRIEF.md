@@ -5,18 +5,21 @@
 
 ## Aktif Durum
 
-**Hız parametre sınırları gerçek mekaniğe göre revize edildi (2026-09-22,
-kullanıcı talebi - "mekaniğe bağlandık ve bu sınırlara karar verdik").**
-`core/parameters.py`: X Kesim 1-800, X Dönüş 1-1060, Y Pozisyonlama 1-50,
-Y Follow Maks. 1-50, X Jog 1-400, Y Jog 1-50 - artık tahmin değil, gerçek
-onaylı mekanik limit. Detay: CHANGELOG_MEMORY.md üst giriş.
+**GÜN SONU (2026-09-22) - tüm işler push'landı, oturum kapatıldı.**
+`master` GitHub'a push edildi (`kolektif_360`, `35d7aec`'e kadar). VisionCut
+tarafına repo güncellemesi bildirimi yazıldı (`visioncut_message/mesajlar/
+2026-09-22_10_bufera.md` - yalnız yerel ayna, gerçek dış repoya (`muratturan
+19/Brode_Vision_PLC`) senkron kullanıcı tarafından elle yapılmalı). PLC
+tarafına da `.ai/Codex_Codesys.md`'de gün sonu özeti yazıldı. Bekleyen HMI
+tarafı iş YOK - sıradaki adım PLC'nin online doğrulaması veya kullanıcının
+sahada test etmesi.
 
-**Önceki (2026-09-22) - PLC-HMI-20260922-18 (C06_1 audit) TAMAMLANDI:**
-Başka bir ajanın HMI kaynak denetimi, A01-A06 hepsi uygulandı (ayar yazma
-izni, restart alarm uzlaştırması, U10 sıralaması, eksik-tag banner'ı,
-M01-M09 canlı mesajlar, state 140/510 etiket düzeltmeleri - ikisi benim
-önceki hatalarımdı). Öncesinde: H20-H22 (17), U01-U11 canlı tablo, manuel
-sayfa yükseklik düzeltmesi. Detay: CHANGELOG_MEMORY.md.
+**Bugün tamamlanan (kronolojik, detay CHANGELOG_MEMORY.md):** Hız
+parametre sınırları gerçek mekaniğe göre revize edildi (6 alan) ->
+PLC-HMI-20260922-18 (C06_1 audit, A01-A06: ayar yazma izni, restart alarm
+uzlaştırması, U10 sıralaması, eksik-tag banner'ı, M01-M09 canlı mesajlar,
+state 140/510 etiket düzeltmeleri - ikisi benim önceki hatalarımdı) ->
+manuel sayfa 8px yamukluk + U01-U11 canlı tablo -> H20-H22 (17).
 
 ## Siradaki Gorevler
 
@@ -29,6 +32,9 @@ sayfa yükseklik düzeltmesi. Detay: CHANGELOG_MEMORY.md.
 - [ ] PLC tarafı: MANUAL_RETURN_STOP (140)'tan Reset ile çıkış kararı
       hâlâ bekleniyor (13 numaralı bulgu).
 - [ ] VisionCut 07/08/09 mesajları bekliyor ("sonra ilgilenelim").
+- [ ] Kullanıcı: `visioncut_message/mesajlar/2026-09-22_10_bufera.md`
+      (repo güncelleme bildirimi) gerçek dış repoya (`muratturan19/Brode_
+      Vision_PLC`) elle senkronlanmalı - biz oraya doğrudan yazamıyoruz.
 - [ ] `data/bufera.db` paylaşımlı-engine test-izolasyonu kararı bekliyor.
 - [ ] Gerçek kamera devrede: `vision_simulator_enabled` kapalı tutulmalı.
 
