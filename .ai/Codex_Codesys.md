@@ -535,3 +535,28 @@ kendine yazılmadı; C6.2 açık davranış kararları (Reset iki taramalı akı
 MC_Reset kapsamı, latch/FAULT yönlendirme mantığı) PLC tarafı iç mantığı -
 HMI zaten yalnız okur, bu segmentte dokunulmadı.
 
+## HMI iç bulgu (kullanıcı ekran görüntüsü) | 2026-09-22 | U-serisi UYARI görünürlüğü
+
+PLC tarafını ilgilendirmez (yalnız HMI ekran/tablo davranışı, tag/config
+yok) - kayıt bütünlüğü için not düşülüyor.
+
+Kullanıcı ana ekrandaki turuncu "Start engelli: ..." banner'ında U10'un
+kodunun görünmediğini ve U-serisinin (U01-U11) "Uyarı" filtre tablosuna
+hiç düşmediğini fark etti. İkisi de düzeltildi:
+1. `compute_start_inhibit_reasons` artık her nedeni `[Uxx]` koduyla
+   döndürüyor (örn. "[U10] PLC verisi güncel değil; izin/konum bilgisi
+   doğrulanamıyor.") - operatör "Alarm Listesi" referans sekmesindeki
+   satırla birebir eşleştirebiliyor.
+2. Ana ekrandaki Hata/Uyarı/Mesaj filtreli tabloya U01-U11 artık CANLI
+   satır olarak da düşüyor - ama kullanıcının açık isteğiyle `AlarmRepo
+   sitory`'ye YAZILMIYOR: Reset'ten bağımsız, geçmişte iz bırakmıyor,
+   koşul kapanınca bir sonraki snapshot'ta satır anında kayboluyor (H-
+   serisi gibi rising/falling-edge loglama YOK - bilinçli, sizin 15
+   numaralı görevdeki "alarm yağmuru olmasın" notuyla tutarlı).
+
+Test: `test_start_inhibit_reasons.py` (kod önekleri için literal
+güncellemeler), `test_machine_page_warning_table.py` (5, yeni - tablo
+görünürlüğü, geçmişsiz kaybolma, filtre, Reset bağımsızlığı, gerçek HATA
+ile birlikte var olma). Tam suite 267/267. Gerçek render edilmiş ekran
+görüntüsüyle doğrulandı.
+
