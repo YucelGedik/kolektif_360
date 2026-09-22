@@ -3,6 +3,27 @@
 Yeni girisleri en uste ekle. Eski ve uzun detaylari `CHANGELOG_ARCHIVE.md`
 dosyasina tasi.
 
+## 2026-09-22 - Hız parametre sınırları gerçek mekaniğe göre revize edildi (kullanıcı talebi)
+
+Kullanıcı: "HIZ SINIRLARINI BU ŞEKİLDE REVİZE ET MEKANİĞE BAĞLANDIK VE BU
+SINIRLARA KARAR VERDİK." Artık tahmin değil, gerçek mekanik test sonrası
+onaylanmış nihai sınırlar. `core/parameters.py`'de 6 hız alanının
+`max_value`'su değişti:
+
+- X Kesim Hızı (`lr_x_cut_velocity`): 1-500 -> **1-800**
+- X Dönüş Hızı (`lr_x_return_velocity`): 1-800 -> **1-1060**
+- Y Pozisyonlama Hızı (`lr_y_move_velocity`): 1-200 -> **1-50**
+- Y Follow Maks. Hızı (`lr_y_max_velocity`): 1-200 -> **1-50**
+- X Jog Hızı (`lr_x_jog_velocity`): 1-200 -> **1-400**
+- Y Jog Hızı (`lr_y_jog_velocity`): 1-100 -> **1-50**
+
+Tüm mevcut `default` değerleri (REAL_PLC_DEFAULTS) yeni aralıkların içinde
+kalıyor, değiştirilmedi. Diğer parametreler (Acc/Dec, konum, timeout) bu
+revizyonun kapsamı dışında. Testler: `test_parameters.py`'ye `test_
+velocity_ranges_match_confirmed_mechanical_limits` eklendi (regresyonu
+kilitler). Demo modda uç değerler (800/1060/50/50/400/50) elle doğrulandı,
+bir üstü (801) doğru şekilde reddedildi. Tam suite 306/306.
+
 ## 2026-09-22 - PLC-HMI-20260922-18: C06_1 HMI kaynak denetimi (A01-A06), 6 gerçek bulgu düzeltildi
 
 Kaynak: `.ai/HMI_C061_AUDIT_TASK_20260922.md` - başka bir ajanın HMI kod

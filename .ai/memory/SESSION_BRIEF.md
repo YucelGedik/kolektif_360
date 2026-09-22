@@ -5,34 +5,18 @@
 
 ## Aktif Durum
 
-**PLC-HMI-20260922-18 (C06_1 audit, `.ai/HMI_C061_AUDIT_TASK_20260922.md`)
-TAMAMLANDI - A01-A06 hepsi uygulandı.** Başka bir ajanın HMI kaynak
-denetimi; her madde kodda doğrulandıktan sonra düzeltildi (uydurma yoktu):
-- **A01** `set_parameter` artık ortak bir izin kapısından geçiyor
-  (stale/bağlantı [gerçek modda] + cycle_active + jog + eksen hareketi) -
-  eskiden yalnız move_to_start_busy kontrol ediliyordu.
-- **A02** Restart sonrası alarm uzlaştırması: `AlarmEvent`'e yeni
-  `catalog_id` sütunu (migration), servis ilk gerçek okumada DB'deki hâlâ
-  açık kayıtlarla RAM'i uzlaştırıyor (eskiden restart sonrası bir alarm ya
-  hiç kapanmıyor ya da kopyalanıyordu). Aktif sayaç/liste artık SINIRSIZ
-  (`active_events()`), 100'lük geçmiş sınırına bağlı değil.
-- **A03** `compute_start_inhibit_reasons`: stale kontrolü artık start_
-  permitted'DEN ÖNCE (eski sıra: bayat+eski-TRUE-izin kombinasyonunda U10
-  hiç görünmüyordu).
-- **A04** Alarmlar sayfasına dinamik "online doğrulama bekleyen kodlar"
-  banner'ı - config'ten canlı okunur (H12-H15/H20-H22/U06).
-- **A05** M01-M09 artık ana ekran tablosunda canlı (M08 özel: yalnız
-  move_to_start "done" olduğu İLK tick'te, tek seferlik).
-  M01-M07/M09 cycle_state süresince görünür.
-- **A06** State etiket düzeltmeleri (140 "Durduruluyor" - PLC'nin kendi
-  13 numaralı bulgusuyla uyumlu artık; 510 "Recovery" yerine PLC'nin 18
-  Eylül talimatındaki "Manuel Hazırlık Bekleniyor" - **bunlar benim daha
-  önceki oturumlarda attığım hatalardı**), `_pneumatic_common_allowed`'a
-  operator_stop_active eklendi, U05/build-export yorum düzeltmeleri.
+**Hız parametre sınırları gerçek mekaniğe göre revize edildi (2026-09-22,
+kullanıcı talebi - "mekaniğe bağlandık ve bu sınırlara karar verdik").**
+`core/parameters.py`: X Kesim 1-800, X Dönüş 1-1060, Y Pozisyonlama 1-50,
+Y Follow Maks. 1-50, X Jog 1-400, Y Jog 1-50 - artık tahmin değil, gerçek
+onaylı mekanik limit. Detay: CHANGELOG_MEMORY.md üst giriş.
 
-Öncesinde aynı seansta: H20-H22 (C6 teslimi, 17), U01-U11'in ana ekran
-tablosuna canlı satır olarak eklenmesi, manuel sayfa yükseklik düzeltmesi.
-Detay: CHANGELOG_MEMORY.md üstteki girişler.
+**Önceki (2026-09-22) - PLC-HMI-20260922-18 (C06_1 audit) TAMAMLANDI:**
+Başka bir ajanın HMI kaynak denetimi, A01-A06 hepsi uygulandı (ayar yazma
+izni, restart alarm uzlaştırması, U10 sıralaması, eksik-tag banner'ı,
+M01-M09 canlı mesajlar, state 140/510 etiket düzeltmeleri - ikisi benim
+önceki hatalarımdı). Öncesinde: H20-H22 (17), U01-U11 canlı tablo, manuel
+sayfa yükseklik düzeltmesi. Detay: CHANGELOG_MEMORY.md.
 
 ## Siradaki Gorevler
 
@@ -50,16 +34,16 @@ Detay: CHANGELOG_MEMORY.md üstteki girişler.
 
 ## Son Build/Test
 
-- `pytest`: 305/305 (2026-09-22).
+- `pytest`: 306/306 (2026-09-22).
 
 ## Son Degisiklikler
 
+- 2026-09-22 - Hız parametre sınırları gerçek mekaniğe göre revize edildi
+  (6 alan, kullanıcı onaylı nihai limitler - `core/parameters.py`).
 - 2026-09-22 - PLC-HMI-20260922-18 (C06_1 audit, A01-A06): ayar yazma izni,
   restart alarm uzlaştırması, U10 sıralaması, eksik-tag banner'ı, M01-M09
   canlı, state etiket düzeltmeleri (140/510 - kendi hatalarımdı).
-- 2026-09-22 - Manuel sayfa 8px yamukluk (HoldButton/ProcessStatusCard
-  yükseklik farkı) + U01-U11 canlı tablo satırları + [Uxx] kod önekleri.
-- 2026-09-22 - PLC-HMI-20260922-17: H20/H21/H22 (3 yeni aday latched HATA).
+- 2026-09-22 - Manuel sayfa 8px yamukluk + U01-U11 canlı tablo satırları.
 
 ## Kisa Notlar
 

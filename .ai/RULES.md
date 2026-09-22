@@ -492,3 +492,14 @@ hatalardı. Detay: `CHANGELOG_MEMORY.md` üst giriş.
       yeni), + `test_alarm_catalog.py`/`test_cycle_state.py`/`test_
       manual_down_requests.py`/`test_start_inhibit_reasons.py` güncellemeleri.
       Tam suite 305/305.
+
+### 2026-09-22 — Hız parametre sınırları gerçek mekaniğe göre revize edildi (kullanıcı talebi, tamamlandı)
+Kullanıcı: "HIZ SINIRLARINI BU ŞEKİLDE REVİZE ET MEKANİĞE BAĞLANDIK VE BU
+SINIRLARA KARAR VERDİK" - artık tahmin değil, onaylı nihai mekanik limit.
+- [x] `core/parameters.py`: X Kesim Hızı 1-800, X Dönüş Hızı 1-1060,
+      Y Pozisyonlama Hızı 1-50, Y Follow Maks. Hızı 1-50, X Jog Hızı
+      1-400, Y Jog Hızı 1-50. Tüm `default` değerleri yeni aralıkta kaldı,
+      değiştirilmedi.
+- [x] Test: `test_parameters.py::test_velocity_ranges_match_confirmed_
+      mechanical_limits` (yeni, regresyonu kilitler). Demo modda uç
+      değerler + bir üstü (reddedilmeli) elle doğrulandı. Tam suite 306/306.
