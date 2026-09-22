@@ -115,8 +115,11 @@ def compute_start_inhibit_reasons(
         return []
     if snap.stale:
         # U10: veri güncel değilken izin/konum nedeni UYDURULMAZ, veri
-        # eksikliği ayrı bir UYARI olarak açıkça belirtilir.
-        return ["PLC verisi güncel değil; izin/konum bilgisi doğrulanamıyor."]
+        # eksikliği ayrı bir UYARI olarak açıkça belirtilir. Kod, operatörün
+        # bu metni "Alarm Listesi" referans sekmesindeki (core/notification_
+        # catalog.py) satırla eşleştirebilmesi için baştaki [Uxx] etiketiyle
+        # gösterilir (kullanıcı geri bildirimi, 2026-09-22).
+        return ["[U10] PLC verisi güncel değil; izin/konum bilgisi doğrulanamıyor."]
     if snap.cycle_active:
         # Görev notu: "aktif çevrimde Start uygun değil" normal bir durumdur,
         # alarm yağmuruna çevrilmez - hiç gösterilmez.
@@ -124,30 +127,30 @@ def compute_start_inhibit_reasons(
 
     reasons: list[str] = []
     if not snap.x_at_start:  # U01
-        reasons.append(f"X başlangıç konumunda değil (ayarlı: {x_start_pos:g} mm).")
+        reasons.append(f"[U01] X başlangıç konumunda değil (ayarlı: {x_start_pos:g} mm).")
     if not snap.y_at_center:  # U02
-        reasons.append(f"Y merkez konumunda değil (ayarlı: {y_center_pos:g} mm).")
+        reasons.append(f"[U02] Y merkez konumunda değil (ayarlı: {y_center_pos:g} mm).")
     if snap.manual_mode:  # U03
-        reasons.append("Start için Otomatik modu seçin.")
+        reasons.append("[U03] Start için Otomatik modu seçin.")
     if snap.manual_preparation_required:  # U04
-        reasons.append(_manual_preparation_reason(snap))
+        reasons.append("[U04] " + _manual_preparation_reason(snap))
     if snap.blade_down:  # U05 (yalnız bıçak - baskı için EKLENMEDİ, görev notu)
-        reasons.append("Start için bıçağı kaldırın.")
+        reasons.append("[U05] Start için bıçağı kaldırın.")
     if snap.operator_stop_active:  # U06 - PLC henüz build/export etmedi, hep False
-        reasons.append("Stop talebi aktif; Start engelli.")
+        reasons.append("[U06] Stop talebi aktif; Start engelli.")
     if not snap.x_servo_ready and not snap.x_fault:  # U07 (gerçek arıza H06'da ayrı gösterilir)
-        reasons.append("X servo hazır değil.")
+        reasons.append("[U07] X servo hazır değil.")
     if not snap.y_servo_ready and not snap.y_fault:  # U07
-        reasons.append("Y servo hazır değil.")
+        reasons.append("[U07] Y servo hazır değil.")
     if not snap.vision_heartbeat_ok:  # U08
-        reasons.append("Vision heartbeat alınmıyor/güncellenmiyor. PLC bağlantısı taze olmalı.")
+        reasons.append("[U08] Vision heartbeat alınmıyor/güncellenmiyor. PLC bağlantısı taze olmalı.")
     if not snap.vision_ready and not snap.vision_fault:  # U09 (gerçek arıza H17'de ayrı)
-        reasons.append("Vision hazır değil.")
+        reasons.append("[U09] Vision hazır değil.")
     if not reasons:
         # U11: PLC'nin gördüğümüz tüm alt bileşenleri TRUE görünüyor ama
         # StartPermitted hâlâ FALSE - HMI'nin görmediği bir PLC-içi koşul
         # var; bunu KESİN bir neden gibi sunmuyoruz, PLC'nin iznini aşmıyoruz.
-        reasons.append("PLC Start izni yok; ek koşul bilgisi gerekli.")
+        reasons.append("[U11] PLC Start izni yok; ek koşul bilgisi gerekli.")
     return reasons
 
 

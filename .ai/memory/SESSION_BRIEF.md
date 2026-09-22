@@ -5,7 +5,14 @@
 
 ## Aktif Durum
 
-**PLC-HMI-20260922-17 (C6 toplu teslim, H20/H21/H22) TAMAMLANDI.** PLC'nin
+**Start engelli banner'ına [Uxx] kodu eklendi + Uyarı geçmişi sorusu
+kullanıcıya soruldu (2026-09-22).** Kullanıcı doğru bir tutarsızlık buldu:
+U01-U11 hiç `AlarmRepository`'ye yazılmıyor, bu yüzden ana ekrandaki
+"Uyarı" filtre kutusu pratikte hep boş. Banner'a kod eklendi (küçük,
+düşük riskli düzeltme); U-serisini geçmişe de yazma kararı (H-serisi gibi
+rising-edge) kullanıcıda - henüz uygulanmadı. Detay: CHANGELOG_MEMORY.md.
+
+**Önceki (2026-09-22) - PLC-HMI-20260922-17 (C6 toplu teslim, H20/H21/H22) TAMAMLANDI.** PLC'nin
 `.ai/HMI_C6_FINAL_TASK_20260922.md` ile ilettiği 3 yeni aday latched HATA
 (mod değişimi/çevrim sırasında baskı kaybı/dönüşte bıçak açıklığı kaybı)
 H12-H15 ile AYNI disiplinle eklendi: `MachineSnapshot` alanları False
@@ -39,6 +46,10 @@ ilgilenelim" - dokunulmadı.
 
 ## Siradaki Gorevler
 
+- [ ] Kullanıcı kararı bekliyor: U01-U11 (Start engelleri) da H-serisi gibi
+      rising-edge ile `AlarmRepository`'ye (SEVERITY_WARNING) yazılsın mı -
+      yoksa mevcut canlı-only (banner, geçmişe düşmez) tasarım mı kalsın?
+      Şu an "Uyarı" filtre kutusu bu yüzden pratikte hep boş.
 - [ ] PLC tarafı: H20-H22 (`xAlarmModeChangedDuringCycle`/`xAlarmClamp
       LostDuringCycle`/`xAlarmBladeNotClearDuringReturn`) build/export
       edip online doğrulamalı; ardından gerçek `config/opcua.json`'a
@@ -64,6 +75,9 @@ ilgilenelim" - dokunulmadı.
 
 ## Son Degisiklikler
 
+- 2026-09-22 - Start engelli banner'ına [Uxx] kod öneki eklendi; Uyarı
+  geçmişi (U-serisinin `AlarmRepository`'ye yazılıp yazılmayacağı) sorusu
+  kullanıcıya soruldu.
 - 2026-09-22 - PLC-HMI-20260922-17: H20/H21/H22 (3 yeni aday latched
   HATA) - model/katalog/example config/Alarm Listesi, C0.4/C5 disiplini.
 - 2026-09-22 - Alarmlar sayfası: "Alarm Listesi" referans sekmesi +

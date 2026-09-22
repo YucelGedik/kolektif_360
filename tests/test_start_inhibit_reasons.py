@@ -53,7 +53,7 @@ def test_stale_shows_its_own_warning_instead_of_hiding():
 
     reasons = compute_start_inhibit_reasons(snap, 0.0, 0.0)
 
-    assert reasons == ["PLC verisi güncel değil; izin/konum bilgisi doğrulanamıyor."]
+    assert reasons == ["[U10] PLC verisi güncel değil; izin/konum bilgisi doğrulanamıyor."]
 
 
 def test_cycle_active_shows_no_warning_normal_state():
@@ -71,7 +71,7 @@ def test_manual_mode_combines_with_other_reasons_not_exclusive():
 
     reasons = compute_start_inhibit_reasons(snap, 0.0, 0.0)
 
-    assert "Start için Otomatik modu seçin." in reasons
+    assert "[U03] Start için Otomatik modu seçin." in reasons
     assert any("X başlangıç" in r for r in reasons)
     assert any("Y merkez" in r for r in reasons)
 
@@ -81,7 +81,7 @@ def test_x_only_reason_shows_configured_start_pos():
 
     reasons = compute_start_inhibit_reasons(snap, 12.5, 0.0)
 
-    assert reasons == ["X başlangıç konumunda değil (ayarlı: 12.5 mm)."]
+    assert reasons == ["[U01] X başlangıç konumunda değil (ayarlı: 12.5 mm)."]
 
 
 def test_y_only_reason_shows_configured_center_pos():
@@ -89,7 +89,7 @@ def test_y_only_reason_shows_configured_center_pos():
 
     reasons = compute_start_inhibit_reasons(snap, 0.0, -3.0)
 
-    assert reasons == ["Y merkez konumunda değil (ayarlı: -3 mm)."]
+    assert reasons == ["[U02] Y merkez konumunda değil (ayarlı: -3 mm)."]
 
 
 def test_both_axes_reasons_shown_together():
@@ -107,7 +107,7 @@ def test_vision_heartbeat_missing_reason():
 
     reasons = compute_start_inhibit_reasons(snap, 0.0, 0.0)
 
-    assert reasons == ["Vision heartbeat alınmıyor/güncellenmiyor. PLC bağlantısı taze olmalı."]
+    assert reasons == ["[U08] Vision heartbeat alınmıyor/güncellenmiyor. PLC bağlantısı taze olmalı."]
 
 
 def test_vision_not_ready_reason():
@@ -115,7 +115,7 @@ def test_vision_not_ready_reason():
 
     reasons = compute_start_inhibit_reasons(snap, 0.0, 0.0)
 
-    assert reasons == ["Vision hazır değil."]
+    assert reasons == ["[U09] Vision hazır değil."]
 
 
 def test_vision_fault_is_not_duplicated_as_a_warning():
@@ -133,7 +133,7 @@ def test_servo_not_ready_without_known_fault_is_a_warning():
 
     reasons = compute_start_inhibit_reasons(snap, 0.0, 0.0)
 
-    assert reasons == ["X servo hazır değil."]
+    assert reasons == ["[U07] X servo hazır değil."]
 
 
 def test_servo_fault_is_not_duplicated_as_a_warning():
@@ -154,7 +154,7 @@ def test_blade_down_blocks_start_clamp_does_not():
 
     reasons = compute_start_inhibit_reasons(snap, 0.0, 0.0)
 
-    assert reasons == ["Start için bıçağı kaldırın."]
+    assert reasons == ["[U05] Start için bıçağı kaldırın."]
 
 
 def test_operator_stop_active_reason():
@@ -164,7 +164,7 @@ def test_operator_stop_active_reason():
 
     reasons = compute_start_inhibit_reasons(snap, 0.0, 0.0)
 
-    assert reasons == ["Stop talebi aktif; Start engelli."]
+    assert reasons == ["[U06] Stop talebi aktif; Start engelli."]
 
 
 def test_manual_preparation_required_lists_concrete_missing_conditions():
@@ -179,6 +179,7 @@ def test_manual_preparation_required_lists_concrete_missing_conditions():
     reasons = compute_start_inhibit_reasons(snap, 0.0, 0.0)
 
     assert len(reasons) == 1
+    assert reasons[0].startswith("[U04] ")
     assert "bıçak Yukarı kabulü bekleniyor" in reasons[0]
     assert "baskı hâlâ aşağıda" in reasons[0]
 
@@ -188,7 +189,7 @@ def test_manual_preparation_required_with_nothing_missing_is_generic():
 
     reasons = compute_start_inhibit_reasons(snap, 0.0, 0.0)
 
-    assert reasons == ["Manuel hazırlığı tamamlayın."]
+    assert reasons == ["[U04] Manuel hazırlığı tamamlayın."]
 
 
 def test_emergency_active_is_not_duplicated_as_a_warning():
@@ -208,7 +209,7 @@ def test_fallback_reason_when_nothing_known_explains_it():
 
     reasons = compute_start_inhibit_reasons(snap, 0.0, 0.0)
 
-    assert reasons == ["PLC Start izni yok; ek koşul bilgisi gerekli."]
+    assert reasons == ["[U11] PLC Start izni yok; ek koşul bilgisi gerekli."]
 
 
 def test_stop_pressed_is_never_fabricated_as_a_reason():

@@ -3,6 +3,32 @@
 Yeni girisleri en uste ekle. Eski ve uzun detaylari `CHANGELOG_ARCHIVE.md`
 dosyasina tasi.
 
+## 2026-09-22 - Start engelli banner'ına UYARI kodu ([Uxx]) eklendi (kullanıcı sorusu)
+
+Kullanıcı: "U10 sa bu bir uyarı ? o zaman tabloda olması gerekmezmi ? ek
+olarak uyarıda U10 diye de belirtilmemiş operatöre kodu sorsam söyleyemez."
+
+**Doğru gözlem, iki ayrı bulgu:**
+1. Ana ekrandaki turuncu "Start engelli: ..." banner'ı hiçbir zaman kodunu
+   (U01-U11) göstermiyordu - operatör metni "Alarm Listesi" referans
+   sekmesindeki satırla eşleştiremezdi. **Düzeltildi:** `compute_start_
+   inhibit_reasons` artık her nedeni `"[U0x] ..."` önekiyle döndürüyor
+   (`ui/machine/machine_page.py`). Kod, karşılık gelen `if` bloğunun
+   yanındaki mevcut yorumla (`# U01` vb.) aynı yerde, tek elden yazıldı.
+2. **Ayrı, daha büyük bir bulgu (henüz karar bekliyor):** U01-U11 hiçbir
+   zaman `AlarmRepository`'ye yazılmıyor (yalnız canlı banner) - bu yüzden
+   ana ekrandaki "Göster: Hata/Uyarı/Mesaj" filtre tablosundaki "Uyarı"
+   kutusu şu an PRATİKTE HİÇBİR ZAMAN dolu satır göstermiyor (kod altyapısı
+   var - `SEVERITY_WARNING`, filtre, renk - ama hiçbir yerden gerçekten
+   loglanmıyor). Bu, mesaj 15'teki bilinçli "alarm yağmuru olmasın" kararının
+   (aktif çevrimde/sürekli değişen U-koşullarını geçmişe yazma) bir sonucu,
+   ama tabloda boş bir "Uyarı" filtresi bırakıyor - kullanıcıya karar
+   soruldu: U-serisini de (rising-edge ile, H-serisi gibi) geçmişe
+   yazalım mı, yoksa canlı-only mi kalsın?
+
+Testler: `test_start_inhibit_reasons.py` güncellendi (tüm literal string
+eşleşmeleri `[Uxx]` önekiyle). Tam suite 262/262.
+
 ## 2026-09-22 - PLC-HMI-20260922-17: C6 toplu teslim, 3 yeni aday HATA (H20/H21/H22)
 
 Kaynak: `.ai/HMI_C6_FINAL_TASK_20260922.md` (PLC tarafı C6 export'unu
