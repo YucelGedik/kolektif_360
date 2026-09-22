@@ -5,16 +5,16 @@
 
 ## Aktif Durum
 
-**Alarm/Uyarı katalog çalışması TAMAMLANDI (2026-09-22 seansı).** Sırayla:
-H20-H22 (PLC-HMI-20260922-17, C6 teslimi - 3 yeni aday latched HATA, H12-
-H15 disipliniyle) eklendi; ardından kullanıcı ana ekrandaki "Start engelli"
-banner'ının kodsuz olduğunu ve U01-U11'in hiç alarm tablosuna (Uyarı
-filtresi) düşmediğini fark etti. İkisi de düzeltildi: banner'a `[Uxx]` kod
-öneki + U01-U11 artık ana ekran tablosunda da CANLI satır olarak görünüyor
-("ŞİMDİ"/PLC/[Uxx] mesaj) - ama `AlarmRepository`'ye YAZILMIYOR (Reset'ten
-bağımsız, geçmişte iz bırakmaz, koşul kapanınca anında kaybolur - "alarm
-yağmuru olmasın" hedefiyle bilinçli). Detay: CHANGELOG_MEMORY.md üstteki
-3 giriş.
+**Manuel sayfa: "Başlangıç Konumuna Dön" satırı yamukluğu düzeltildi
+(2026-09-22, kullanıcı ekran görüntüsü).** X kartındaki buton (64px sabit)
+ile Y kartındaki "BAŞLANGIÇ KONUMU" kutusu (72px doğal) farklı yükseklikte
+olduğu için bu satırdan sonraki her şey (Actual Position, Servo) X/Y
+arasında 8px kaymıştı. İkisi artık `setFixedHeight` ile aynı yüksekliğe
+(72px) sabitleniyor - ekran görüntüsü + widget geometrisiyle doğrulandı.
+Öncesinde aynı seansta: H20-H22 (C6 teslimi, 17 numaralı görev) + U01-U11
+Start engellerinin ana ekran alarm tablosuna canlı (kalıcı olmayan) satır
+olarak eklenmesi + `[Uxx]` kod önekleri. Detay: CHANGELOG_MEMORY.md üstteki
+4 giriş.
 
 ## Siradaki Gorevler
 
@@ -35,6 +35,9 @@ yağmuru olmasın" hedefiyle bilinçli). Detay: CHANGELOG_MEMORY.md üstteki
 
 ## Son Degisiklikler
 
+- 2026-09-22 - Manuel sayfa: "Başlangıç Konumuna Dön" satırı X/Y arasında
+  8px yamuktu (HoldButton 64px vs ProcessStatusCard 72px), setFixedHeight
+  ile eşitlendi.
 - 2026-09-22 - U01-U11 ana ekran alarm tablosuna canlı (kalıcı olmayan)
   satırlar olarak eklendi; banner'a `[Uxx]` kod öneki eklendi.
 - 2026-09-22 - PLC-HMI-20260922-17: H20/H21/H22 (3 yeni aday latched HATA).

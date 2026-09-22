@@ -104,6 +104,16 @@ class ManualPage(QWidget):
         axes_row.addWidget(self._build_y_axis_card())
         root.addLayout(axes_row)
 
+        # Kullanıcı isteği (2026-09-22, ekran görüntüsü): "Başlangıç Konumuna
+        # Dön" butonu (HoldButton, sabit PRIMARY_ACTION_HEIGHT=64) ve karşısındaki
+        # "BAŞLANGIÇ KONUMU" durum kutusu (ProcessStatusCard, kendi içeriğine
+        # göre doğal yükseklik) farklı yükseklikteydi - bu satırdan sonraki her
+        # şey (Actual Position, Servo) X/Y kartları arasında birkaç piksel kaymış,
+        # sayfa "yamuk" görünüyordu. İkisi aynı yüksekliğe sabitlenir.
+        row_height = self._move_to_start_status.sizeHint().height()
+        self._move_to_start_btn.setFixedHeight(row_height)
+        self._move_to_start_status.setFixedHeight(row_height)
+
         lower_row = QHBoxLayout()
         lower_row.setSpacing(10)
         lower_row.addWidget(self._build_feed_card())

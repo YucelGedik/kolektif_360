@@ -3,6 +3,31 @@
 Yeni girisleri en uste ekle. Eski ve uzun detaylari `CHANGELOG_ARCHIVE.md`
 dosyasina tasi.
 
+## 2026-09-22 - Manuel sayfa: "Başlangıç Konumuna Dön" satırı X/Y kartları arasında yamuktu (kullanıcı ekran görüntüsü)
+
+Kullanıcı: "sıfıra gönder butonu ile başlangıç konumu yanyana ama aynı
+yükseklikte değil... genişliği farklı. Bu da sayfada yamukluk yaratıyor."
+
+**Kök neden:** X kartındaki "Başlangıç Konumuna Dön" (`HoldButton`, sabit
+`PRIMARY_ACTION_HEIGHT=64`) ile Y kartındaki karşılığı "BAŞLANGIÇ KONUMU"
+(`ProcessStatusCard`, kendi içeriğine göre doğal yükseklik = 72px) 8px
+farklıydı (geometri ölçümüyle doğrulandı: 64 vs 72). Kartların GENİŞLİĞİ
+zaten birebir eşitti (656px, kullanıcının "genişlik" algısı aslında bu
+8px'lik yükseklik farkının yarattığı görsel kaymaydı) - ama bu satırdan
+SONRAKİ her şey (Actual Position, Servo) X/Y arasında 8px kaymış, sayfa
+"yamuk" görünüyordu.
+
+**Düzeltme** (`ui/machine/manual_page.py::_build_ui`): her iki axis kartı
+kurulduktan hemen sonra, `_move_to_start_status.sizeHint().height()`
+okunup hem butona hem duruma `setFixedHeight` ile uygulanıyor - artık
+ikisi de garantili aynı (72px), aşağıdaki tüm satırlar piksel piksel hizalı.
+
+Doğrulama: gerçek render edilmiş ekran görüntüsü + widget geometrisi
+(`.geometry()`) karşılaştırması - önce (64,72) sonra (72,72), alttaki
+Actual Position/Servo satırları da X/Y arasında birebir aynı y-koordinatında.
+Kod-only fix, yeni test gerekmedi (saf layout/geometri, davranış değişmedi).
+Tam suite 267/267 (değişmedi).
+
 ## 2026-09-22 - U01-U11 (Start engelleri) artık ana ekran alarm tablosuna da düşüyor - canlı, kalıcı DEĞİL
 
 Bir önceki [Uxx] kod düzeltmesinden sonra kullanıcıya soruldu: "U-serisi de

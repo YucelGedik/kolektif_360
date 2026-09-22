@@ -439,3 +439,19 @@ ana ekran "Uyarı" filtresi pratikte hep boştu.
       güncellemeler), `test_machine_page_warning_table.py` (5, yeni).
       Tam suite 267/267. Gerçek render edilmiş ekran görüntüsüyle
       doğrulandı.
+
+### 2026-09-22 — Manuel sayfa: "Başlangıç Konumuna Dön" satırı yamuktu (kullanıcı ekran görüntüsü, tamamlandı)
+Kullanıcı: "sıfıra gönder butonu ile başlangıç konumu yanyana ama aynı
+yükseklikte değil... genişliği farklı. Bu da sayfada yamukluk yaratıyor."
+- [x] Kök neden widget geometrisiyle doğrulandı: X kartındaki buton
+      (`HoldButton`, sabit `PRIMARY_ACTION_HEIGHT=64`) ile Y kartındaki
+      karşılığı (`ProcessStatusCard`, doğal içerik yüksekliği=72) 8px
+      farklıydı - kart GENİŞLİKLERİ zaten birebir eşitti, sorun bu satırdan
+      sonraki her şeyin (Actual Position, Servo) X/Y arasında kaymasıydı.
+- [x] `ManualPage._build_ui`'de her iki axis kartı kurulduktan sonra
+      `_move_to_start_status.sizeHint().height()` okunup hem butona hem
+      duruma `setFixedHeight` ile uygulanıyor - artık garantili eşit.
+- [x] Saf layout/geometri düzeltmesi, davranış değişmedi - yeni test
+      gerekmedi. Gerçek render + widget `.geometry()` ölçümüyle doğrulandı
+      (önce 64/72, sonra 72/72; alttaki satırlar piksel piksel hizalı).
+      Tam suite 267/267 (değişmedi).
