@@ -133,7 +133,20 @@ ALARM_CATALOG: tuple[_AlarmCondition, ...] = (
     _AlarmCondition("H13", "y_stop_error", False, "Y AXIS", "Y durdurma bloğu hata verdi."),
     _AlarmCondition("H14", "x_axis_error", False, "X AXIS", "X eksen/sürücü arıza durumu."),
     _AlarmCondition("H15", "y_axis_error", False, "Y AXIS", "Y eksen/sürücü arıza durumu."),
-    _AlarmCondition("H16", "emergency_ok", True, "PLC", "Emniyet geri bildirimi yok. Acil stop/emniyet zincirini kontrol edin."),
+    # PLC-HMI-20260923-21/25 (C8E, mesaj 21): "EMG basıldığında bıçak/baskı
+    # geri çekilecek; EMG bırakılınca eski aşağı komutu geri gelmeyecek" -
+    # PLC kararı gereği metin güncellendi. Geri çekme KOMUTU gerçek yukarı
+    # konum ONAYI olarak sunulmaz (görev notu) - ekranlardaki YUKARI/AŞAĞI
+    # durumu hâlâ yalnız sensöre (`blade_down`/`clamp_down`) dayanır, bu
+    # metin yalnız komutun verildiğini söyler.
+    _AlarmCondition(
+        "H16",
+        "emergency_ok",
+        True,
+        "PLC",
+        "Acil stop aktif. Bıçak ve baskıya geri çekme komutu verildi. Nedeni "
+        "kontrol edin; acili bırakmak çevrimi başlatmaz.",
+    ),
     _AlarmCondition("H17", "vision_fault", False, "VISION", "Vision uygulaması arıza bildiriyor."),
     _AlarmCondition("H18", "trajectory_fault", False, "VISION", "Yorumlanan hedef/çizgi geçersiz."),
     _AlarmCondition(
@@ -247,6 +260,15 @@ class MachineService(QObject):
         self._set_zero_status = "idle"
         self._set_zero_sent_at = 0.0
         self._set_zero_stale_since_sent = False
+        # PLC-HMI-20260923-25 (P1 düzeltme, "gerçek Busy bırakılmadan modal
+        # kapanabiliyor"): zaman aşımı VEYA reconnect-sırasında-hâlâ-meşgul
+        # anında TRUE - Request FALSE zaten yazıldığını (tekrar
+        # yazılmasın) VE bu denemenin sonucunun artık "error" olarak
+        # kararlaştırıldığını (combined_busy gerçekten False olur olmaz)
+        # işaretler. combined_busy TRUE olduğu SÜRECE `_set_zero_status`/
+        # `_set_zero_sent` ASLA sonlandırılmaz - ExecuteFALSE yazmak
+        # PLC'nin fiziksel olarak durduğunun kanıtı değildir.
+        self._set_zero_timeout_latched = False
 
         # PLC-HMI-20260921-16 (C6.1): katalog kimliği -> o an açık olan
         # AlarmEvent'in id'si. Bir HATA koşulu ilk kez TRUE görüldüğünde
@@ -699,6 +721,17 @@ class MachineService(QObject):
             self._set_zero_stale_since_sent = False
             if not self.demo_mode and self._worker is not None:
                 self._worker.request_write("cmd_set_zero_request", False)
+            combined_busy = snap.x_home_busy or snap.y_home_busy
+            if combined_busy:
+                # PLC-HMI-20260923-25 (P1 düzeltme): bağlantı kopukken PLC
+                # hareketi sürdürmüş olabilir - bu deneme İPTAL sayılır
+                # (TRUE tekrar gönderilmez) ama eksen GERÇEKTEN dururken
+                # kadar kilit/"sent" açılmaz (bkz. `_set_zero_timeout_latched`
+                # docstring'i, __init__).
+                self._set_zero_cleared = True
+                self._set_zero_status = "busy"
+                self._set_zero_timeout_latched = True
+                return
             self._set_zero_sent = False
             self._set_zero_cleared = False
             self._set_zero_status = "idle"
@@ -713,15 +746,42 @@ class MachineService(QObject):
             if combined_busy or not (combined_done or combined_error):
                 self._set_zero_cleared = True
         if not self._set_zero_cleared:
+            # PLC-HMI-20260923-25 (P1 düzeltme): "cleared" hiç gelmezse (PLC
+            # önceki denemeden kalma latch'i hiç temizlemedi, Busy de hiç
+            # görülmedi) dahi zaman aşımı işletilir - operatör sonsuza dek
+            # "gönderildi" görmemeli. Bu ASLA "done" sayılmaz (yalnız
+            # "error") - eski latch hiçbir zaman yeni bir başarı olarak
+            # kabul edilmiyor, yalnız sonsuz bekleme kırılıyor.
+            timed_out = (time.monotonic() - self._set_zero_sent_at) > SET_ZERO_RESULT_TIMEOUT_S
+            if not timed_out:
+                return
+            self._set_zero_status = "error"
+            if not self.demo_mode and self._worker is not None:
+                self._worker.request_write("cmd_set_zero_request", False)
+            self._set_zero_sent = False
+            self._set_zero_timeout_latched = False
             return
 
         timed_out = (time.monotonic() - self._set_zero_sent_at) > SET_ZERO_RESULT_TIMEOUT_S
         if combined_busy:
             self._set_zero_status = "busy"
-            if not timed_out:
-                return
-            # PLC hiç bir sonuca varmadı - "görev notu: sonuç bekleme süresi
-            # aşımında Request FALSE ve açıklayıcı hata; otomatik tekrar yok."
+            if timed_out and not self._set_zero_timeout_latched:
+                # PLC hiç bir sonuca varmadı - "görev notu: sonuç bekleme
+                # süresi aşımında Request FALSE ve açıklayıcı hata; otomatik
+                # tekrar yok." PLC-HMI-20260923-25 (P1 düzeltme): FALSE
+                # burada yazılır AMA eksen GERÇEKTEN dururken kadar (aşağıki
+                # `combined_busy` False olana kadar) kilit/"sent" AÇILMAZ -
+                # ExecuteFALSE yazmak PLC'nin fiziksel olarak durduğunun
+                # kanıtı değildir.
+                self._set_zero_timeout_latched = True
+                if not self.demo_mode and self._worker is not None:
+                    self._worker.request_write("cmd_set_zero_request", False)
+            return
+        elif self._set_zero_timeout_latched:
+            # Zaman aşımı/reconnect sırasında zaten "vazgeçildi" - eksen artık
+            # gerçekten durdu, bu deneme kesin HATA olarak kararlaştırılır
+            # (bu noktadan sonra gelen bir combined_done'a rağmen - "PLC hiç
+            # bir sonuca varmadı" kararı zaten verildi, geri alınmaz).
             combined_error = True
         elif combined_error:
             pass
@@ -733,9 +793,12 @@ class MachineService(QObject):
             return  # Busy az önce kalktı, henüz bir sonuç okunmadı - bekle.
 
         self._set_zero_status = "error" if combined_error else "done"
-        if not self.demo_mode and self._worker is not None:
+        if not self.demo_mode and self._worker is not None and not self._set_zero_timeout_latched:
+            # Zaman aşımı/reconnect yolunda RequestFALSE zaten yazıldı -
+            # aynı pulse'u gereksiz yere tekrarlama.
             self._worker.request_write("cmd_set_zero_request", False)
         self._set_zero_sent = False
+        self._set_zero_timeout_latched = False
 
     def _on_tick(self) -> None:
         if self.demo_mode and self._demo is not None:
@@ -1220,11 +1283,33 @@ class MachineService(QObject):
         talebin koşulları/gönderimi var - izin yoksa hiçbir şey göndermez."""
         if not self.set_zero_reference_allowed_now():
             return False
+        snap = self._snapshot
+        # PLC-HMI-20260923-25 (P1 düzeltme, "hızlı Done / sonsuz bekleme"):
+        # PLC çok hızlı tamamlarsa (iki HMI okuması arasında), Busy hiç
+        # görülmeden doğrudan Done=True gelebilir - eskiden "cleared" yalnız
+        # GÖNDERİM SONRASI bir Busy=True veya tüm-bayraklar-False okumasıyla
+        # set edilirdi; bu, Done doğrudan gelince hiç tetiklenmeyip durumun
+        # "sent"te sonsuza dek takılı kalmasına (timeout kontrolü bile hiç
+        # çalışmadan, çünkü erken return ondan önce) yol açan gerçek bir
+        # kusurdu. Düzeltme: GÖNDERİM ANINDAKİ taze okuma zaten temizse
+        # (Busy/Done/Error hiçbiri TRUE değil), "cleared" hemen True'ya
+        # set edilir - böylece bir SONRAKİ okuma (Busy=True gözlemeden
+        # doğrudan Done=True gelse bile) güvenle YENİ talebin sonucu sayılır.
+        # Gönderim anı KİRLİYSE (bir önceki denemeden kalma latched Done/
+        # Error/Busy varsa) eski davranış korunur - post-send bir Busy veya
+        # all-false gözlemi hâlâ gerekir, böylece ESKİ bir Done YENİ başarı
+        # sayılmaz (asıl "cleared" deseninin amacı, korunuyor).
+        combined_busy = snap.x_home_busy or snap.y_home_busy
+        combined_done = snap.x_home_done and snap.y_home_done
+        combined_error = (
+            snap.x_home_error or snap.y_home_error or snap.x_home_aborted or snap.y_home_aborted
+        )
         self._set_zero_sent = True
-        self._set_zero_cleared = False
+        self._set_zero_cleared = not (combined_busy or combined_done or combined_error)
         self._set_zero_status = "sent"
         self._set_zero_sent_at = time.monotonic()
         self._set_zero_stale_since_sent = False
+        self._set_zero_timeout_latched = False
         if self.demo_mode and self._demo is not None:
             self._demo.request_set_zero()
         elif self._worker is not None:

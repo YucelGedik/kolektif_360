@@ -36,14 +36,19 @@ def base_font(point_size: int = 10, bold: bool = False) -> QFont:
 
 
 def tabular_font(point_size: int = 10, bold: bool = False) -> QFont:
-    """Numeric readouts should not jitter horizontally as digits change."""
+    """Numeric readouts should not jitter horizontally as digits change.
+
+    2026-09-23 (kullanıcı bulgusu, ekran görüntüsü): pencere büyütülüp
+    küçültüldüğünde bu fontu kullanan sayıların (X/Y Pozisyonu, Actual
+    Position vb.) bazen okunmaz/bozuk glifler gösterdiği görüldü -
+    `QFont.setFeature(tnum, ...)` (PySide6 6.11.1, Windows) ile ilişkili bir
+    yeniden-boyutlandırma/glif önbelleği sorunu olduğu değerlendirildi.
+    Kaynakta bu tek özel OpenType özelliği tüm sayfalarda etkiliydi (Readout
+    her yerde bunu kullanıyor) - kaldırıldı. Bedeli yalnız kozmetik (rakamlar
+    değişirken hafif yatay titreşim olabilir); kazancı her zaman okunur
+    metin - HMI için doğru takas."""
     font = base_font(point_size, bold)
     font.setStyleStrategy(QFont.StyleStrategy.PreferQuality)
-    try:
-        # OpenType "tnum" (tabular figures) - available on newer Qt/PySide6.
-        font.setFeature(QFont.Tag("tnum"), 1)
-    except (AttributeError, TypeError):
-        pass
     return font
 
 
@@ -55,6 +60,10 @@ QWidget {{
 }}
 
 QLabel {{
+    background: transparent;
+}}
+
+QCheckBox {{
     background: transparent;
 }}
 
@@ -111,6 +120,11 @@ QPushButton#resetButton {{
     color: {COLORS['text_primary']};
     font-weight: 600;
     font-size: 18px;
+}}
+
+QPushButton#applyButtonSmall {{
+    padding: 2px 8px;
+    font-size: 12px;
 }}
 
 QPushButton#navButton {{

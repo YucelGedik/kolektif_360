@@ -3,6 +3,255 @@
 Yeni girisleri en uste ekle. Eski ve uzun detaylari `CHANGELOG_ARCHIVE.md`
 dosyasina tasi.
 
+## 2026-09-23 - PLC-HMI-20260923-25: C8 sonuç takibinde 2 gerçek P1 kusur bulundu+düzeltildi, H16 metni güncellendi
+
+Kullanıcı: "25 numaralı notla plc tarafından iş geldi kontrol et". PLC
+ajanı, C8'in `services/machine_service.py::_update_set_zero_status`/
+`request_set_zero` kaynak kodunu inceleyip (gerçek PLC'ye bağlanmadan) 2
+gerçek P1 kusur buldu - ikisini de kendi kodumu okuyarak doğruladım.
+Ayrıntı: `.ai/PLC_HMI_REVIEW_1545_20260923.md`.
+
+**P1-1 "hızlı Done / sonsuz bekleme":** `_set_zero_cleared` eskiden
+YALNIZ gönderim SONRASI bir Busy=True veya tüm-bayraklar-False okumasıyla
+set ediliyordu. PLC çok hızlı tamamlarsa (iki HMI okuması arasında), Busy
+hiç görülmeden doğrudan Done=True gelebiliyor - bu durumda `cleared` hiç
+tetiklenmiyor, `_update_set_zero_status` her tick erken `return` ediyordu
+(zaman aşımı kontrolünden BİLE önce) - durum sonsuza dek "sent" kalıyordu.
+**Düzeltme:** `request_set_zero()` artık GÖNDERİM ANINDAKİ taze okumayı
+kontrol ediyor - Busy/Done/Error hiçbiri TRUE değilse `_set_zero_cleared`
+hemen `True`'ya set ediliyor (böylece bir SONRAKİ okuma, Busy hiç
+gözlenmeden Done=True gelse bile, güvenle yeni talebin sonucu sayılıyor).
+Gönderim anı KİRLİYSE (önceki denemeden kalma latch varsa) eski post-send
+edge-detection davranışı aynen korunuyor. Ayrıca "cleared" hiç gelmese
+bile (PLC latch'i hiç temizlemezse) artık zaman aşımı işletiliyor - o dal
+da eskiden asla ulaşılamıyordu.
+
+**P1-2 "gerçek Busy bırakılmadan modal kapanabiliyor":** Zaman aşımı VEYA
+reconnect-sırasında-hâlâ-meşgul anında `combined_busy` hâlâ `True` olsa
+bile eski kod hemen `status="error"` + `sent=False`'a geçip kilidi
+açıyordu - `SetZeroReferenceDialog._busy()` ve jog kilidi (`_manual_
+allowed()`) ikisi de bu duruma/`_set_zero_sent`'e bakıyor, yani modal
+GERÇEK fiziksel hareket sürerken kapanabiliyor, jog kilidi açılabiliyordu.
+**Düzeltme:** Yeni `_set_zero_timeout_latched` bayrağı - hem zaman aşımı
+hem reconnect-hâlâ-meşgul durumunda RequestFALSE bir kez yazılır (tekrar
+denenmez) AMA `combined_busy` GERÇEKTEN `False` olana kadar `_set_zero_
+status`/`_set_zero_sent` sonlandırılmaz. `set_zero_dialog.py`'ye hiç
+dokunulmadı - zaten yalnız `set_zero_status()`'a bakıyordu, servis
+düzeltmesi tek başına yeterliydi.
+
+**H16 (mesaj 21) metni güncellendi:** `ALARM_CATALOG` ve `notification_
+catalog.py` ikisi de - eski "Emniyet geri bildirimi yok..." yerine "Acil
+stop aktif. Bıçak ve baskıya geri çekme komutu verildi. Nedeni kontrol
+edin; acili bırakmak çevrimi başlatmaz." Geri çekme KOMUTU gerçek yukarı
+konum onayı olarak sunulmuyor - ekranlardaki YUKARI/AŞAĞI hâlâ yalnız
+sensöre dayanıyor. "Otomatik çevrim kesilmişse" toparlanma MESAJ'ı
+bilinçli olarak ERTELENDİ (yeni cause-tracking gerektiriyor, C8E saha
+testi beklerken riskli görüldü).
+
+**Kayıt düzeltmeleri (PLC talebiyle):** SESSION_BRIEF'teki "MANUAL_RETURN_
+STOP(140) Reset kararı açık" maddesi kaldırıldı (PLC'nin C5.1/C6 kaynak
+kararı var, kullanıcı geçti bildirdi) ve "C8E henüz başlanmadı" ifadesi
+düzeltildi (PLC C08_2 bazlı kodu zaten hazırlamış, saha testi bekliyor).
+
+**Test:** `test_set_zero_reference.py`'ye `test_timeout_while_never_
+cleared_still_resolves_as_error`, `test_clean_start_immediate_done_on_
+first_read_is_accepted` eklendi; `test_connection_loss_while_pending_
+does_not_claim_success_or_resend` ve `test_result_wait_timeout_is_
+treated_as_error` yeni (doğru) davranışa güncellendi (eski, HATALI
+davranışı doğruluyorlardı). `test_set_zero_dialog.py`'ye `test_dialog_
+stays_locked_past_timeout_while_genuinely_busy` eklendi.
+`test_alarm_catalog.py`'deki eski H16 metin assertion'ı güncellendi. Tam
+suite 366/366. Gerçek render ile H16 yeni metni doğrulandı. Gerçek PLC'ye
+hiçbir şey yazılmadı - saha testi hâlâ kullanıcıda.
+
+**Yan bulgu (DB kirliliği tekrar):** Bu incelemeyi doğrularken kullandığım
+kendi ad-hoc render betiğim yine `data/bufera.db`'ye demo-mod alarm kaydı
+sızdırdı (uygulama kapalıyken fark edilip temizlendi). PLC ajanı da bunu
+bağımsız olarak flagledi ("gerçek bufera.db üzerinden test/sonradan kayıt
+silme yapılmamalı"). Kendi doğrulama betiklerim bundan sonra izole
+`persistence.db.init_engine()` kullanacak (mevcut `test_set_zero_dialog.
+py::_isolated_engine` deseniyle aynı) - tam test-suite izolasyonu hâlâ
+ayrı, açık bir bakım işi.
+
+## 2026-09-23 - DPI ölçek-yuvarlama politikası eklendi - ekranlar arası glif bozulması şüphesi (DOĞRULANMADI)
+
+Kullanıcı ekran görüntüsü: bir önceki oturumda `tabular_font()`den
+`setFeature(tnum)` kaldırılmasına rağmen, "ACTUAL POSITION" gibi sayısal
+göstergeler yine bozuk glifler gösterdi - bu kez laptop panelinde TAM EKRAN
+yapılınca; ikinci (harici) monitöre taşıyınca düzeliyor. "bulunduğu ekrana
+göre sizeları otomatik güncellemesi gerekmez mi? yerlerinden kaymaması
+lazım" dedi.
+
+**Değerlendirme (doğrulanamadı, en olası neden):** Laptop paneli muhtemelen
+kesirli bir DPI ölçeği kullanıyor (örn. %125/%150), harici monitör muhtemelen
+tam sayı ölçekli (örn. %100). Qt'nin VARSAYILAN DPI ölçek-faktörü yuvarlama
+politikası (`Round`) kesirli ölçeklerde layout hesaplaması ile çizim geçişi
+arasında tutarsız yuvarlamaya yol açabiliyor - ekranlar arası geçişte (veya
+aynı ekranda maximize/DPI yeniden hesaplama tetiklendiğinde) glif önbelleğinin
+eski/yanlış ölçekle çizilmiş halde kalmasına neden olan, Qt topluluğunda
+iyi bilinen bir sorun sınıfı.
+
+**Düzeltme:** `app/main.py::main()`e, `QApplication(sys.argv)`
+oluşturulmadan HEMEN ÖNCE `QApplication.setHighDpiScaleFactorRoundingPolicy
+(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)` eklendi - gerçek ölçek
+faktörünü hiç yuvarlamadan kullanır, bu sınıf sorun için standart ilk
+düzeltme.
+
+**ÖNEMLİ - bu ortamda doğrulanamadı:** Geliştirme ortamında gerçek
+çoklu-monitör/farklı-DPI donanımı yok, bu yüzden tekrar üretilip
+düzeltmenin işe yaradığı GÖRSEL OLARAK kanıtlanamadı (yalnız `pytest`
+etkilenmedi, 363/363 - bu çağrı yalnız `main()` içinde, testler kendi
+`QApplication`'ını başka şekilde kuruyor). Kullanıcının laptop panelinde
+tam ekran yaparak tekrar test etmesi gerekiyor - düzelmezse kök neden
+başka bir yerde (örn. farklı bir Qt/sürücü sorunu) aranmalı.
+
+## 2026-09-23 - H12-H15/H20-H22/U06 online doğrulandı; gerçek PLC'nin 100-node/read sınırı bulunup düzeltildi
+
+Kullanıcı, Alarmlar sayfasındaki "Online doğrulama bekleyen kodlar: H12,
+H13, H14, H15, H20, H21, H22, U06" uyarısının ekran görüntüsünü paylaşıp
+"bu nedir, ne yapmam gerekiyorsa yapalım" dedi.
+
+**Ne oldukları:** `core/notification_catalog.py`/`services/machine_service.
+py::ALARM_CATALOG`'da PLC-HMI-20260922-17/18 (C6 toplu teslim + C06_1
+audit) ile export'ta VAR olduğu doğrulanmış ama online node/erişim testi
+hiç yapılmamış 8 aday HATA/UYARI tagı: H12 `xX_StopError`, H13
+`xY_StopError`, H14 `xX_AxisError`, H15 `xY_AxisError`, H20
+`xAlarmModeChangedDuringCycle`, H21 `xAlarmClampLostDuringCycle`, H22
+`xAlarmBladeNotClearDuringReturn`, U06 `xOperatorStopActive` (Stop
+aktifken Start engeli). Config'te eşlemeleri olmadığı için bu maddeler hiç
+tetiklenmiyordu (C0.4/C5 disiplini - eşlenmemiş tag güvenle "hiç olmaz"
+davranır).
+
+**Salt-okunur browse ile doğrulama:** `opc.tcp://192.168.0.2:4840`'a
+bağlanıp `config/opcua.example.json`'daki 8 aday NodeId doğrudan okundu -
+hepsi CANLI (Boolean, hepsi şu an False). `config/opcua.json`'a eklendi
+(96→104 node, önce `config/opcua.json.bak_20260923_pre_h1222` yedeklendi).
+
+**Gerçek regresyon bulundu ve düzeltildi:** 104 node'lu config ile gerçek
+bağlantı denendiğinde `ServiceFault (BadTooManyOperations)` alındı -
+`plc/opcua_client.py::_read_loop` TÜM node'ları TEK `read_values()`
+çağrısında okuyordu. Sunucunun `ServerCapabilities/OperationLimits/
+MaxNodesPerRead` (ns=0;i=11705) değeri salt-okunur okundu: **100**.
+Ampirik bisect ile doğrulandı (gerçek 104 node'luk listenin ilk N'i
+okunarak): n=100 OK, n=101 FAIL - tam sınır. `MaxNodesPerWrite`/
+`MaxNodesPerBrowse` de 100.
+
+**Düzeltme:** `plc/opcua_client.py`'e `MAX_NODES_PER_READ = 100` eklendi;
+`_read_loop` artık `self._nodes`'u bu boyutta chunk'layıp birden çok
+`read_values()` çağrısı yapıp tek bir snapshot dict'inde birleştiriyor -
+104 node'da 2 çağrı (100+4). Tek chunk hata verirse (önceki all-or-nothing
+davranışla tutarlı) o tick'in tamamı atlanır, bir sonraki tick'te tekrar
+denenir. **Bu sabit değil, kalıcı bir mimari sınır** - node sayısı ileride
+büyümeye devam edecek (örn. EMG görevi mesaj 21) ve artık otomatik ele
+alınıyor.
+
+**Doğrulama:** Gerçek PLC'ye tekrar bağlanıp `MainWindow`/`AlarmPage`
+render edildi - "PLC: BAĞLI", "Online doğrulama bekleyen kodlar" uyarısı
+kayboldu, `pending_candidate_catalog_ids()` `[]` döndü. 2 yeni test
+(`test_opcua_read_chunking.py` - sahte client ile chunk sınırını küçültüp
+[3,3,1] bölünmeyi ve sınır altındayken tek çağrı kalmayı doğruluyor). Tam
+suite 363/363.
+
+## 2026-09-23 - Pencere resize'ında sayısal göstergelerde glif bozulması düzeltildi
+
+Kullanıcı ekran görüntüsü paylaştı: pencereyi büyütüp küçültünce Manuel
+sayfasındaki "ACTUAL POSITION" değerleri (ve aynı fontu kullanan diğer tüm
+sayısal göstergeler - X/Y Pozisyonu, Çevrim Durumu) okunmaz/bozuk glifler
+gösteriyordu. Sordu: "tüm sayfalarda bu tarz sorunları engelleyecek bir şey
+var mı".
+
+Kod taraması: `ui/machine/widgets.py::Readout` her yerde `ui/machine/
+theme.py::tabular_font()`u kullanıyor; bu fonksiyon `QFont.setFeature(QFont.
+Tag("tnum"), 1)` çağırıyordu (OpenType tabular figures - rakam değişirken
+yatay titreşimi önlemek için, ilk scaffold commit'inden beri vardı).
+`ui/`de başka hiçbir yerde `setFeature`/özel glif/paint kodu yok - tek şüpheli
+nokta buydu. PySide6 6.11.1 + Windows'ta bu özel OpenType özelliğinin resize
+sırasında glif önbelleğiyle ilgili bir soruna yol açtığı değerlendirildi.
+
+**Düzeltme:** `setFeature()` çağrısı `tabular_font()`den kaldırıldı - geri
+kalan (aile/boyut/kalın, `PreferQuality` stil stratejisi) korundu. Bedel
+yalnız kozmetik (rakamlar değişirken hafif yatay titreşim olabilir); kazanç
+her koşulda okunur metin - bir HMI için doğru takas. `Readout` her sayfada
+kullanıldığı için düzeltme TÜM sayfaları kapsıyor (kullanıcının sorduğu tam
+olarak buydu).
+
+Doğrulama: gerçek `app.setStyleSheet(STYLESHEET)` uygulanmış pencerede 7
+farklı boyuta art arda `resize()` çağrılıp (kullanıcının "büyütüp
+küçültme" senaryosunu taklit ederek) Manuel sayfası tekrar render edildi -
+"0.0 mm" / "+0.00 mm" doğru okunuyor. Tam suite 361/361 (davranış
+değişikliği yok, yalnız font özelliği kaldırıldı - test eklenmedi, saf
+görsel/rendering düzeltmesi).
+
+## 2026-09-23 - Ayarlar tablosunda "Parametre" sütunundaki boş alan giderildi
+
+Kullanıcı ekran görüntüsü: "Parametre" sütununa `columnStretch(0, 2)`
+verilince isim ile "Değer" arasında büyük, anlamsız bir boşluk oluşuyordu -
+"bu arada ki boşluğu sola yasla. o boşluğu illa bir yere vereceksen etki
+kısmını genişlet." `grid.setColumnStretch(0, 0)` yapıldı (isim sütunu artık
+yalnız kendi içeriği kadar yer kaplıyor), fazla pay `setColumnStretch(6, 3)`
+ile "Etki" sütununa (tablonun en sonu - orada boşluk normal/beklenen, iki
+dolu sütun arasında değil) verildi. Tam suite 361/361.
+
+## 2026-09-23 - Üst durum çubuğu + alt nav paylaşılan/sabit hale getirildi; Ayarlar sayfası görsel düzeltmeleri (kullanıcı isteği, algoritmayla ilgisiz)
+
+Kullanıcı 6 maddelik bir görsel/navigasyon isteği verdi (3 ekran görüntüsü
+eşliğinde): "makine durumu her sayfada görünsün", "ANA SAYFA butonu en
+başta olsun, sağ üstte ayrı ayrı buton aramayalım", "Uygula butonları çok
+büyük", "IP kutusu Kaydet'ten ince, asimetrik", "Mühendislik Erişimini Aç
+yazısının arka planı temayla uyumsuz".
+
+1. **Üst özet çubuğu paylaşılan tek örnek oldu.** Önceden `MachinePage`
+   kendi `_build_status_bar()`'ını inşa ediyordu (yalnız o sayfada
+   görünürdü). Taşındı: `ui/machine/widgets.py::MachineStatusBar` (yeni
+   sınıf) - kendi servis sinyallerine (`snapshotUpdated`,
+   `connectionStateChanged`) doğrudan abone olur. `app/main.py::MainWindow`
+   şimdi `central_layout`de `QStackedWidget`in ÜSTÜNE TEK bir
+   `MachineStatusBar` örneği koyuyor - sayfa değişse de aynı widget kalır.
+2. **Alt gezinme satırı da paylaşılan tek örnek oldu, "ANA SAYFA" eklendi.**
+   `MachinePage._nav` kaldırıldı; `MainWindow` artık `SectionTabs`ı
+   `QStackedWidget`in ALTINA tek örnek koyuyor:
+   `[("machine_main","ANA SAYFA"), ("manual","MANUEL"), ("settings",
+   "AYARLAR"), ("alarms","ALARMLAR"), ("camera","KAMERA EKRANI")]`.
+   `SectionTabs` artık `checkable=True` + yeni `set_active(key)` metodu -
+   tıklanan sekme turuncu çerçeveyle ("navButton:checked" CSS'i zaten
+   vardı) işaretli kalır, hangi sayfada olunduğu her zaman görünür.
+   Sayfaların (`ManualPage`/`SettingsPage`/`AlarmPage`/`MachinePage`) kendi
+   "◀ ANA EKRAN" `back_btn`'leri VE `navigateRequested` sinyalleri
+   kaldırıldı - artık gereksizdi (yalnız `CameraPlaceholderPage`
+   kendi "Makine Ekranı" butonuyla `navigateRequested`i korudu, yer
+   tutucunun kendi UX'i). `MainWindow._navigate` artık `self._nav.
+   set_active(key)`'i de çağırıyor.
+3. **Ayarlar tablosu:** "Uygula" butonları `touch_button` (Expanding +
+   48px) yerine küçük sabit boyutlu (`84×32px`, `#applyButtonSmall` CSS)
+   düz `QPushButton` oldu - önceden sütunu doldurup saçma genişlikte
+   görünüyordu. Yeni "Etki" sütunu eklendi: `core/parameters.py::
+   ParameterSpec.effect_tr` (yeni alan, 16 parametrenin hepsine kısa
+   Türkçe özet, örn. "Kesim sırasında X ekseni hızı") - `QFontMetrics.
+   elidedText()` ile tek satıra sığdırılıp tam metin tooltip'te. Tüm
+   satırlar `_PARAM_ROW_HEIGHT=32` sabit yükseklikte (spin+buton), simetrik.
+   `grid.setColumnStretch` ile Durum(5)/Etki(6) boşalan yeri paylaşıyor.
+4. **OPC UA Endpoint kutusu = Kaydet butonu genişliği:** ikisine de
+   `stretch=1` verildi (önceden yalnız endpoint kutusunda vardı) - artık
+   eşit paylaşıyorlar, asimetri gitti.
+6. **"Mühendislik Erişimini Aç" checkbox:** global `QCheckBox{background:
+   transparent}` kuralı eklendi (`theme.py`) - önceden varsayılan
+   `QWidget` arka planı (page_bg) kartın (navy) üzerinde sırıtan bir
+   dikdörtgen gösteriyordu. Checkbox'ın kendi metni artık uyarı rengiyle
+   aynı (`COLORS['warning']`).
+
+VisionCut'a (opsiyonel, kabul etmezlerse önemli değil) kamera ekranında da
+makine durumu göstermelerini öneren bir not gönderilecek - engelleyici
+değil.
+
+Yeni testler: `tests/test_main_window_nav.py` (4 - paylaşılan tek örnek,
+ANA SAYFA ilk sırada + tıklayınca doğru sayfaya geçiyor, aktif sekme
+vurgusu, sayfaların artık `navigateRequested`i yok), `tests/test_widgets.py`
+(2 - `SectionTabs.set_active`/tıklama), `test_parameters.py`'ye 1 ekleme
+(her `effect_tr` dolu/tek satır). Gerçek `app.setStyleSheet(STYLESHEET)`
+uygulanmış render ile 5 sayfa ekran görüntüsüyle doğrulandı (üst çubuk +
+alt nav her sayfada aynı, aktif sekme turuncu, Ayarlar tablosu simetrik).
+Tam suite 361/361.
+
 ## 2026-09-23 - Manuel/Oto mod butonu artık geçilecek moda göre etiketleniyor (kullanıcı isteği)
 
 Kullanıcı: "Uyarı olarak oto modu etkinleştir çıkıyor başlamak için fakat

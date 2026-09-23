@@ -337,12 +337,26 @@ def test_connection_loss_while_pending_does_not_claim_success_or_resend(tmp_path
     assert svc.set_zero_status() == "busy"  # donmuş durum - ne done ne error
     svc._worker.request_write.assert_not_called()  # TRUE tekrar gönderilmedi
 
-    # Yeniden bağlandık - eski okumaya güvenilmez, talep sıfırdan iptal edilir.
+    # Yeniden bağlandık - eski okumaya güvenilmez, talep sıfırdan iptal
+    # edilir (RequestFALSE yazılır, TRUE tekrar gönderilmez) AMA eksen HÂLÂ
+    # fiziksel olarak meşgulse (kesinti sırasında PLC hareketi sürdürmüş
+    # olabilir) kilit/"sent" GERÇEKTEN durana kadar açılmaz - PLC-HMI-
+    # 20260923-25 (P1 düzeltme, "reconnect dalı da idle'a geçiyor" bulgusu).
     svc.snapshot.stale = False
     svc._update_set_zero_status(svc.snapshot)
 
-    assert svc.set_zero_status() == "idle"
+    assert svc.set_zero_status() == "busy"
     svc._worker.request_write.assert_called_once_with("cmd_set_zero_request", False)
+    assert svc.set_zero_reference_allowed_now() is False  # hâlâ meşgul, yeni talep engellenir
+
+    # Eksen sonunda GERÇEKTEN durdu - kesinti sırasında sonuç belirsiz
+    # kaldığı için bu deneme kesin HATA olarak kapanır (başarı sayılmaz),
+    # RequestFALSE tekrar yazılmaz (zaten yazılmıştı).
+    svc._worker.request_write.reset_mock()
+    svc._on_raw_snapshot({"x_home_busy": False, "y_home_busy": False})
+
+    assert svc.set_zero_status() == "error"
+    svc._worker.request_write.assert_not_called()
     assert svc.set_zero_reference_allowed_now() is True
 
 
@@ -355,8 +369,75 @@ def test_result_wait_timeout_is_treated_as_error(tmp_path, monkeypatch):
     svc._set_zero_sent_at = time.monotonic() - SET_ZERO_RESULT_TIMEOUT_S - 1.0
     svc._update_set_zero_status(svc.snapshot)
 
-    assert svc.set_zero_status() == "error"
+    # PLC-HMI-20260923-25 (P1 düzeltme, "gerçek Busy bırakılmadan modal
+    # kapanabiliyor" bulgusu): zaman aşımında RequestFALSE yazılır (tekrar
+    # denenmez) AMA eksen GERÇEKTEN meşgulken (combined_busy hâlâ True)
+    # kilit/"sent" ASLA açılmaz - ExecuteFALSE yazmak PLC'nin fiziksel
+    # olarak durduğunun kanıtı değildir.
+    assert svc.set_zero_status() == "busy"
     svc._worker.request_write.assert_called_with("cmd_set_zero_request", False)
+    assert svc.set_zero_reference_allowed_now() is False
+
+    # Aynı pulse tekrar yazılmasın - hâlâ meşgul/hâlâ zaman aşımı geçmişken
+    # ikinci bir tick'te tekrar FALSE yazılmamalı.
+    svc._worker.request_write.reset_mock()
+    svc._update_set_zero_status(svc.snapshot)
+    svc._worker.request_write.assert_not_called()
+
+    # Eksen sonunda GERÇEKTEN durdu - zaman aşımı kararı geri alınmaz,
+    # sonuç kesin HATA olarak kapanır.
+    svc._on_raw_snapshot({"x_home_busy": False, "y_home_busy": False})
+    assert svc.set_zero_status() == "error"
+    assert svc.set_zero_reference_allowed_now() is True
+
+
+def test_timeout_while_never_cleared_still_resolves_as_error(tmp_path):
+    """PLC-HMI-20260923-25 (P1 düzeltme, 3. istenen test - "cleared hiç
+    gelmezken timeout"): gönderim ANINDA zaten kirli (bir önceki denemeden
+    kalma latched Done) VE PLC hiçbir zaman Busy göstermez/latch'i
+    temizlemezse, eskiden `_update_set_zero_status` "cleared" olmadan asla
+    zaman aşımı KONTROLÜNE bile ulaşmıyordu (erken return ondan önceydi) -
+    durum sonsuza dek "sent" kalırdı. Artık "cleared" hiç gelmese bile
+    zaman aşımı işletilir; sonuç HER ZAMAN "error" (asla "done" değil -
+    eski latch bir başarı olarak KABUL EDİLMEDİ, yalnızca sonsuz bekleme
+    kırıldı)."""
+    svc = _real_service(tmp_path)
+    svc._on_raw_snapshot({"x_home_done": True, "y_home_done": True})  # önceki denemeden kalan
+
+    svc.request_set_zero()  # gönderim anı KİRLİ - cleared=False başlar
+    svc._worker.request_write.reset_mock()
+
+    # PLC hiçbir zaman Busy göstermedi, latch'i de hiç temizlemedi -
+    # "cleared" hiç tetiklenmiyor.
+    svc._set_zero_sent_at = time.monotonic() - SET_ZERO_RESULT_TIMEOUT_S - 1.0
+    svc._update_set_zero_status(svc.snapshot)
+
+    assert svc.set_zero_status() == "error"
+    svc._worker.request_write.assert_called_once_with("cmd_set_zero_request", False)
+    assert svc.set_zero_reference_allowed_now() is True
+
+
+def test_clean_start_immediate_done_on_first_read_is_accepted(tmp_path):
+    """PLC-HMI-20260923-25 (P1 düzeltme, 1. istenen test - "temiz başlangıç
+    -> ilk okumada ikiDone"): PLC çok hızlı tamamlarsa, iki HMI okuması
+    arasında Busy hiç görülmeden doğrudan Done=True gelebilir. Gönderim
+    ANINDA snapshot zaten temizse (Busy/Done/Error hiçbiri TRUE değil) bu
+    doğrudan gelen Done, YENİ talebin GERÇEK sonucu olarak güvenle kabul
+    edilmeli - eskiden bu senaryoda "cleared" hiç set edilmediği için
+    (yalnız post-send bir Busy/all-false gözlemiyle tetiklenirdi) durum
+    sonsuza dek "sent" kalır, zaman aşımı kontrolüne bile ulaşılmazdı."""
+    svc = _real_service(tmp_path)
+    assert svc.set_zero_status() == "idle"  # temiz başlangıç - hiç latch yok
+
+    svc.request_set_zero()
+    svc._worker.request_write.reset_mock()
+
+    # Busy HİÇ görülmedi - PLC doğrudan Done ile geldi.
+    svc._on_raw_snapshot({"x_home_busy": False, "y_home_busy": False, "x_home_done": True, "y_home_done": True})
+
+    assert svc.set_zero_status() == "done"
+    svc._worker.request_write.assert_called_once_with("cmd_set_zero_request", False)
+    assert svc.set_zero_reference_allowed_now() is True
 
 
 # -- gerçek OPC UA reddi -------------------------------------------------

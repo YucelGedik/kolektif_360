@@ -7,7 +7,7 @@ brief section 6 & 26)."""
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -32,8 +32,6 @@ MOVE_TO_START_HOLD_MS = 3000
 
 
 class ManualPage(QWidget):
-    navigateRequested = Signal(str)  # "machine_main"
-
     def __init__(self, service: MachineService, parent: QWidget | None = None):
         super().__init__(parent)
         self._service = service
@@ -97,12 +95,9 @@ class ManualPage(QWidget):
             "MANUEL MODU ETKİNLEŞTİR", object_name="navButton", checkable=True
         )
         self._manual_mode_btn.clicked.connect(self._service.set_manual_mode)
-        back_btn = touch_button("◀ ANA EKRAN", object_name="navButton")
-        back_btn.clicked.connect(lambda: self.navigateRequested.emit("machine_main"))
         header.addWidget(title)
         header.addStretch(1)
         header.addWidget(self._manual_mode_btn)
-        header.addWidget(back_btn)
         root.addLayout(header)
 
         axes_row = QHBoxLayout()

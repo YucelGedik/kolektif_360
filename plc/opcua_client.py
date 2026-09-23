@@ -59,6 +59,16 @@ EXPLICIT_VARIANT_TYPES: dict[str, "ua.VariantType"] = {
     "vision_heartbeat": ua.VariantType.UInt32,
 }
 
+# Gerçek PLC bulgusu (2026-09-23): config'e 8 aday tag (H12-H15/H20-H22/U06)
+# eklenip node sayısı 96'dan 104'e çıkınca, tek `read_values()` çağrısı
+# `BadTooManyOperations` ile reddedildi. Salt-okunur browse ile sunucunun
+# `ServerCapabilities/OperationLimits/MaxNodesPerRead` değeri doğrulandı
+# (=100) VE ampirik olarak bisect edildi (n=100 OK, n=101 FAIL - tam sınır).
+# Node sayısı zamanla büyümeye devam edecek (yeni PLC görevleri) - sabit bir
+# üst sınıra güvenmek yerine `_read_loop` artık gerekirse birden çok
+# `read_values()` çağrısına bölünür.
+MAX_NODES_PER_READ = 100
+
 
 class OpcUaWorker(QThread):
     connectionStateChanged = Signal(str)
@@ -147,12 +157,21 @@ class OpcUaWorker(QThread):
         interval = self._config.read_interval_ms / 1000
         names = list(self._nodes.keys())
         node_list = list(self._nodes.values())
+        # MAX_NODES_PER_READ (2026-09-23 gerçek PLC bulgusu): sunucu tek
+        # Read servisinde bu sayıdan fazla node'u reddediyor - birden çok
+        # node_list bu sınırı aşarsa birden fazla `read_values()` çağrısına
+        # bölünür, her tick'te aynı toplam snapshot'ı üretmeye devam eder.
+        name_chunks = [names[i : i + MAX_NODES_PER_READ] for i in range(0, len(names), MAX_NODES_PER_READ)]
+        node_chunks = [node_list[i : i + MAX_NODES_PER_READ] for i in range(0, len(node_list), MAX_NODES_PER_READ)]
         consecutive_errors = 0
 
         while self._running:
             try:
-                values = await self._client.read_values(node_list)
-                self.snapshotReady.emit(dict(zip(names, values)))
+                snapshot: dict[str, Any] = {}
+                for chunk_names, chunk_nodes in zip(name_chunks, node_chunks):
+                    values = await self._client.read_values(chunk_nodes)
+                    snapshot.update(zip(chunk_names, values))
+                self.snapshotReady.emit(snapshot)
                 if consecutive_errors > 0:
                     consecutive_errors = 0
                     self.connectionStateChanged.emit(ConnectionState.CONNECTED)

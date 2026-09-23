@@ -109,3 +109,12 @@ def test_velocity_ranges_match_confirmed_mechanical_limits():
             f"{key}: [{spec.min_value}, {spec.max_value}] != confirmed "
             f"mechanical [{min_value}, {max_value}] (2026-09-22)"
         )
+
+
+def test_every_spec_has_a_short_single_line_effect_summary():
+    """Kullanıcı isteği (2026-09-23): Ayarlar tablosundaki "Etki" sütunu
+    satır yüksekliğini bozmamalı - her parametrenin özeti dolu ve tek
+    satırlık (yeni satır karakteri yok) olmalı."""
+    for spec in PARAMETER_SPECS:
+        assert spec.effect_tr, f"{spec.key}: effect_tr boş olamaz"
+        assert "\n" not in spec.effect_tr, f"{spec.key}: effect_tr tek satır olmalı"

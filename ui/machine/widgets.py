@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core.models import ConnectionState, MachineSnapshot
 from ui.machine.theme import COLORS, MIN_TOUCH_HEIGHT, PRIMARY_ACTION_HEIGHT, base_font, tabular_font
 
 
@@ -111,6 +112,92 @@ class StatusChip(QFrame):
         )
 
 
+CONNECTION_CHIP_TEXT = {
+    ConnectionState.DISCONNECTED: "PLC: BAĞLI DEĞİL",
+    ConnectionState.CONNECTING: "PLC: BAĞLANIYOR",
+    ConnectionState.CONNECTED: "PLC: BAĞLI",
+    ConnectionState.DEGRADED: "PLC: ZAYIF",
+    ConnectionState.ERROR: "PLC: HATA",
+    ConnectionState.DEMO: "PLC: DEMO MOD",
+}
+
+CONNECTION_CHIP_STATE = {
+    ConnectionState.DISCONNECTED: "fault",
+    ConnectionState.CONNECTING: "warn",
+    ConnectionState.CONNECTED: "ok",
+    ConnectionState.DEGRADED: "warn",
+    ConnectionState.ERROR: "fault",
+    ConnectionState.DEMO: "warn",
+}
+
+
+class MachineStatusBar(QFrame):
+    """Üst özet çubuğu (PLC/Vision/Servo/Mod/Alarm) - kullanıcı isteği
+    (2026-09-23): önceden yalnız `MachinePage`e özeldi, artık `MainWindow`
+    tarafından TEK bir örnek olarak üstte sabitlenip her sayfada (Ayarlar,
+    Manuel, Alarmlar, Kamera dahil) aynı şekilde görünür - kendi servis
+    sinyallerine doğrudan abone olur, sayfa değişiminden etkilenmez."""
+
+    def __init__(self, service, parent: QWidget | None = None):
+        super().__init__(parent)
+        self._service = service
+        self.setObjectName("statusBar")
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(10, 6, 10, 6)
+        layout.setSpacing(8)
+
+        title = QLabel("BUFERA | MAKİNE")
+        title.setFont(base_font(12, bold=True))
+        layout.addWidget(title)
+        layout.addStretch(1)
+
+        self._plc_chip = StatusChip("PLC: --")
+        self._vision_chip = StatusChip("VISION: --")
+        self._x_servo_chip = StatusChip("X SERVO: --")
+        self._y_servo_chip = StatusChip("Y SERVO: --")
+        self._mode_chip = StatusChip("MOD: --")
+        self._alarm_chip = StatusChip("ALARM: 0")
+        for chip in (
+            self._plc_chip,
+            self._vision_chip,
+            self._x_servo_chip,
+            self._y_servo_chip,
+            self._mode_chip,
+            self._alarm_chip,
+        ):
+            layout.addWidget(chip)
+
+        service.snapshotUpdated.connect(self._on_snapshot)
+        service.connectionStateChanged.connect(self._on_connection_state)
+
+    def _on_connection_state(self, state: str) -> None:
+        self._plc_chip.set_state(CONNECTION_CHIP_STATE.get(state, "fault"), CONNECTION_CHIP_TEXT.get(state, state))
+
+    def _on_snapshot(self, snap: MachineSnapshot) -> None:
+        vision_ok = snap.vision_ready and snap.vision_heartbeat_ok and not snap.vision_fault
+        if snap.vision_fault:
+            vision_state, vision_text = "fault", "VISION: HATA"
+        elif not snap.vision_heartbeat_ok:
+            vision_state, vision_text = "fault", "VISION: YANIT YOK"
+        elif vision_ok:
+            vision_state, vision_text = "ok", "VISION: HAZIR"
+        else:
+            vision_state, vision_text = "inactive", "VISION: --"
+        self._vision_chip.set_state(vision_state, vision_text)
+        self._x_servo_chip.set_state(
+            "fault" if snap.x_fault else ("ok" if snap.x_servo_ready else "inactive"),
+            "X SERVO: HATA" if snap.x_fault else ("X SERVO: HAZIR" if snap.x_servo_ready else "X SERVO: --"),
+        )
+        self._y_servo_chip.set_state(
+            "fault" if snap.y_fault else ("ok" if snap.y_servo_ready else "inactive"),
+            "Y SERVO: HATA" if snap.y_fault else ("Y SERVO: HAZIR" if snap.y_servo_ready else "Y SERVO: --"),
+        )
+        self._mode_chip.set_state("ok" if snap.auto_mode else "warn", "MOD: AUTO" if snap.auto_mode else "MOD: MANUEL")
+        alarm_count = self._service.active_alarm_count()
+        self._alarm_chip.set_state("fault" if alarm_count > 0 else "ok", f"ALARM: {alarm_count}")
+
+
 class ProcessStatusCard(Card):
     """Card for a two-state process indicator (e.g. Bıçak: Aşağı/Yukarı)."""
 
@@ -169,7 +256,10 @@ class HoldButton(QPushButton):
 
 
 class SectionTabs(QWidget):
-    """Bottom navigation row (Manuel / Ayarlar / Alarmlar / Kamera Ekranı)."""
+    """Alt gezinme satırı (kullanıcı isteği, 2026-09-23): artık her sayfada
+    aynı, TEK bir örnek olarak `MainWindow` tarafından sabitlenir (ANA SAYFA
+    / Manuel / Ayarlar / Alarmlar / Kamera Ekranı) - hangi sayfada
+    olunduğunu görmek için tıklanan sekme işaretli (checked) kalır."""
 
     tabClicked = Signal(str)
 
@@ -181,10 +271,14 @@ class SectionTabs(QWidget):
         layout.setSpacing(8)
         self._buttons: dict[str, QPushButton] = {}
         for key, label in items:
-            btn = touch_button(label, object_name="navButton")
+            btn = touch_button(label, object_name="navButton", checkable=True)
             btn.clicked.connect(lambda _checked=False, k=key: self.tabClicked.emit(k))
             layout.addWidget(btn)
             self._buttons[key] = btn
 
     def button(self, key: str) -> QPushButton:
         return self._buttons[key]
+
+    def set_active(self, key: str) -> None:
+        for btn_key, btn in self._buttons.items():
+            btn.setChecked(btn_key == key)

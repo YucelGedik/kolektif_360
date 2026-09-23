@@ -19,7 +19,8 @@ cleared once a write is confirmed or fails."""
 
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QFontMetrics
 from PySide6.QtWidgets import (
     QCheckBox,
     QDoubleSpinBox,
@@ -56,10 +57,19 @@ from ui.machine.widgets import touch_button
 # icat edilmedi.
 VISION_SIM_PASSWORD = "90327"
 
+# Kullanıcı isteği (2026-09-23): Ayarlar tablosundaki her satır aynı,
+# ölçülü yükseklikte olsun - "Etki" özeti satırı büyütmesin diye tek satıra
+# sığdırılıp (elided) tam metin yalnız tooltip'te gösterilir.
+_PARAM_ROW_HEIGHT = 32
+_EFFECT_LABEL_MAX_WIDTH = 220
+
+
+def _elided_text(text: str, max_width: int) -> str:
+    metrics = QFontMetrics(base_font(10))
+    return metrics.elidedText(text, Qt.TextElideMode.ElideRight, max_width)
+
 
 class SettingsPage(QWidget):
-    navigateRequested = Signal(str)  # "machine_main"
-
     def __init__(self, service: MachineService, parent: QWidget | None = None):
         super().__init__(parent)
         self._service = service
@@ -91,8 +101,6 @@ class SettingsPage(QWidget):
         header = QHBoxLayout()
         title = QLabel("AYARLAR / MÜHENDİSLİK")
         title.setFont(base_font(14, bold=True))
-        back_btn = touch_button("◀ ANA EKRAN", object_name="navButton")
-        back_btn.clicked.connect(lambda: self.navigateRequested.emit("machine_main"))
         header.addWidget(title)
         header.addStretch(1)
         # Geçici Vision simülatörü giriş noktası: yalnız feature flag açık
@@ -123,7 +131,6 @@ class SettingsPage(QWidget):
             )
         self._set_zero_btn.clicked.connect(self._open_set_zero_dialog)
         header.addWidget(self._set_zero_btn)
-        header.addWidget(back_btn)
         root.addLayout(header)
 
         warning = QFrame()
@@ -136,6 +143,11 @@ class SettingsPage(QWidget):
         warning_label.setStyleSheet(f"color: {COLORS['warning']};")
         warning_label.setWordWrap(True)
         self._unlock_checkbox = QCheckBox("Mühendislik Erişimini Aç")
+        # Kullanıcı isteği (2026-09-23): QCheckBox global QWidget kuralından
+        # (page_bg arka plan) dolayı çevresindeki kartın (navy) üzerinde
+        # sırıtan bir dikdörtgen gösteriyordu - arka plan şeffaf yapıldı; yazı
+        # rengi yanındaki uyarı metniyle aynı (uyarı rengi).
+        self._unlock_checkbox.setStyleSheet(f"background: transparent; color: {COLORS['warning']};")
         self._unlock_checkbox.toggled.connect(self._on_unlock_toggled)
         warning_layout.addWidget(warning_label, stretch=1)
         warning_layout.addWidget(self._unlock_checkbox)
@@ -155,7 +167,20 @@ class SettingsPage(QWidget):
         grid.addWidget(self._header_label("Birim"), 0, 2)
         grid.addWidget(self._header_label("Sınır"), 0, 3)
         grid.addWidget(self._header_label(""), 0, 4)
-        grid.addWidget(self._header_label("Durum"), 0, 5)
+        # Kullanıcı isteği (2026-09-23): "Etki ile Durum sütununu yer
+        # değiştir, Durum sayfanın boşluğunu alsın" - Etki (kısa, tek
+        # satırlık özet) dar sütunda (5), Durum (büyüyebilen) en sonda (6).
+        grid.addWidget(self._header_label("Etki"), 0, 5)
+        grid.addWidget(self._header_label("Durum"), 0, 6)
+        # Kullanıcı isteği (2026-09-23): Uygula butonları küçüldü, boşalan
+        # yer Etki/Durum sütunlarına gitsin (gerekirse büyüsünler); diğer
+        # sütunlar sabit kalır - tüm satırlar simetrik/aynı boyutta.
+        # DÜZELTME (2026-09-23, ekran görüntüsü): "Parametre" sütununa
+        # stretch verilince isim ile Değer arasında büyük boş alan
+        # oluşuyordu - o boşluk hiç dağıtılmıyor (0), fazlası Durum'a gidiyor.
+        grid.setColumnStretch(0, 0)
+        grid.setColumnStretch(5, 1)
+        grid.setColumnStretch(6, 3)
 
         for row_index, spec in enumerate(PARAMETER_SPECS, start=1):
             name_label = QLabel(spec.label_tr)
@@ -164,6 +189,7 @@ class SettingsPage(QWidget):
             spin.setDecimals(2)
             spin.setValue(self._service.get_parameter_value(spec.key))
             spin.setEnabled(False)
+            spin.setFixedHeight(_PARAM_ROW_HEIGHT)
             # Only fires for a genuine user edit: our own live-sync/initial
             # setValue calls below are wrapped in blockSignals().
             spin.valueChanged.connect(lambda _v, key=spec.key: self._dirty.add(key))
@@ -171,9 +197,15 @@ class SettingsPage(QWidget):
             unit_label.setStyleSheet(f"color: {COLORS['text_secondary']};")
             limit_label = QLabel(f"{spec.min_value:g} — {spec.max_value:g}")
             limit_label.setStyleSheet(f"color: {COLORS['text_secondary']};")
-            apply_btn = touch_button("Uygula")
+            apply_btn = QPushButton("Uygula")
+            apply_btn.setObjectName("applyButtonSmall")
+            apply_btn.setFixedSize(84, _PARAM_ROW_HEIGHT)
             apply_btn.setEnabled(False)
             status_label = QLabel("")
+            effect_label = QLabel(_elided_text(spec.effect_tr, _EFFECT_LABEL_MAX_WIDTH))
+            effect_label.setWordWrap(False)
+            effect_label.setToolTip(spec.effect_tr)
+            effect_label.setStyleSheet(f"color: {COLORS['text_secondary']};")
 
             apply_btn.clicked.connect(
                 lambda _checked=False, key=spec.key, box=spin, label=status_label, spec_=spec: self._apply_parameter(
@@ -186,7 +218,8 @@ class SettingsPage(QWidget):
             grid.addWidget(unit_label, row_index, 2)
             grid.addWidget(limit_label, row_index, 3)
             grid.addWidget(apply_btn, row_index, 4)
-            grid.addWidget(status_label, row_index, 5)
+            grid.addWidget(effect_label, row_index, 5)
+            grid.addWidget(status_label, row_index, 6)
 
             self._rows[spec.key] = (spin, apply_btn, status_label)
             if not self._service.is_parameter_confirmed(spec.key):
@@ -215,7 +248,10 @@ class SettingsPage(QWidget):
         self._endpoint_save_btn = touch_button("Kaydet (Yeniden Başlatma Gerekir)")
         self._endpoint_save_btn.setEnabled(False)
         self._endpoint_save_btn.clicked.connect(self._save_endpoint)
-        layout.addWidget(self._endpoint_save_btn)
+        # Kullanıcı isteği (2026-09-23): IP kutusu butondan ince/asimetrik
+        # duruyordu - ikisine de eşit stretch verilince boşluğu eşit paylaşıp
+        # aynı büyüklükte görünürler.
+        layout.addWidget(self._endpoint_save_btn, stretch=1)
         return card
 
     # -- data binding ---------------------------------------------------------

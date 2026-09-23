@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 import sys
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QApplication, QLabel, QMainWindow, QPushButton, QStackedWidget, QVBoxLayout, QWidget
 
 from persistence.db import init_engine
@@ -23,6 +23,7 @@ from ui.machine.machine_page import MachinePage
 from ui.machine.manual_page import ManualPage
 from ui.machine.settings_page import SettingsPage
 from ui.machine.theme import STYLESHEET
+from ui.machine.widgets import MachineStatusBar, SectionTabs
 
 
 class CameraPlaceholderPage(QWidget):
@@ -64,8 +65,42 @@ class MainWindow(QMainWindow):
 
         self._service = service
 
+        # Kullanıcı isteği (2026-09-23): üst özet çubuğu ve alt gezinme satırı
+        # artık her sayfada aynı, TEK sabit örnek - sayfa değiştikçe yeniden
+        # kurulmaz/kaybolmaz. `MachinePage` kendi başına bir statü çubuğu/nav
+        # inşa etmiyor artık (bkz. machine_page.py).
+        central = QWidget()
+        central_layout = QVBoxLayout(central)
+        central_layout.setContentsMargins(0, 0, 0, 0)
+        central_layout.setSpacing(0)
+
+        self._status_bar = MachineStatusBar(service)
+        central_layout.addWidget(self._status_bar)
+
         self._stack = QStackedWidget()
-        self.setCentralWidget(self._stack)
+        central_layout.addWidget(self._stack, stretch=1)
+
+        # "ANA SAYFA" en başa eklendi (kullanıcı isteği): her sayfadan tek
+        # tıkla ana ekrana dönülür, sayfa başlıklarındaki ayrı "◀ ANA EKRAN"
+        # butonlarına gerek kalmadı (kaldırıldılar).
+        self._nav = SectionTabs(
+            [
+                ("machine_main", "ANA SAYFA"),
+                ("manual", "MANUEL"),
+                ("settings", "AYARLAR"),
+                ("alarms", "ALARMLAR"),
+                ("camera", "KAMERA EKRANI"),
+            ]
+        )
+        self._nav.button("camera").setObjectName("cameraButton")
+        self._nav.tabClicked.connect(self._navigate)
+        nav_container = QWidget()
+        nav_layout = QVBoxLayout(nav_container)
+        nav_layout.setContentsMargins(12, 8, 12, 12)
+        nav_layout.addWidget(self._nav)
+        central_layout.addWidget(nav_container)
+
+        self.setCentralWidget(central)
 
         self._camera_page = CameraPlaceholderPage()
         self._machine_page = MachinePage(service)
@@ -84,21 +119,12 @@ class MainWindow(QMainWindow):
             self._stack.addWidget(page)
 
         self._camera_page.navigateRequested.connect(self._navigate)
-        self._machine_page.navigateRequested.connect(self._on_machine_nav)
-        self._manual_page.navigateRequested.connect(self._navigate)
-        self._settings_page.navigateRequested.connect(self._navigate)
-        self._alarm_page.navigateRequested.connect(self._navigate)
 
         self._navigate("camera")
 
-    def _on_machine_nav(self, key: str) -> None:
-        if key == "camera":
-            self._navigate("camera")
-        else:
-            self._navigate(key)
-
     def _navigate(self, key: str) -> None:
         self._stack.setCurrentWidget(self._pages[key])
+        self._nav.set_active(key)
 
     def closeEvent(self, event) -> None:  # noqa: N802 (Qt override)
         self._service.shutdown()
@@ -108,6 +134,18 @@ class MainWindow(QMainWindow):
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     init_engine()
+
+    # Kullanıcı bulgusu (2026-09-23): pencere laptop panelinden (kesirli DPI
+    # ölçeği - örn. %150) ikinci bir monitöre (tam sayı ölçek, örn. %100)
+    # taşınınca/tam ekran yapılınca metin (özellikle Readout sayıları)
+    # bozuk glifler gösteriyordu, ikinci ekrana geçince düzeliyordu. Qt'nin
+    # VARSAYILAN DPI ölçek-faktörü yuvarlama politikası (Round) kesirli
+    # ölçeklerde layout/çizim geçişleri arasında tutarsız yuvarlamaya, bu da
+    # ekranlar arası geçişte glif önbelleğinin bozulmasına yol açabiliyor -
+    # QApplication oluşturulmadan ÖNCE PassThrough politikasına geçilmesi
+    # (gerçek ölçek faktörünü hiç yuvarlamadan kullanmak) bu sınıf sorun için
+    # Qt topluluğunda standart düzeltmedir.
+    QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
 
     app = QApplication(sys.argv)
     app.setStyleSheet(STYLESHEET)

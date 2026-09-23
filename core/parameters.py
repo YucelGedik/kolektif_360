@@ -40,6 +40,10 @@ class ParameterSpec:
     default: float
     min_value: float
     max_value: float
+    # Kullanıcı isteği (2026-09-23): Ayarlar tablosunda "Durum" sütununun
+    # yanına, değiştirildiğinde neye etki ettiğini özetleyen kısa (tek
+    # satırlık) bir metin - satır yüksekliğini bozmasın diye kısa tutulur.
+    effect_tr: str = ""
 
 
 PARAMETER_SPECS: list[ParameterSpec] = [
@@ -48,20 +52,22 @@ PARAMETER_SPECS: list[ParameterSpec] = [
     # alanının min/max'ı artık genel/güvenli bir tahmin değil, gerçek
     # mekanik test sonrası onaylanmış nihai sınır. Diğer alanlar (Acc/Dec,
     # konum, timeout) bu revizyonun kapsamı dışında, değişmedi.
-    ParameterSpec("lr_x_cut_velocity", "X Kesim Hızı", "mm/s", 175.0, 1.0, 800.0),
-    ParameterSpec("lr_x_cut_acc_dec", "X Kesim Acc/Dec", "mm/s²", 500.0, 1.0, 10000.0),
-    ParameterSpec("lr_x_return_velocity", "X Dönüş Hızı", "mm/s", 400.0, 1.0, 1060.0),
-    ParameterSpec("lr_x_return_acc_dec", "X Dönüş Acc/Dec", "mm/s²", 500.0, 1.0, 10000.0),
-    ParameterSpec("lr_x_cut_start_pos", "X Kesim Başlangıç", "mm", 0.0, 0.0, 3600.0),
-    ParameterSpec("lr_x_cut_end_pos", "X Kesim Bitiş", "mm", 3600.0, 0.0, 3600.0),
-    ParameterSpec("lr_y_center_position", "Y Merkez Konum", "mm", 0.0, -50.0, 50.0),
-    ParameterSpec("lr_y_software_min", "Y Yazılım Min", "mm", -30.0, -50.0, 0.0),
-    ParameterSpec("lr_y_software_max", "Y Yazılım Max", "mm", 30.0, 0.0, 50.0),
-    ParameterSpec("lr_y_move_velocity", "Y Pozisyonlama Hızı", "mm/s", 10.0, 1.0, 50.0),
-    ParameterSpec("lr_y_move_acc_dec", "Y Pozisyonlama Acc/Dec", "mm/s²", 100.0, 1.0, 10000.0),
-    ParameterSpec("lr_y_max_velocity", "Y Follow Maks. Hızı", "mm/s", 5.0, 1.0, 50.0),
-    ParameterSpec("lr_x_jog_velocity", "X Jog Hızı", "mm/s", 50.0, 1.0, 400.0),
-    ParameterSpec("lr_y_jog_velocity", "Y Jog Hızı", "mm/s", 5.0, 1.0, 50.0),
-    ParameterSpec("lr_jog_acc_dec", "Jog Acc/Dec", "mm/s²", 100.0, 1.0, 10000.0),
-    ParameterSpec("t_vision_heartbeat_timeout", "Heartbeat Zaman Aşımı", "ms", 2000.0, 10.0, 10000.0),
+    ParameterSpec("lr_x_cut_velocity", "X Kesim Hızı", "mm/s", 175.0, 1.0, 800.0, "Kesim sırasında X ekseni hızı"),
+    ParameterSpec("lr_x_cut_acc_dec", "X Kesim Acc/Dec", "mm/s²", 500.0, 1.0, 10000.0, "Kesimde X ivme/yavaşlama"),
+    ParameterSpec("lr_x_return_velocity", "X Dönüş Hızı", "mm/s", 400.0, 1.0, 1060.0, "Dönüşte X ekseni hızı"),
+    ParameterSpec("lr_x_return_acc_dec", "X Dönüş Acc/Dec", "mm/s²", 500.0, 1.0, 10000.0, "Dönüşte X ivme/yavaşlama"),
+    ParameterSpec("lr_x_cut_start_pos", "X Kesim Başlangıç", "mm", 0.0, 0.0, 3600.0, "Kesimin X başlangıç konumu"),
+    ParameterSpec("lr_x_cut_end_pos", "X Kesim Bitiş", "mm", 3600.0, 0.0, 3600.0, "Kesimin X bitiş konumu"),
+    ParameterSpec("lr_y_center_position", "Y Merkez Konum", "mm", 0.0, -50.0, 50.0, "Y ekseni merkez/bekleme konumu"),
+    ParameterSpec("lr_y_software_min", "Y Yazılım Min", "mm", -30.0, -50.0, 0.0, "Y ekseni yazılımsal alt sınır"),
+    ParameterSpec("lr_y_software_max", "Y Yazılım Max", "mm", 30.0, 0.0, 50.0, "Y ekseni yazılımsal üst sınır"),
+    ParameterSpec("lr_y_move_velocity", "Y Pozisyonlama Hızı", "mm/s", 10.0, 1.0, 50.0, "Y ekseni pozisyonlama hızı"),
+    ParameterSpec("lr_y_move_acc_dec", "Y Pozisyonlama Acc/Dec", "mm/s²", 100.0, 1.0, 10000.0, "Y pozisyonlamada ivme/yavaşlama"),
+    ParameterSpec("lr_y_max_velocity", "Y Follow Maks. Hızı", "mm/s", 5.0, 1.0, 50.0, "Vision izlerken Y azami hızı"),
+    ParameterSpec("lr_x_jog_velocity", "X Jog Hızı", "mm/s", 50.0, 1.0, 400.0, "Manuel X jog hızı"),
+    ParameterSpec("lr_y_jog_velocity", "Y Jog Hızı", "mm/s", 5.0, 1.0, 50.0, "Manuel Y jog hızı"),
+    ParameterSpec("lr_jog_acc_dec", "Jog Acc/Dec", "mm/s²", 100.0, 1.0, 10000.0, "Jog hareketinde ivme/yavaşlama"),
+    ParameterSpec(
+        "t_vision_heartbeat_timeout", "Heartbeat Zaman Aşımı", "ms", 2000.0, 10.0, 10000.0, "Vision bağlantı kopma süresi"
+    ),
 ]

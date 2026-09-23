@@ -8,7 +8,6 @@ mantığıyla tutarlı: temizlenen bir kayıt "güncel" görünümden çıkar.""
 
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -102,8 +101,6 @@ def _build_catalog_table() -> QTableWidget:
 
 
 class AlarmPage(QWidget):
-    navigateRequested = Signal(str)  # "machine_main"
-
     def __init__(self, service: MachineService, parent: QWidget | None = None):
         super().__init__(parent)
         self._service = service
@@ -120,12 +117,9 @@ class AlarmPage(QWidget):
         title.setFont(base_font(14, bold=True))
         reset_btn = touch_button("RESET", object_name="resetButton")
         reset_btn.clicked.connect(self._service.request_reset)
-        back_btn = touch_button("◀ ANA EKRAN", object_name="navButton")
-        back_btn.clicked.connect(lambda: self.navigateRequested.emit("machine_main"))
         header.addWidget(title)
         header.addStretch(1)
         header.addWidget(reset_btn)
-        header.addWidget(back_btn)
         root.addLayout(header)
 
         # PLC-HMI-20260922-18 (HMI-A04, C06_1 audit): "eksik eşlemeler için

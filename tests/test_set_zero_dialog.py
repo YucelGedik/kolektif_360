@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import time
 from unittest.mock import MagicMock, patch
 
 from PySide6.QtWidgets import QApplication
@@ -16,7 +17,7 @@ _app = QApplication.instance() or QApplication([])
 
 import persistence.db as db_module
 from core.models import ConnectionState
-from services.machine_service import MachineService
+from services.machine_service import SET_ZERO_RESULT_TIMEOUT_S, MachineService
 from ui.machine.set_zero_dialog import SetZeroReferenceDialog
 from ui.machine.settings_page import VISION_SIM_PASSWORD, SettingsPage
 
@@ -251,6 +252,40 @@ def test_dialog_cannot_be_closed_while_sent_or_busy(tmp_path):
 
         dialog.reject()
         assert dialog.isVisible() is True  # Esc de reddedildi
+
+
+def test_dialog_stays_locked_past_timeout_while_genuinely_busy(tmp_path):
+    """PLC-HMI-20260923-25 (P1 düzeltme, "gerçek Busy bırakılmadan modal
+    kapanabiliyor" bulgusu): zaman aşımı tek başına modalın kapanmasına
+    izin VERMEMELİ - eksen hâlâ fiziksel olarak meşgulken (combined_busy
+    True) kilit sürmeli, yalnız Busy GERÇEKTEN False olunca açılmalı."""
+    with _isolated_engine(tmp_path):
+        svc = _ready_service(tmp_path)
+        dialog = SetZeroReferenceDialog(svc)
+        dialog.show()
+
+        dialog._on_held(True)
+        dialog._on_hold_complete()
+        svc._on_raw_snapshot({"x_home_busy": True, "y_home_busy": True})
+        svc.snapshotUpdated.emit(svc.snapshot)
+        assert svc.set_zero_status() == "busy"
+
+        # Zaman aşımı süresi geçti AMA eksen hâlâ meşgul.
+        svc._set_zero_sent_at = time.monotonic() - SET_ZERO_RESULT_TIMEOUT_S - 1.0
+        svc._update_set_zero_status(svc.snapshot)
+        svc.snapshotUpdated.emit(svc.snapshot)
+        assert svc.set_zero_status() == "busy"
+
+        dialog.close()
+        assert dialog.isVisible() is True  # hâlâ reddedilir - gerçek Busy sürüyor
+
+        # Eksen GERÇEKTEN durdu - artık kapanabilir.
+        svc._on_raw_snapshot({"x_home_busy": False, "y_home_busy": False})
+        svc.snapshotUpdated.emit(svc.snapshot)
+        assert svc.set_zero_status() == "error"
+
+        dialog.close()
+        assert dialog.isVisible() is False
 
 
 def test_dialog_closes_normally_once_result_lands(tmp_path):

@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -12,7 +11,6 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QProgressBar,
-    QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -20,7 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.cycle_state import CycleState, cycle_state_label
-from core.models import ConnectionState, MachineSnapshot
+from core.models import MachineSnapshot
 from persistence.alarms import (
     SEVERITY_ALARM,
     SEVERITY_LABELS_TR,
@@ -30,7 +28,7 @@ from persistence.alarms import (
 )
 from services.machine_service import MachineService
 from ui.machine.theme import COLORS, base_font
-from ui.machine.widgets import ProcessStatusCard, Readout, SectionTabs, StatusChip, touch_button
+from ui.machine.widgets import ProcessStatusCard, Readout, touch_button
 
 SEVERITY_ROW_COLOR = {
     SEVERITY_ALARM: COLORS["danger"],
@@ -47,24 +45,6 @@ def filter_alarm_events(
     bir kombinasyon seçilebilir; boş seçim boş liste döndürür (hiçbiri
     işaretli değilse hiçbir satır gösterilmez)."""
     return [e for e in events if e.severity in selected_severities]
-
-CONNECTION_CHIP_TEXT = {
-    ConnectionState.DISCONNECTED: "PLC: BAĞLI DEĞİL",
-    ConnectionState.CONNECTING: "PLC: BAĞLANIYOR",
-    ConnectionState.CONNECTED: "PLC: BAĞLI",
-    ConnectionState.DEGRADED: "PLC: ZAYIF",
-    ConnectionState.ERROR: "PLC: HATA",
-    ConnectionState.DEMO: "PLC: DEMO MOD",
-}
-
-CONNECTION_CHIP_STATE = {
-    ConnectionState.DISCONNECTED: "fault",
-    ConnectionState.CONNECTING: "warn",
-    ConnectionState.CONNECTED: "ok",
-    ConnectionState.DEGRADED: "warn",
-    ConnectionState.ERROR: "fault",
-    ConnectionState.DEMO: "warn",
-}
 
 
 def _manual_preparation_reason(snap: MachineSnapshot) -> str:
@@ -197,8 +177,6 @@ def compute_active_state_message(snap: MachineSnapshot) -> str | None:
 
 
 class MachinePage(QWidget):
-    navigateRequested = Signal(str)  # "manual" | "settings" | "alarms" | "camera"
-
     def __init__(self, service: MachineService, parent: QWidget | None = None):
         super().__init__(parent)
         self._service = service
@@ -218,7 +196,6 @@ class MachinePage(QWidget):
         self._build_ui()
 
         service.snapshotUpdated.connect(self._on_snapshot)
-        service.connectionStateChanged.connect(self._on_connection_state)
         service.alarmsChanged.connect(self._refresh_alarm_table)
         self._refresh_alarm_table()
 
@@ -228,8 +205,6 @@ class MachinePage(QWidget):
         root = QVBoxLayout(self)
         root.setContentsMargins(12, 8, 12, 12)
         root.setSpacing(10)
-
-        root.addWidget(self._build_status_bar())
 
         readout_row = QHBoxLayout()
         readout_row.setSpacing(10)
@@ -285,50 +260,6 @@ class MachinePage(QWidget):
         root.addWidget(self._build_alarm_panel())
 
         root.addStretch(1)
-
-        # CNC kontrolcülerinde alışıldığı gibi sayfa geçiş sekmeleri ekranın
-        # en altına sabitlenir; boşluk üstteki stretch'e gider.
-        self._nav = SectionTabs(
-            [
-                ("manual", "MANUEL"),
-                ("settings", "AYARLAR"),
-                ("alarms", "ALARMLAR"),
-                ("camera", "KAMERA EKRANI"),
-            ]
-        )
-        self._nav.button("camera").setObjectName("cameraButton")
-        self._nav.tabClicked.connect(self.navigateRequested.emit)
-        root.addWidget(self._nav)
-
-    def _build_status_bar(self) -> QFrame:
-        bar = QFrame()
-        bar.setObjectName("statusBar")
-        bar.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
-        layout = QHBoxLayout(bar)
-        layout.setContentsMargins(10, 6, 10, 6)
-        layout.setSpacing(8)
-
-        title = QLabel("BUFERA | MAKİNE")
-        title.setFont(base_font(12, bold=True))
-        layout.addWidget(title)
-        layout.addStretch(1)
-
-        self._plc_chip = StatusChip("PLC: --")
-        self._vision_chip = StatusChip("VISION: --")
-        self._x_servo_chip = StatusChip("X SERVO: --")
-        self._y_servo_chip = StatusChip("Y SERVO: --")
-        self._mode_chip = StatusChip("MOD: --")
-        self._alarm_chip = StatusChip("ALARM: 0")
-        for chip in (
-            self._plc_chip,
-            self._vision_chip,
-            self._x_servo_chip,
-            self._y_servo_chip,
-            self._mode_chip,
-            self._alarm_chip,
-        ):
-            layout.addWidget(chip)
-        return bar
 
     def _build_alarm_panel(self) -> QFrame:
         """Alarm/Uyarı/Mesaj panosu (kullanıcı isteği, 2026-09-18): H4'ün
@@ -406,9 +337,6 @@ class MachinePage(QWidget):
 
     # -- data binding ---------------------------------------------------------
 
-    def _on_connection_state(self, state: str) -> None:
-        self._plc_chip.set_state(CONNECTION_CHIP_STATE.get(state, "fault"), CONNECTION_CHIP_TEXT.get(state, state))
-
     def _on_snapshot(self, snap: MachineSnapshot) -> None:
         stale = snap.stale
 
@@ -417,30 +345,6 @@ class MachinePage(QWidget):
         self._cycle_readout.set_value(cycle_state_label(snap.cycle_state) if not stale else "--")
 
         self._progress.setValue(0 if stale else int(round(snap.cycle_progress)))
-
-        vision_ok = snap.vision_ready and snap.vision_heartbeat_ok and not snap.vision_fault
-        if snap.vision_fault:
-            vision_state, vision_text = "fault", "VISION: HATA"
-        elif not snap.vision_heartbeat_ok:
-            vision_state, vision_text = "fault", "VISION: YANIT YOK"
-        elif vision_ok:
-            vision_state, vision_text = "ok", "VISION: HAZIR"
-        else:
-            vision_state, vision_text = "inactive", "VISION: --"
-        self._vision_chip.set_state(vision_state, vision_text)
-        self._x_servo_chip.set_state(
-            "fault" if snap.x_fault else ("ok" if snap.x_servo_ready else "inactive"),
-            "X SERVO: HATA" if snap.x_fault else ("X SERVO: HAZIR" if snap.x_servo_ready else "X SERVO: --"),
-        )
-        self._y_servo_chip.set_state(
-            "fault" if snap.y_fault else ("ok" if snap.y_servo_ready else "inactive"),
-            "Y SERVO: HATA" if snap.y_fault else ("Y SERVO: HAZIR" if snap.y_servo_ready else "Y SERVO: --"),
-        )
-        self._mode_chip.set_state("ok" if snap.auto_mode else "warn", "MOD: AUTO" if snap.auto_mode else "MOD: MANUEL")
-        # PLC-HMI-20260921-16 (C6.1 bulgusu): sayaç hayali `snap.alarm_count`
-        # (GVL'de karşılığı yok) yerine gerçek aktif HATA kayıtlarından.
-        alarm_count = self._service.active_alarm_count()
-        self._alarm_chip.set_state("fault" if alarm_count > 0 else "ok", f"ALARM: {alarm_count}")
 
         self._clamp_card.set_status(
             "AŞAĞI" if snap.clamp_down else "YUKARI", "warn" if snap.clamp_down else "ok"

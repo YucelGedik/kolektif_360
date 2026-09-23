@@ -573,3 +573,88 @@ metni değişsin dedi. Detay: `CHANGELOG_MEMORY.md`.
       ETKİNLEŞTİR"). Davranış (tıklama hedefi) değişmedi.
 - [x] Testler: `test_manual_page_mode_button.py` (4, yeni). Gerçek render
       ile doğrulandı. Tam suite 354/354.
+
+### 2026-09-23 — Üst durum çubuğu + alt nav paylaşılan/sabit; Ayarlar sayfası görsel düzeltmeleri (kullanıcı isteği, tamamlandı)
+6 maddelik görsel/navigasyon isteği (algoritmayla ilgisiz). Detay:
+`CHANGELOG_MEMORY.md` üst giriş.
+- [x] `ui/machine/widgets.py::MachineStatusBar` (yeni) - üst özet çubuğu
+      artık `MainWindow` içinde TEK, paylaşılan örnek; her sayfada aynı.
+- [x] `SectionTabs` artık `checkable=True` + `set_active(key)` - alt nav da
+      paylaşılan tek örnek, `MainWindow` tarafından `QStackedWidget`in
+      dışında tutuluyor, başa "ANA SAYFA" eklendi, aktif sekme turuncu.
+- [x] `ManualPage`/`SettingsPage`/`AlarmPage`/`MachinePage`'in kendi
+      "◀ ANA EKRAN" butonları + `navigateRequested` sinyalleri kaldırıldı.
+- [x] Ayarlar tablosu: Uygula butonları küçüldü (84×32px), yeni "Etki"
+      sütunu (`ParameterSpec.effect_tr`, tek satır+tooltip), satırlar
+      simetrik sabit yükseklikte.
+- [x] OPC UA Endpoint kutusu = Kaydet butonu (eşit stretch).
+- [x] "Mühendislik Erişimini Aç" checkbox arka planı şeffaf, yazısı uyarı
+      renginde.
+- [x] Testler: `test_main_window_nav.py` (4, yeni), `test_widgets.py` (2,
+      yeni), `test_parameters.py`+1. Gerçek (tema uygulanmış) render ile 5
+      sayfa doğrulandı. Tam suite 361/361.
+- [x] VisionCut'a kamera ekranında da durum çubuğunu göstermeleri için
+      opsiyonel not gönderildi (mesaj 11, gerçek repoya push edildi).
+- [x] DÜZELTME: "Parametre" sütunundaki boş alan giderildi
+      (`setColumnStretch(0, 0)`, fazlası Etki'ye `(6, 3)`).
+
+### 2026-09-23 — Pencere resize'ında sayısal göstergelerde glif bozulması (kullanıcı bulgusu, tamamlandı)
+Kullanıcı: pencereyi büyütüp küçültünce "ACTUAL POSITION" gibi değerler
+okunmaz gliflere dönüyordu, tüm sayfalarda önleyici bir şey olup olmadığını
+sordu. Detay: `CHANGELOG_MEMORY.md`.
+- [x] Kök neden: `theme.py::tabular_font()`deki `QFont.setFeature(tnum, 1)`
+      (PySide6 6.11.1/Windows, resize+glif önbelleği sorunu şüphesi) -
+      kaldırıldı. `Readout` her sayfada kullanıldığı için düzeltme TÜM
+      sayfaları kapsıyor.
+- [x] 7 farklı pencere boyutuyla resize-stress render testiyle doğrulandı
+      (artık doğru okunuyor). Tam suite 361/361 (davranış değişmedi, test
+      eklenmedi - saf rendering düzeltmesi).
+
+### 2026-09-23 — H12-H15/H20-H22/U06 online doğrulandı + gerçek PLC'nin 100-node/read sınırı bulunup düzeltildi (kullanıcı sorusu, tamamlandı)
+Kullanıcı Alarmlar sayfasındaki "online doğrulama bekleyen" uyarısını
+sorup "ne yapmam gerekiyorsa yapalım" dedi. Detay: `CHANGELOG_MEMORY.md`.
+- [x] Salt-okunur browse: 8 aday tag (H12-H15/H20-H22/U06) gerçek PLC'de
+      canlı doğrulandı, `config/opcua.json`'a eklendi (96→104 node).
+- [x] Gerçek regresyon: 104 node ile bağlantı `BadTooManyOperations` verdi
+      - sunucunun `MaxNodesPerRead=100` olduğu ampirik bisect + doğrudan
+      `OperationLimits` okumasıyla doğrulandı.
+- [x] `plc/opcua_client.py::_read_loop` artık `MAX_NODES_PER_READ` sınırını
+      aşan node listelerini birden çok `read_values()` çağrısına bölüyor -
+      kalıcı bir mimari düzeltme (node sayısı ileride büyümeye devam edecek).
+- [x] Gerçek PLC'ye tekrar bağlanıp doğrulandı (PLC: BAĞLI, "online
+      doğrulama bekleyen" uyarısı kayboldu, `pending_candidate_catalog_ids()`
+      boş döndü). 2 yeni test (`test_opcua_read_chunking.py`). Tam suite
+      363/363.
+
+### 2026-09-23 — DPI ölçek-yuvarlama politikası eklendi (kullanıcı bulgusu, DOĞRULANMADI)
+Kullanıcı, `tabular_font()` düzeltmesine rağmen aynı glif bozulmasını laptop
+panelinde tam ekran yapınca gördü, harici monitöre taşıyınca düzeldi. Detay:
+`CHANGELOG_MEMORY.md`.
+- [x] `app/main.py::main()`e `QApplication.setHighDpiScaleFactorRoundingPolicy
+      (PassThrough)` eklendi (QApplication oluşturulmadan önce) - kesirli
+      DPI ölçeklerinde ekranlar arası glif önbelleği tutarsızlığı için
+      bilinen standart düzeltme. Tam suite 363/363 (etkilenmedi).
+- [ ] **DOĞRULANMADI** - bu ortamda gerçek çoklu-monitör/farklı-DPI donanımı
+      yok. Kullanıcının laptop panelinde tam ekran yaparak tekrar test etmesi
+      gerekiyor.
+
+### 2026-09-23 — PLC-HMI-20260923-25: C8 sonuç takibinde 2 P1 kusur + H16 metni (PLC kaynak incelemesi, tamamlandı)
+PLC ajanı `services/machine_service.py`'yi inceleyip 2 gerçek kusur buldu;
+kendi kodumu okuyarak doğruladım. Detay: `CHANGELOG_MEMORY.md`, PLC yanıtı
+`.ai/Codex_Codesys.md` sonu.
+- [x] P1 "hızlı Done / sonsuz bekleme": `request_set_zero()` artık gönderim
+      anındaki temiz/kirli durumu kaydediyor; "cleared" hiç gelmese bile
+      zaman aşımı işletiliyor.
+- [x] P1 "gerçek Busy bırakılmadan modal kapanabiliyor": yeni `_set_zero_
+      timeout_latched` bayrağı - `combined_busy` gerçekten False olana
+      kadar kilit/"sent" açılmıyor (zaman aşımı VE reconnect-hâlâ-meşgul
+      yolları).
+- [x] H16 metni mesaj 21'e göre güncellendi (`ALARM_CATALOG` +
+      `notification_catalog.py`).
+- [x] 5 yeni/güncellenen test (`test_set_zero_reference.py` x4,
+      `test_set_zero_dialog.py` x1) + `test_alarm_catalog.py` H16 metin
+      düzeltmesi. Tam suite 366/366. Gerçek render ile doğrulandı.
+- [x] Kayıt düzeltmeleri: "140 Reset kararı açık" kaldırıldı, "C8E henüz
+      başlanmadı" düzeltildi (SESSION_BRIEF).
+- [ ] Ertelendi (bilinçli): "Otomatik çevrim kesilmişse" toparlanma MESAJ'ı
+      - yeni cause-tracking gerektiriyor, C8E saha testi beklerken riskli.

@@ -62,7 +62,13 @@ NOTIFICATION_CATALOG: tuple[NotificationCatalogEntry, ...] = (
         "H15", SEVERITY_ALARM, "Her an (PLC aday tag - export'ta var, online node/erişim testi bekliyor, bu HATA şu an hiç tetiklenmez)",
         "Y eksen/sürücü arıza durumu.",
     ),
-    NotificationCatalogEntry("H16", SEVERITY_ALARM, "Her an", "Emniyet geri bildirimi yok. Acil stop/emniyet zincirini kontrol edin."),
+    NotificationCatalogEntry(
+        "H16",
+        SEVERITY_ALARM,
+        "Her an",
+        "Acil stop aktif. Bıçak ve baskıya geri çekme komutu verildi. Nedeni "
+        "kontrol edin; acili bırakmak çevrimi başlatmaz.",
+    ),
     NotificationCatalogEntry("H17", SEVERITY_ALARM, "Her an", "Vision uygulaması arıza bildiriyor."),
     NotificationCatalogEntry("H18", SEVERITY_ALARM, "Kesim/hizalama sırasında", "Yorumlanan hedef/çizgi geçersiz."),
     NotificationCatalogEntry(

@@ -124,7 +124,7 @@ def test_inverted_condition_h16_emergency_ok_false(tmp_path):
 
         active = [e for e in svc._alarms.recent() if e.active]
         assert len(active) == 1
-        assert "Emniyet geri bildirimi yok" in active[0].message
+        assert "Acil stop aktif" in active[0].message
 
         svc._on_raw_snapshot({"emergency_ok": True})
         assert svc.active_alarm_count() == 0

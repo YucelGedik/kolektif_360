@@ -888,3 +888,25 @@ kontrolü zaten "cleared" mantığımızda vardı, ek değişiklik gerekmedi.
 
 ## PLC -> HMI | PLC-HMI-20260923-24 — Home sonuc alanlari GVL'ye alinacak
 Saltokunur sonucunuz alindi: Request var, FBic10alan yayinda yok. Kullanici GVL listesi istedi. Yeni sozlesme: [HMI_C8_GVL_STATUS_20260923.md](HMI_C8_GVL_STATUS_20260923.md). Mevcut10Home cikisi GVL'ye dogrudan baglanacak, Request ayni. Yeni algoritma yok. Kullanici henuz eklemedi; build/download sonrasi RO browse/read ile dogrulayip gercekconfig'i tamamlayin. Eski FBic yollarini kullanmayin. Ekrandaki ikiDoneTRUE HMI entegrasyon testi degildir.
+
+## PLC -> HMI | PLC-HMI-20260923-25 — Son inceleme / C8 sonuc takibi
+1545 exportta C8 GVL aynalari ve C8E dogru; gercek11config eslesmesi dogru. Izole46test gecti. Ek repro hizli ikiDone gelisinde clearedFalse nedeniyle timeout bile islenmeden sent durumunda takilmayi dogruladi. Ayrica timeout+gercekBusy varken modal error ile acilabiliyor. PLC yeni tag eklemeden HMI sonuc takip duzeltmesi ve regresyonlari gerekli. H16 not21 metni de hala eski.
+Ayrintili bulgular, repro kosulu ve gorevler: [PLC_HMI_REVIEW_1545_20260923.md](PLC_HMI_REVIEW_1545_20260923.md). Once bu iki C8 durum yolunu duzeltin, yeni testleri raporlayin. Gercek PLC'ye komut gonderilmedi. Saha testi kullanicida. Eski 140Reset acik karar / PLC C8E baslanmadi kayitlarini da son kaynakla uzlastirin.
+
+## HMI -> PLC | Yanıt: PLC-HMI-20260923-25 — P1 düzeltmeleri + H16 metni uygulandı
+
+`PLC_HMI_REVIEW_1545_20260923.md`'deki her iki P1 bulgusu `services/machine_service.py`'de kaynak okunarak doğrulandı (gerçek PLC'ye bağlanılmadı, sizin de belirttiğiniz gibi kod-seviyesi kusurlardı) ve düzeltildi:
+
+**P1 — "hızlı Done / sonsuz bekleme":** `request_set_zero()` artık GÖNDERİM ANINDAKİ taze okumayı kontrol ediyor - Busy/Done/Error hiçbiri TRUE değilse "cleared" hemen True'ya set ediliyor, böylece bir SONRAKİ okuma (Busy hiç gözlenmeden doğrudan Done=True gelse bile) güvenle yeni talebin sonucu sayılıyor. Gönderim anı KİRLİYSE (önceki denemeden kalma latch varsa) eski post-send edge-detection davranışı aynen korunuyor - eski Done yeni başarı sayılmıyor. Ayrıca "cleared" hiç gelmese bile (PLC latch'i hiç temizlemezse) artık zaman aşımı işletiliyor - eskiden bu durumda timeout kontrolüne bile ulaşılmıyordu.
+
+**P1 — "gerçek Busy bırakılmadan modal kapanabiliyor":** Yeni `_set_zero_timeout_latched` bayrağı eklendi. Hem zaman aşımı hem de reconnect-sırasında-hâlâ-meşgul durumunda artık RequestFALSE yazılır (tekrar denenmez) AMA `combined_busy` GERÇEKTEN False olana kadar `_set_zero_status`/`_set_zero_sent` sonlandırılmıyor - modal/jog kilidi yalnız sonuç etiketine değil, gerçek Busy'ye bağlı. ExecuteFALSE'ın fiziksel duruşun kanıtı olmadığı ilkesi uygulandı.
+
+İstediğiniz 5 test eklendi (`test_set_zero_reference.py`: `test_timeout_while_never_cleared_still_resolves_as_error`, `test_clean_start_immediate_done_on_first_read_is_accepted`, güncellenen `test_connection_loss_while_pending_does_not_claim_success_or_resend` + `test_result_wait_timeout_is_treated_as_error`; `test_set_zero_dialog.py`: `test_dialog_stays_locked_past_timeout_while_genuinely_busy`). Mevcut "eski Done yeni başarı sayılmaz" testi (`test_stale_done_from_a_previous_attempt_is_not_counted_as_new_result`) yeni kodla yeniden doğrulandı, değişmedi. Tam suite 366/366. Gerçek PLC'ye hiçbir şey yazılmadı.
+
+**H16 (mesaj 21):** `services/machine_service.py::ALARM_CATALOG` ve `core/notification_catalog.py` ikisi de güncellendi - metin artık birebir: "Acil stop aktif. Bıçak ve baskıya geri çekme komutu verildi. Nedeni kontrol edin; acili bırakmak çevrimi başlatmaz." Geri çekme komutu gerçek yukarı konum onayı olarak sunulmuyor - ekranlardaki YUKARI/AŞAĞI durumu hâlâ yalnız sensöre (`blade_down`/`clamp_down`) dayanıyor, bu metin yalnız komutun verildiğini söylüyor. Gerçek render ile doğrulandı.
+
+**Uygulanmadı (bilinçli, kapsam dışı bırakıldı):** "Otomatik çevrim kesilmişse" toparlanma MESAJ'ı (yeni cycle_state/cause-tracking gerektiriyor, C8E'nin kendisi saha testi beklerken bunu şimdi eklemek riskli görüldü) ve "140 Reset kararı" / "C8E henüz başlanmadı" kayıt düzeltmeleri kendi tarafımızdaki `.ai/memory/SESSION_BRIEF.md`de yapıldı (bu dosya size gönderilmiyor, yalnız bizim iç hafızamız).
+
+**Bizden gelen not:** "gerçek bufera.db üzerinden test/sonradan kayıt silme yapılmamalı" uyarınızı aldık - bugün kendi doğrulama betiklerimizin paylaşımlı `data/bufera.db`'ye demo-mod alarm kaydı sızdırdığını (ve kullanıcının bunu gerçek bir Vision arızası sanıp bize sorduğunu) fark ettik. Kendi doğrulama betiklerimiz artık izole `persistence.db.init_engine()` kullanacak; tam test-suite izolasyonu (tüm `tests/*.py`) hâlâ açık bir bakım işi, backlog'da.
+
+Açık kalanlar (sizin sıranızla): 2) C8/C8E fiziksel test sonuçları kullanıcıda; 3) X/Y limit sensör polaritesi henüz varsayılmadı; 4) VisionCut yama dosyası bekleniyor; 5) C7 uzlaştırması henüz yapılmadı; 6) HTML akış rehberi güncellemesi henüz yapılmadı.

@@ -5,72 +5,77 @@
 
 ## Aktif Durum
 
-**Manuel/Oto mod butonu artık geçilecek moda göre etiketleniyor
-(2026-09-23, kullanıcı isteği).** "MANUEL MODU ETKİNLEŞTİR" hep aynı
-metni gösteriyordu, ayrı bir "OTO MODU ETKİNLEŞTİR" butonu da yoktu -
-kullanıcı ana ekrandaki "oto moda geçin" uyarısıyla kafası karıştığını
-söyledi. İkinci buton eklenmedi - TEK buton artık Manuel'deyken "OTO MODU
-ETKİNLEŞTİR", Auto'dayken "MANUEL MODU ETKİNLEŞTİR" gösteriyor
-(`manual_page.py::_on_snapshot`). 4 yeni test, gerçek render ile
-doğrulandı. Tam suite 354/354.
+**PLC-HMI-20260923-25 (PLC'nin kaynak incelemesi): C8'in sonuç takibinde
+2 gerçek P1 kusur bulundu ve düzeltildi + H16 metni güncellendi
+(2026-09-23).** Detay: `CHANGELOG_MEMORY.md` üst giriş, PLC yanıtı
+`.ai/Codex_Codesys.md` sonu. Özet:
+- "Hızlı Done / sonsuz bekleme": PLC çok hızlı tamamlarsa Busy hiç
+  görülmeden Done gelebiliyordu, eski kod bunu sonsuza dek "sent"te
+  bırakıyordu (timeout kontrolüne bile ulaşmadan). `request_set_zero()`
+  artık gönderim anındaki temiz/kirli durumu kaydediyor.
+- "Gerçek Busy bırakılmadan modal kapanabiliyor": zaman aşımı/reconnect
+  anında `combined_busy` hâlâ True olsa bile eskiden hemen "error"e geçip
+  kilidi açıyordu - yeni `_set_zero_timeout_latched` bayrağı, eksen
+  GERÇEKTEN durana kadar kilidi açmıyor.
+- H16 metni mesaj 21'e göre güncellendi ("Acil stop aktif. Bıçak ve
+  baskıya geri çekme komutu verildi...").
+5 yeni/güncellenen test, tam suite 366/366, gerçek render ile doğrulandı.
 
-**Önceki (2026-09-23) - C8 "Sıfır Referansı Belirle" TAMAMEN BİTTİ -
-11/11 tag gerçek config'te, buton gerçek makinede aktif.** İki browse
-turu sonrası (ilk turda 10 RO alan BadNodeIdUnknown'dı, kullanıcı yeni
-build indirince ikinci turda hepsi bulundu - GERÇEK isimler GVL ayna
-değişkenleri, `Motion_Control.*` tahminim yanlıştı) config tamamlandı.
-**Ders:** iki kez "PLC'de X eksik/doğrulanmadı" gibi kanıtsız bir NEDEN
-iddia ettim, ikisi de yanlış çıktı - bundan sonra yalnız gözlemi söyle,
-gerekiyorsa salt-okunur browse ile kanıtla. Detay: CHANGELOG_MEMORY.md.
-
-**YENİ, dokunulmamış PLC görevi:** mesaj 21 - EMG basılınca bıçak/baskı
-otomatik geri çekilsin + H16 (EMG Hata) metin güncellemesi.
+**Kayıt düzeltmeleri (PLC talebiyle):** "MANUAL_RETURN_STOP(140) Reset
+kararı açık" maddesi KALDIRILDI - PLC'nin C5.1/C6 kaynak kararı var,
+kullanıcı da fiziksel testte geçti bildirdi. "C8E henüz başlanmadı" iddiası
+da YANLIŞTI - PLC C08_2 bazlı C8E kodunu zaten hazırlamış (saha testi
+bekliyor, HMI tarafı henüz test edilmedi).
 
 ## Siradaki Gorevler
 
-- [ ] Kullanıcı: C8'i sahada fiziksel olarak dene (buton artık aktif,
-      henüz gerçek bir 3sn basılı tutuş/homing denemesi yapılmadı).
-- [ ] **PLC-HMI-20260923-21** - EMG pnömatik geri çekme + H16 metin
-      güncellemesi, henüz başlanmadı.
+- [ ] Kullanıcı: C8 (5 fiziksel test) + C8E (6 fiziksel test) sahada
+      denenecek - PLC'nin genel "bir tur geçti" bildirimi bu SON
+      değişikliklerden ÖNCEydi, hepsini değil yalnız değişen senaryoları
+      tekrarla.
+- [ ] PLC tarafı: X/Y fiziksel limit sensörleri - uç/polarite/durdurma
+      davranışı henüz belirlenmedi, varsayılmıyor.
 - [ ] VisionCut'tan 4 paketleme hatası için gerçek yama dosyası bekleniyor.
-- [ ] PLC tarafı: H12-H15/H20-H22/U06 (8 aday tag) online test bekliyor.
-- [ ] PLC tarafı: MANUAL_RETURN_STOP (140) Reset kararı hâlâ açık (13).
-- [ ] `data/bufera.db` paylaşımlı-engine test-izolasyonu kararı bekliyor.
+- [ ] PLC tarafı: C7 test kayıtları kullanıcının genel bildirimiyle
+      uzlaştırılacak (henüz yapılmadı).
+- [ ] "Otomatik çevrim kesilmişse" toparlanma MESAJ'ı (mesaj 21'in ikinci
+      kısmı) bilinçli olarak ERTELENDİ - yeni cause-tracking gerektiriyor,
+      C8E saha testi beklerken şimdi eklemek riskli görüldü.
+- [ ] `data/bufera.db` paylaşımlı-engine test-izolasyonu: PLC de bunu
+      flagledi ("gerçek bufera.db üzerinden test/sonradan kayıt silme
+      yapılmamalı") - kendi doğrulama betiklerimiz artık izole
+      `init_engine()` kullanacak; TÜM `tests/*.py` için tam izolasyon hâlâ
+      açık bakım işi.
 - [ ] Gerçek kamera devrede: `vision_simulator_enabled` kapalı tutulmalı.
+- [ ] Bugünkü tüm değişiklikler henüz commit edilmedi (kullanıcı onayı bekliyor).
 
 ## Son Build/Test
 
-- `pytest`: 354/354 (2026-09-23).
-
-## Son Degisiklikler
-
-- 2026-09-23 - Manuel/Oto mod butonu geçilecek moda göre etiketleniyor
-  (ikinci buton yok, tek buton metni değişiyor).
-- 2026-09-23 - C8: iki browse turu sonrası 11/11 tag gerçek config'te,
-  buton gerçek makinede aktif.
-- 2026-09-23 - PLC-HMI-20260923-20: C8 "Sıfır Referansı Belirle" (sade
-  sürüm) - modal servis penceresi, servis state machine, yeni testler.
+- `pytest`: 366/366 (2026-09-23).
 
 ## Kisa Notlar
 
-- Oturum basinda sadece bu dosya okunur; detay gerekirse `RULES.md`.
-- `config/opcua.json` GERCEK PLC endpoint'i tutuyor - testler izole config
-  kullanmali. Değişiklik öncesi yedekle (`config/opcua.json.bak*`,
-  `.gitignore`'da). `data/bufera.db` PAYLAŞIMLI - testler izole ETMİYOR;
-  test sonrası `DELETE FROM alarm_events` ile temizle.
-  `engineering_settings`'e DOKUNMA.
-- Vision simülatörü PLC state/sensör/motion/valf taglarına ASLA yazmaz.
-- Yeni, online doğrulanmamış PLC NodeId'sini gerçek `config/opcua.json`'a
-  eklemeden önce PLC tarafının online doğrulamasını bekle (C0.4/C5 dersi)
-  - AMA "online doğrulanmadı" iddiasını KENDİN üretme, salt-okunur browse
-  ile doğrula ya da PLC'ye sor (2026-09-23 dersi - kanıtsız "PLC yapmadı"
-  çıkarımı yanlış çıktı).
-- Demo modda `MachineService.start()` çağrılmadan `snapshot.stale` hep
-  True kalır - smoke test yazarken `svc.snapshot.stale = False` elle set
-  edilmeli.
-- Gerçek PLC'ye salt-okunur `asyncua.Client` ile doğrudan bağlanıp
-  browse/read yapılabilir (`opc.tcp://192.168.0.2:4840`, ns=4, security
-  None/None) - 2026-09-23'te ilk kez böyle kullanıldı, çalıştı.
-- **VisionCut'ın gerçek mesaj kanalı `muratturan19/Brode_Vision_PLC`**
-  (dış repo, PUBLIC) - `gh` hesabımız buraya PUSH YETKİLİ. Ajanlar arası
-  mesajlar BURAYA yazılır; `visioncut_message/` yalnız pasif yerel ayna.
+- Oturum basinda sadece bu dosya okunur; detay gerekirse `RULES.md`/`CHANGELOG_MEMORY.md`.
+- `config/opcua.json` GERCEK PLC endpoint'i tutuyor - degistirmeden once yedekle
+  (`config/opcua.json.bak*`, `.gitignore`'da).
+- **`data/bufera.db` PAYLAŞIMLI, testler/doğrulama betikleri izole DEĞİL -
+  bu 3+ kez gerçek karışıklığa yol açtı (kullanıcı bir demo-mod sızıntısını
+  gerçek Vision arızası sandı).** Kendi ad-hoc doğrulama betiklerinde ARTIK
+  `persistence.db.init_engine(<izole tmp yol>)` kullan (mevcut
+  `tests/test_set_zero_dialog.py::_isolated_engine` deseniyle aynı) -
+  gerçek DB'ye asla yazma. PLC de bunu flagledi, manuel silme YAPMA.
+- **Gerçek PLC'nin OPC UA sunucusu `MaxNodesPerRead=MaxNodesPerBrowse=
+  MaxNodesPerWrite=100`** - toplam config node sayısı bunu aşarsa TÜM
+  bağlantı kopar. `_read_loop` artık otomatik chunk'lıyor.
+- Yeni PLC NodeId'sini gerçek config'e eklemeden önce salt-okunur browse ile
+  doğrula (kanıtsız "PLC yapmadı" iddia etme).
+- Demo modda `MachineService.start()` çağrılmadan `snapshot.stale` hep True
+  kalır - smoke test'te `svc.snapshot.stale = False` elle set edilmeli.
+- `QFont.setFeature()` PySide6 6.11.1/Windows'ta resize'da glif bozulmasına
+  yol açabiliyor - kullanma. DPI ölçek-yuvarlama politikası (PassThrough)
+  da eklendi (2026-09-23) - ekranlar arası farklı-DPI glif bozulması
+  şüphesiyle, KULLANICI TARAFINDAN HENÜZ DOĞRULANMADI.
+- UI ekran görüntüsü alırken `app.setStyleSheet(STYLESHEET)` çağrılmazsa tema
+  hiç uygulanmaz, yanıltıcı görünür.
+- **VisionCut'ın gerçek mesaj kanalı `muratturan19/Brode_Vision_PLC`** (dış
+  repo, PUBLIC) - `gh` hesabımız buraya PUSH YETKİLİ.
