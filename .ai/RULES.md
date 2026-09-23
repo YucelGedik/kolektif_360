@@ -658,3 +658,13 @@ kendi kodumu okuyarak doğruladım. Detay: `CHANGELOG_MEMORY.md`, PLC yanıtı
       başlanmadı" düzeltildi (SESSION_BRIEF).
 - [ ] Ertelendi (bilinçli): "Otomatik çevrim kesilmişse" toparlanma MESAJ'ı
       - yeni cause-tracking gerektiriyor, C8E saha testi beklerken riskli.
+
+### 2026-09-23 — Alarm panosu alt navigasyona kadar büyüyor + DB sızıntısı kök nedeni bulundu (kullanıcı isteği, tamamlandı)
+Detay: `CHANGELOG_MEMORY.md`.
+- [x] `machine_page.py`: `setMaximumHeight(150)` kaldırıldı, pano+tablo
+      `stretch=1` - alt navigasyona kadar büyüyor. Tam suite 366/366.
+- [x] "Gizemli" tekrarlayan DB sızıntısının kaynağı bulundu: kullanıcının
+      yanlışlıkla 2 kez açık bıraktığı gerçek `python -m app.main` süreci
+      (kod izolasyonu DOĞRU çalıştığı 3 debug script'iyle kanıtlandı).
+      Kullanıcı ikisini de kapattı, DB temizlendi.
+- [x] Commit `<bir sonraki commit>` + push edildi.

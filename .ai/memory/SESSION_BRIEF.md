@@ -5,9 +5,18 @@
 
 ## Aktif Durum
 
-**PLC-HMI-20260923-25 (PLC'nin kaynak incelemesi): C8'in sonuç takibinde
-2 gerçek P1 kusur bulundu ve düzeltildi + H16 metni güncellendi
-(2026-09-23).** Detay: `CHANGELOG_MEMORY.md` üst giriş, PLC yanıtı
+**Ana ekran alarm panosu artık alt navigasyona kadar büyüyor (2026-09-23,
+kullanıcı isteği) + "gizemli DB sızıntısı" kaynağı bulundu: kullanıcının
+kendi YANLIŞLIKLA 2 kez açık bıraktığı `python -m app.main` süreciymiş,
+benim script'lerim/testler DEĞİL.** `machine_page.py`: alarm tablosunun
+`setMaximumHeight(150)` sınırı kaldırıldı, panoya/tabloya `stretch=1`
+verildi - altındaki boş alan artık kullanılıyor. Tam suite 366/366,
+gerçek render ile doğrulandı. Commit+push edildi (kullanıcı onayladı).
+Kullanıcı artık GERÇEK PLC ile çalışıyor (`python -m app.main`, demo değil).
+
+**Önceki (2026-09-23) - PLC-HMI-20260923-25 (PLC'nin kaynak incelemesi):
+C8'in sonuç takibinde 2 gerçek P1 kusur bulundu ve düzeltildi + H16 metni
+güncellendi.** Detay: `CHANGELOG_MEMORY.md`, PLC yanıtı
 `.ai/Codex_Codesys.md` sonu. Özet:
 - "Hızlı Done / sonsuz bekleme": PLC çok hızlı tamamlarsa Busy hiç
   görülmeden Done gelebiliyordu, eski kod bunu sonsuza dek "sent"te
@@ -47,11 +56,10 @@ bekliyor, HMI tarafı henüz test edilmedi).
       `init_engine()` kullanacak; TÜM `tests/*.py` için tam izolasyon hâlâ
       açık bakım işi.
 - [ ] Gerçek kamera devrede: `vision_simulator_enabled` kapalı tutulmalı.
-- [ ] Bugünkü tüm değişiklikler henüz commit edilmedi (kullanıcı onayı bekliyor).
 
 ## Son Build/Test
 
-- `pytest`: 366/366 (2026-09-23).
+- `pytest`: 366/366 (2026-09-23). Tüm değişiklikler commit+push edildi.
 
 ## Kisa Notlar
 
@@ -59,11 +67,17 @@ bekliyor, HMI tarafı henüz test edilmedi).
 - `config/opcua.json` GERCEK PLC endpoint'i tutuyor - degistirmeden once yedekle
   (`config/opcua.json.bak*`, `.gitignore`'da).
 - **`data/bufera.db` PAYLAŞIMLI, testler/doğrulama betikleri izole DEĞİL -
-  bu 3+ kez gerçek karışıklığa yol açtı (kullanıcı bir demo-mod sızıntısını
-  gerçek Vision arızası sandı).** Kendi ad-hoc doğrulama betiklerinde ARTIK
-  `persistence.db.init_engine(<izole tmp yol>)` kullan (mevcut
-  `tests/test_set_zero_dialog.py::_isolated_engine` deseniyle aynı) -
-  gerçek DB'ye asla yazma. PLC de bunu flagledi, manuel silme YAPMA.
+  bu birkaç kez gerçek karışıklığa yol açtı.** Kendi ad-hoc doğrulama
+  betiklerinde ARTIK `persistence.db.init_engine(<izole tmp yol>)` kullan
+  (mevcut `tests/test_set_zero_dialog.py::_isolated_engine` deseniyle
+  aynı) - gerçek DB'ye asla yazma. PLC de bunu flagledi, manuel silme YAPMA
+  (yalnız uygulama KAPALIYKEN, kullanıcı onayıyla temizlendi).
+  **Kök neden araştırmasında önemli ders:** "gizemli" tekrarlayan sızıntı
+  aslında kullanıcının YANLIŞLIKLA 2 kez açık bıraktığı gerçek `python -m
+  app.main` süreciydi (Windows'ta `Get-CimInstance Win32_Process -Filter
+  "name='python.exe'" | Select CommandLine` ile teşhis edildi) - kod
+  izolasyonu doğru çalışıyordu, DB'ye şüpheli yazı görülünce önce çalışan
+  orphan `app.main` süreci var mı diye bak, hemen kod hatası sanma.
 - **Gerçek PLC'nin OPC UA sunucusu `MaxNodesPerRead=MaxNodesPerBrowse=
   MaxNodesPerWrite=100`** - toplam config node sayısı bunu aşarsa TÜM
   bağlantı kopar. `_read_loop` artık otomatik chunk'lıyor.

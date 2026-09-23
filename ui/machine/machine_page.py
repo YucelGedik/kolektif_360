@@ -257,9 +257,11 @@ class MachinePage(QWidget):
         self._start_inhibit_label.setVisible(False)
         root.addWidget(self._start_inhibit_label)
 
-        root.addWidget(self._build_alarm_panel())
-
-        root.addStretch(1)
+        # Kullanıcı isteği (2026-09-23): alarm panosu altındaki boş alan
+        # kullanılsın - panonun kendisi (dolayısıyla tablo) alt navigasyona
+        # kadar büyüsün, çok alarm olduğunda kaydırmaya gerek kalmadan
+        # görünsün.
+        root.addWidget(self._build_alarm_panel(), stretch=1)
 
     def _build_alarm_panel(self) -> QFrame:
         """Alarm/Uyarı/Mesaj panosu (kullanıcı isteği, 2026-09-18): H4'ün
@@ -292,8 +294,7 @@ class MachinePage(QWidget):
         self._alarm_table.verticalHeader().setVisible(False)
         self._alarm_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._alarm_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self._alarm_table.setMaximumHeight(150)
-        layout.addWidget(self._alarm_table)
+        layout.addWidget(self._alarm_table, stretch=1)
         return frame
 
     def _refresh_alarm_table(self) -> None:

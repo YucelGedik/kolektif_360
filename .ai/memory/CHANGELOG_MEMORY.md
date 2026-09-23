@@ -3,6 +3,38 @@
 Yeni girisleri en uste ekle. Eski ve uzun detaylari `CHANGELOG_ARCHIVE.md`
 dosyasina tasi.
 
+## 2026-09-23 - Ana ekran alarm panosu alt navigasyona kadar büyüyor + "gizemli DB sızıntısı" kaynağı çözüldü
+
+Kullanıcı ekran görüntüsü: alarm listesi ile alt nav arasında büyük boş
+alan vardı, "alanı kullanalım simetri bozulmadan" dedi.
+`ui/machine/machine_page.py::_build_alarm_panel`'deki `self._alarm_table.
+setMaximumHeight(150)` kaldırıldı; `_build_ui`de panoya `root.addWidget(
+self._build_alarm_panel(), stretch=1)`, panonun içinde tabloya `layout.
+addWidget(self._alarm_table, stretch=1)` verildi - trailing `addStretch(1)`
+kaldırıldı. Artık pano (ve tablosu) mevcut boşluğu dolduruyor, çok alarm
+olduğunda kaydırma çubuğu doğal olarak kendi içinde çalışıyor. Tam suite
+366/366, gerçek render ile doğrulandı.
+
+**Yan bulgu - önemli kök neden çözümü:** Bu oturumda tekrar tekrar (5-6
+kez) "Vision Heartbeat Kayboldu" gibi sahte alarm kayıtları paylaşımlı
+`data/bufera.db`'de bulunup temizlendi; hep kendi ad-hoc doğrulama
+betiklerimin/testlerin izolasyonsuzluğuna bağlandı. Kullanıcı gerçek
+uygulamayı `-m app.main`le başlatmadan önce sorunca, Windows süreç
+listesi kontrol edildi: **`data/bufera.db`ye şüpheli yazılar görüldüğünde
+önce `Get-CimInstance Win32_Process -Filter "name='python.exe'" | Select
+CommandLine` ile orphan `python -m app.main` süreci olup olmadığına
+bakılmalı** - kullanıcı kendi bilgisayarında YANLIŞLIKLA (aynı saniyede,
+16:10:53) 2 kez `python -m app.main` açık bırakmış, biri muhtemelen demo
+modda arka planda dönüyormuş. Kullanıcı ikisini de kapattıktan sonra (`Get-
+Process python*` boş döndü) veritabanı temizlendi ve o andan beri temiz
+kaldı. Kod tarafındaki izolasyon (`persistence.db.init_engine()` ile
+farklı path verme) test edildi ve DOĞRU çalıştığı kanıtlandı (izole path
+verilince gerçek DB'ye hiçbir şey yazılmadığı 3 ayrı debug script'iyle
+doğrulandı) - yani "testler DB'yi izole etmiyor" endişesi kısmen abartılı
+çıktı, gerçek suçlu duplicate/orphan uygulama süreciydi. Yine de
+`tests/*.py`nin gerçek DB'yi paylaşması (izole ETMEMESİ) hâlâ gerçek ve
+ayrı bir konu - o hâlâ açık.
+
 ## 2026-09-23 - PLC-HMI-20260923-25: C8 sonuç takibinde 2 gerçek P1 kusur bulundu+düzeltildi, H16 metni güncellendi
 
 Kullanıcı: "25 numaralı notla plc tarafından iş geldi kontrol et". PLC
