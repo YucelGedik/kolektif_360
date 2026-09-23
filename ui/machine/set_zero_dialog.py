@@ -211,8 +211,25 @@ class SetZeroReferenceDialog(QDialog):
 
         ready = self._service.set_zero_reference_allowed_now()
         busy = status in ("sent", "busy")
+        tags_configured = self._service.set_zero_tags_configured()
 
-        if snap.stale and busy:
+        if not tags_configured:
+            # PLC-HMI-20260923-22 (kullanıcı bulgusu, gerçek PLC testi):
+            # tag'ler config'te olmadığı sürece `ready` HER ZAMAN False -
+            # eskiden bu durumda da genel "koşullar sağlanmıyor" metni
+            # gösteriliyordu, operatörü kendi manuel/servo kurulumunu
+            # sorgulamaya yönlendiriyordu. Gerçek sebep (PLC henüz online
+            # doğrulamadı) artık AÇIKÇA söyleniyor (TAG EKSİK deseni,
+            # ManualPage'deki C5 ile aynı disiplin).
+            self._condition_label.setText(
+                "TAG EKSİK - PLC bu özelliğin tag'lerini (xSetZeroRequest, "
+                "MC_Home_X/MC_Home_Y durum alanları) henüz online "
+                "doğrulamadı. Sıfırlama, PLC tarafı tamamlanıp gerçek "
+                "config'e eklenene kadar kullanılamaz - bu sizin makine "
+                "kurulumunuzdan kaynaklanmıyor."
+            )
+            self._condition_label.setStyleSheet(f"color: {COLORS['danger']};")
+        elif snap.stale and busy:
             self._condition_label.setText(
                 "Bağlantı kesildi - sonuç belirsiz. Bağlantı geri gelince "
                 "güncel durum okunacak; talep otomatik tekrar gönderilmeyecek."

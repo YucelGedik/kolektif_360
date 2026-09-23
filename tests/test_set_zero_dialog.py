@@ -145,6 +145,35 @@ def test_button_disabled_when_conditions_not_met(tmp_path):
         assert dialog._button.isEnabled() is False
 
 
+def test_missing_tags_shows_honest_reason_not_generic_conditions_text(tmp_path):
+    """PLC-HMI-20260923-22 (kullanıcı bulgusu, gerçek PLC testi): tag'ler
+    config'te yokken (henüz online doğrulanmadı) eskiden genel "koşullar
+    sağlanmıyor: manuel mod/servo/mekanizma" metni gösteriliyordu - operatör
+    kendi kurulumunu sorguluyordu, gerçek sebep (PLC tarafı eksik) hiç
+    söylenmiyordu. Artık "TAG EKSİK" açıkça gösteriliyor (ManualPage'deki
+    C5 deseniyle aynı disiplin)."""
+    with _isolated_engine(tmp_path):
+        # Koşulların hepsi sağlanıyor (manuel/servo/emergency) - ama tag'ler
+        # config'te hiç yok (`nodes: {}`), gerçek PLC'deki durumu taklit eder.
+        cfg = tmp_path / "opcua_no_tags.json"
+        cfg.write_text(json.dumps({"endpoint": "opc.tcp://192.168.0.2:4840", "nodes": {}}), encoding="utf-8")
+        svc = MachineService(config_path=cfg)
+        svc._worker = MagicMock()
+        svc.snapshot.connection_state = ConnectionState.CONNECTED
+        svc.snapshot.stale = False
+        svc.snapshot.manual_mode = True
+        svc.snapshot.cycle_state = MANUAL
+        svc.snapshot.emergency_ok = True
+        svc.snapshot.x_servo_ready = True
+        svc.snapshot.y_servo_ready = True
+
+        dialog = SetZeroReferenceDialog(svc)
+
+        assert dialog._button.isEnabled() is False
+        assert "TAG EKSİK" in dialog._condition_label.text()
+        assert "manuel" not in dialog._condition_label.text().lower()
+
+
 def test_early_release_cancels_hold_without_sending_request(tmp_path):
     """C8-S02: "3 saniye erken bırakma ... talep oluşmaz." """
     with _isolated_engine(tmp_path):

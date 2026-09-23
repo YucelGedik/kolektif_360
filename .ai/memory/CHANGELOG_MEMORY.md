@@ -3,6 +3,30 @@
 Yeni girisleri en uste ekle. Eski ve uzun detaylari `CHANGELOG_ARCHIVE.md`
 dosyasina tasi.
 
+## 2026-09-23 - C8 diyalogu yanlış "koşullar sağlanmıyor" mesajı gösteriyordu (kullanıcı sahada buldu)
+
+Kullanıcı gerçek PLC'de C8'i test etti: "şartları sağladım ama buton aktif
+olmuyor" - ekran görüntüleri Manuel mod açık, X/Y servo READY, bıçak/baskı
+sensörü YUKARI gösteriyordu.
+
+**Kök neden (beklenen, doğru davranış):** gerçek `config/opcua.json`'da
+C8'in 11 aday tag'i hâlâ yok - PLC'nin `C08_2` kodu henüz gerçek cihaza
+uygulanmadı (mesaj 21: "kullanıcı henüz uygulamadı"). `set_zero_tags_
+configured()` bu yüzden hep False, buton doğru şekilde pasif.
+
+**Gerçek HMI hatası:** `SetZeroReferenceDialog._on_snapshot`, tag'ler
+eksikken de genel `_CONDITIONS_NOT_MET_TEXT` ("Manuel mod, servo hazır ve
+mekanizmaların yukarıda olduğunu kontrol edin") gösteriyordu - operatörü
+kendi kurulumunu sorgulamaya yönlendirip gerçek sebebi (PLC tarafı eksik)
+hiç söylemiyordu. `set_zero_tags_configured()` artık `_on_snapshot`'ta
+EN ÖNCE kontrol ediliyor; eksikse kırmızı "TAG EKSİK" metni (ManualPage'
+deki C5/move-to-start "TAG EKSİK" deseniyle aynı disiplin) gösteriliyor.
+
+Test: `test_set_zero_dialog.py::test_missing_tags_shows_honest_reason_
+not_generic_conditions_text` (yeni). Gerçek render edilmiş ekran
+görüntüsüyle doğrulandı. Tam suite 347/347. `.ai/Codex_Codesys.md`'ye
+not düşüldü (PLC'yi ilgilendirmiyor, yalnız kayıt bütünlüğü için).
+
 ## 2026-09-23 - PLC-HMI-20260923-20: C8 "Sıfır Referansı Belirle" (sade sürüm) uygulandı
 
 Kullanıcı: "C8 e geçelim o istekleri tamamlayalım." Kaynak: `.ai/HMI_C8_

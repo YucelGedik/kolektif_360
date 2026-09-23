@@ -5,15 +5,20 @@
 
 ## Aktif Durum
 
-**C8 "Sıfır Referansı Belirle" (PLC-HMI-20260923-20, sade sürüm) TAMAMLANDI.**
+**C8 "Sıfır Referansı Belirle" (PLC-HMI-20260923-20, sade sürüm) TAMAMLANDI
++ kullanıcı sahada test etti, bir UI hatası bulundu ve DÜZELTİLDİ.**
 Mevcut fiziksel X/Y konumunu 0 yapan, şifreli, uygulama-genelinde MODAL
 servis penceresi: Ayarlar → "SIFIR REFERANSI BELİRLE ⚙" → şifre → talimat
 + 3sn `HoldButton` → tek RW `xSetZeroRequest` (LEVEL, C5'teki "cleared"
 deseniyle) → mevcut `MC_Home_X`/`MC_Home_Y` FB'lerinin 10 RO üyesi izlenir.
 Bağlantı kaybı/15sn zaman aşımı/tek-eksen-başarı-sayılmaz hepsi kapsandı.
 10 aday tag (`config/opcua.example.json`, NodeId yolu TAHMİN - PLC'den
-teyit istendi). Tam suite 346/346, gerçek render + demo 50ms tick
-döngüsüyle uçtan uca doğrulandı. Detay: CHANGELOG_MEMORY.md üst giriş.
+teyit istendi, henüz C08_2 kodu gerçek PLC'ye uygulanmadı). **Bulunan
+hata:** tag'ler config'te yokken (beklenen, doğru durum) diyalog yanlış
+mesaj gösteriyordu ("manuel mod/servo/mekanizma kontrol edin" - kullanıcı
+sahada tüm koşulları sağladığını bildirdi ama buton yine pasifti).
+Düzeltildi: artık "TAG EKSİK - PLC tarafı tamamlanmadı" AÇIKÇA gösteriliyor.
+Tam suite 347/347. Detay: CHANGELOG_MEMORY.md üst giriş.
 
 **YENİ, dokunulmamış PLC görevi:** mesaj 21 - EMG basılınca bıçak/baskı
 otomatik geri çekilsin + H16 (EMG Hata) metin güncellemesi. Alındı
@@ -43,10 +48,12 @@ dosyası bekleniyor. Detay: CHANGELOG_MEMORY.md.
 
 ## Son Build/Test
 
-- `pytest`: 346/346 (2026-09-23).
+- `pytest`: 347/347 (2026-09-23).
 
 ## Son Degisiklikler
 
+- 2026-09-23 - C8 diyalogu: TAG EKSİK durumunda yanlış "koşullar
+  sağlanmıyor" mesajı gösteriyordu (kullanıcı sahada buldu) - düzeltildi.
 - 2026-09-23 - PLC-HMI-20260923-20: C8 "Sıfır Referansı Belirle" (sade
   sürüm) - modal servis penceresi, `set_zero_dialog.py` (yeni), servis
   state machine, 40 yeni test.

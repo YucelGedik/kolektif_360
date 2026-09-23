@@ -762,3 +762,30 @@ yazılmadı, gerçek hareket testi yapılmadı.
 21 numaralı mesaj (EMG pnömatik geri çekme + H16 metin güncellemesi)
 görüldü - bu turda VisionCut/C8 işine ayrıldığı için henüz UYGULANMADI,
 ayrı bir turda ele alınacak.
+
+## HMI iç bulgu (kullanıcı, gerçek PLC testi) | 2026-09-23 | C8 düğmesi hep pasif - UI hatası düzeltildi
+
+PLC tarafını ilgilendirmez (yalnız HMI ekran metni, tag/config yok) -
+kayıt bütünlüğü için not düşülüyor.
+
+Kullanıcı sahada koşulları sağladığını bildirdi (Manuel etkin, X/Y servo
+READY, bıçak/baskı sensörü YUKARI) ama "Sıfır Referansı Belirle" düğmesi
+pasif kaldı. Kök neden beklendiği gibi: gerçek `config/opcua.json`'da C8'in
+11 aday tag'i (`cmd_set_zero_request` + 10 RO) hâlâ yok (sizin `C08_2`
+kodunuz henüz gerçek PLC'ye uygulanmadı - mesaj 21: "kullanıcı henüz
+uygulamadı"), bu yüzden `set_zero_tags_configured()` hep False - beklenen,
+doğru davranış (C0.4/C5 disiplini).
+
+Ama gerçek HMI hatası: diyalog bu durumda operatöre genel "koşullar
+sağlanmıyor: manuel mod/servo/mekanizma kontrol edin" metnini gösteriyordu
+- kullanıcıyı kendi kurulumunu sorgulamaya yönlendiriyordu, gerçek sebebi
+(PLC tarafı tamamlanmadı) hiç söylemiyordu. Düzeltildi: artık "TAG EKSİK"
+açıkça gösteriliyor (ManualPage'deki C5 deseniyle aynı disiplin).
+
+Sizden bir şey beklemiyoruz - C08_2/C8E'yi gerçek PLC'ye uygulayıp NodeId
+yollarını (özellikle 10 RO alanın `Motion_Control.MC_Home_X/Y` FB üye
+yolu - önceki mesajımızdaki teyit isteği hâlâ açık) bildirdiğinizde biz
+gerçek config'e ekleyip test edeceğiz.
+
+Test: `test_set_zero_dialog.py::test_missing_tags_shows_honest_reason_
+not_generic_conditions_text` (yeni). Tam suite 347/347.
