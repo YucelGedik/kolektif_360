@@ -564,3 +564,12 @@ browse'dan SONRA indirilmiş, artık canlı. Detay: `CHANGELOG_MEMORY.md`
 - [x] Gerçek render edilmiş ekran görüntüsüyle doğrulandı: "Koşullar
       sağlanıyor.", buton aktif. Tam suite 350/350. Sahada gerçek homing
       denemesi henüz yapılmadı (kullanıcı yapacak).
+
+### 2026-09-23 — Manuel/Oto mod butonu geçilecek moda göre etiketleniyor (kullanıcı isteği, tamamlandı)
+Kullanıcı: ikinci "OTO MODU ETKİNLEŞTİR" butonu istemedi, tek butonun
+metni değişsin dedi. Detay: `CHANGELOG_MEMORY.md`.
+- [x] `manual_page.py::_on_snapshot` - `_manual_mode_btn.setText()`,
+      `snap.manual_mode`'a göre ("OTO MODU ETKİNLEŞTİR" / "MANUEL MODU
+      ETKİNLEŞTİR"). Davranış (tıklama hedefi) değişmedi.
+- [x] Testler: `test_manual_page_mode_button.py` (4, yeni). Gerçek render
+      ile doğrulandı. Tam suite 354/354.

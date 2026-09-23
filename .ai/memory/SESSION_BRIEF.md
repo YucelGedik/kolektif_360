@@ -5,31 +5,26 @@
 
 ## Aktif Durum
 
-**C8 "Sıfır Referansı Belirle" TAMAMEN BİTTİ - 11/11 tag gerçek config'te,
-buton gerçek makinede aktif (2026-09-23).** Süreç: modal pencere yazıldı
--> sahada buton pasif kaldı -> yanlış mesaj metni düzeltildi -> "PLC henüz
-doğrulamadı" diye KANITSIZ bir iddia yazdım, PLC ajanı haklı olarak
-düzeltti -> ilk salt-okunur browse'da `xSetZeroRequest` canlı çıktı ama 10
-RO alan `BadNodeIdUnknown` idi -> kullanıcı yeni build indirdi, UaExpert'te
-canlı gösterdi -> ikinci browse'da 10 alan da bulundu, ama GERÇEK isimler
-benim tahminimden (`Motion_Control.MC_Home_X/Y.*`) FARKLIYDI: GVL
-seviyesinde düz ayna değişkenler (`xX_HomeDone/Busy/Aborted/Error`,
-`eX_HomeErrorID`, Y için aynısı). Hepsi doğru config'e eklendi,
-`set_zero_tags_configured()` artık True, buton gerçek makinede aktif
-(ekran görüntüsüyle doğrulandı). Tam suite 350/350. Detay: CHANGELOG_
-MEMORY.md üstteki 4 giriş.
+**Manuel/Oto mod butonu artık geçilecek moda göre etiketleniyor
+(2026-09-23, kullanıcı isteği).** "MANUEL MODU ETKİNLEŞTİR" hep aynı
+metni gösteriyordu, ayrı bir "OTO MODU ETKİNLEŞTİR" butonu da yoktu -
+kullanıcı ana ekrandaki "oto moda geçin" uyarısıyla kafası karıştığını
+söyledi. İkinci buton eklenmedi - TEK buton artık Manuel'deyken "OTO MODU
+ETKİNLEŞTİR", Auto'dayken "MANUEL MODU ETKİNLEŞTİR" gösteriyor
+(`manual_page.py::_on_snapshot`). 4 yeni test, gerçek render ile
+doğrulandı. Tam suite 354/354.
 
-**Ders:** iki kez "PLC'de X eksik/doğrulanmadı" gibi bir NEDEN iddia
-ettim, ikisi de ya kanıtsızdı ya da yanlış çıktı. Bundan sonra yalnız
-"config'te bu anahtarlar yok" gibi GÖZLEMİ söyle, NEDEN/suçlama ekleme -
-gerekiyorsa salt-okunur browse ile kanıtla.
+**Önceki (2026-09-23) - C8 "Sıfır Referansı Belirle" TAMAMEN BİTTİ -
+11/11 tag gerçek config'te, buton gerçek makinede aktif.** İki browse
+turu sonrası (ilk turda 10 RO alan BadNodeIdUnknown'dı, kullanıcı yeni
+build indirince ikinci turda hepsi bulundu - GERÇEK isimler GVL ayna
+değişkenleri, `Motion_Control.*` tahminim yanlıştı) config tamamlandı.
+**Ders:** iki kez "PLC'de X eksik/doğrulanmadı" gibi kanıtsız bir NEDEN
+iddia ettim, ikisi de yanlış çıktı - bundan sonra yalnız gözlemi söyle,
+gerekiyorsa salt-okunur browse ile kanıtla. Detay: CHANGELOG_MEMORY.md.
 
 **YENİ, dokunulmamış PLC görevi:** mesaj 21 - EMG basılınca bıçak/baskı
 otomatik geri çekilsin + H16 (EMG Hata) metin güncellemesi.
-
-**Önceki (2026-09-23):** VisionCut mimari kararı (ayrı süreç) KABUL
-EDİLDİ ve gerçek depoya (`Brode_Vision_PLC`) push edildi; hız parametre
-sınırları gerçek mekaniğe göre revize edildi. Detay: CHANGELOG_MEMORY.md.
 
 ## Siradaki Gorevler
 
@@ -45,15 +40,14 @@ sınırları gerçek mekaniğe göre revize edildi. Detay: CHANGELOG_MEMORY.md.
 
 ## Son Build/Test
 
-- `pytest`: 350/350 (2026-09-23).
+- `pytest`: 354/354 (2026-09-23).
 
 ## Son Degisiklikler
 
-- 2026-09-23 - C8: ikinci browse'da 10 RO alan da bulundu (GVL ayna
-  değişkenleri, `Motion_Control.*` tahminim yanlıştı) - 11/11 tag gerçek
-  config'te, buton gerçek makinede aktif.
-- 2026-09-23 - C8: ilk browse - `xSetZeroRequest` canlı doğrulandı, 10 RO
-  alan o an BadNodeIdUnknown; diyalog metni nötrleştirildi.
+- 2026-09-23 - Manuel/Oto mod butonu geçilecek moda göre etiketleniyor
+  (ikinci buton yok, tek buton metni değişiyor).
+- 2026-09-23 - C8: iki browse turu sonrası 11/11 tag gerçek config'te,
+  buton gerçek makinede aktif.
 - 2026-09-23 - PLC-HMI-20260923-20: C8 "Sıfır Referansı Belirle" (sade
   sürüm) - modal servis penceresi, servis state machine, yeni testler.
 

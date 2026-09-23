@@ -86,6 +86,13 @@ class ManualPage(QWidget):
         header = QHBoxLayout()
         title = QLabel("MANUEL / SERVİS")
         title.setFont(base_font(14, bold=True))
+        # Kullanıcı isteği (2026-09-23): ikinci bir "OTO MODU ETKİNLEŞTİR"
+        # butonu eklemek yerine, TEK butonun metni basılınca ne olacağını
+        # gösterir - Manuel'deyken "OTO MODU ETKİNLEŞTİR" (basınca Auto'ya
+        # geçer), Auto'dayken "MANUEL MODU ETKİNLEŞTİR" (basınca Manuel'e
+        # geçer). Ana ekrandaki "oto moda geçin" uyarısına karşılık gelen
+        # buton artık açıkça görünür - ayrı bir buton yok diye kafa
+        # karışıklığı olmasın.
         self._manual_mode_btn = touch_button(
             "MANUEL MODU ETKİNLEŞTİR", object_name="navButton", checkable=True
         )
@@ -422,6 +429,11 @@ class ManualPage(QWidget):
         self._manual_mode_btn.blockSignals(True)
         self._manual_mode_btn.setChecked(snap.manual_mode)
         self._manual_mode_btn.blockSignals(False)
+        # Buton, basılınca GEÇİLECEK moda göre etiketlenir (görev notu,
+        # 2026-09-23) - Manuel'deyken "OTO MODU ETKİNLEŞTİR" gösterir.
+        self._manual_mode_btn.setText(
+            "OTO MODU ETKİNLEŞTİR" if snap.manual_mode else "MANUEL MODU ETKİNLEŞTİR"
+        )
         # H2 (2026-09-18, kullanıcı test notu): "otomatik mod aktifken ve
         # kesim devam ederken buton aktif kalıyordu" - cycle_active TRUE
         # olduğu SÜRECE (yalnız CUTTING değil; hazırlık/dönüş dahil tüm

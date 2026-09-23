@@ -3,6 +3,27 @@
 Yeni girisleri en uste ekle. Eski ve uzun detaylari `CHANGELOG_ARCHIVE.md`
 dosyasina tasi.
 
+## 2026-09-23 - Manuel/Oto mod butonu artık geçilecek moda göre etiketleniyor (kullanıcı isteği)
+
+Kullanıcı: "Uyarı olarak oto modu etkinleştir çıkıyor başlamak için fakat
+oto modu etkinleştir diye bir buton yok. Bu da karışıklığa sebep
+olabilir... manuel modu etkinleştir dediğimizde yine rengi değişsin ama
+buton içindeki yazıda değişsin OTO MODU ETKİNLEŞTİR yazsın."
+
+`ui/machine/manual_page.py::ManualPage._on_snapshot`: `_manual_mode_btn`
+zaten checkable/renk-değişimli idi (turuncu kenarlık = Manuel'de), ama
+metni hep "MANUEL MODU ETKİNLEŞTİR" kalıyordu. Artık `setText()` da
+`setChecked()`'in yanında çağrılıyor - `snap.manual_mode` True iken "OTO
+MODU ETKİNLEŞTİR" (basınca Auto'ya döner), False iken "MANUEL MODU
+ETKİNLEŞTİR" (basınca Manuel'e geçer). İkinci bir buton eklenmedi -
+davranış (`clicked.connect(self._service.set_manual_mode)`, Qt'nin
+verdiği YENİ checked durumunu taşır) hiç değişmedi, yalnız etiket.
+
+Test: `test_manual_page_mode_button.py` (4, yeni - iki moddaki metin,
+geçiş, tıklamanın hâlâ doğru hedefe yazdığı). Gerçek render edilmiş ekran
+görüntüsüyle doğrulandı (Auto: gri "MANUEL MODU ETKİNLEŞTİR", Manuel:
+turuncu "OTO MODU ETKİNLEŞTİR"). Tam suite 354/354.
+
 ## 2026-09-23 - C8 TAMAMLANDI: ikinci browse'da 10 RO alan da bulundu, 11/11 tag gerçek config'te
 
 Kullanıcı, CODESYS IDE + UaExpert ekran görüntüsü paylaştı: "sıfır
