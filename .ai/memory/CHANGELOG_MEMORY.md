@@ -38,9 +38,14 @@ Kullanıcıyla birlikte 07-09'u değerlendirdik, kararlar:
 `INTEGRATION.md` yeni mimariyi yansıtacak şekilde güncellendi (eski
 "tek süreç gömme" planı artık geçersiz olarak işaretlendi, kod
 uygulaması `08.1`'deki yama dosyasını bekliyor). Yerel `visioncut_message/`
-aynası gerçek depodaki `07`/`08`/`09`'u da içerecek şekilde senkronlandı;
-yeni yanıt mesajı `10` (23 Eylül) hem yerel aynaya hem gerçek depoya
-yazılacak (kullanıcı onayından sonra push edilir).
+aynası gerçek depodaki `07`/`08`/`09`'u da içerecek şekilde senkronlandı.
+
+Kullanıcı "push et" onayı verdi: mesaj `10` + `KARARLAR.md` karar #1,
+gerçek depoya (`muratturan19/Brode_Vision_PLC`, `main` dalı) doğrudan
+push edildi (commit `20b2d3f..c90fbba`) - `gh api` ile GitHub'da canlı
+olduğu doğrulandı. Bu, "biz oraya doğrudan yazamayız" varsayımının
+YANLIŞ olduğunu kanıtlıyor - bundan sonra ajanlar arası mesajlar
+doğrudan bu depoya yazılabilir (karar `08.3`).
 
 **Yan bulgu:** Aynı sırada `.ai/Codex_Codesys.md`'ye PLC tarafından iki
 yeni mesaj düşmüş (19 - C8 sıfır referansı, sonradan İPTAL; 20 - C8 sade

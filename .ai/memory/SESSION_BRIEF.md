@@ -5,17 +5,17 @@
 
 ## Aktif Durum
 
-**VisionCut mimari kararı KABUL EDİLDİ (2026-09-23): ayrı süreç.** Kritik
-keşif: `gh` hesabımız gerçek paylaşılan depoya (`muratturan19/Brode_
-Vision_PLC`) push yetkili - ve önceki `06` mesajımız o depoya HİÇ
-ulaşmamıştı (yalnız yerel aynamızda kalmıştı). Orada bizim görmediğimiz
-`07`/`08`/`09` (VisionCut, 20-21 Eylül) vardı: VisionCut sahaya gitmiş,
-programımızı kendi paketleyip 4 hata bulup yamalamış. Kullanıcıyla karar
-verdik: ayrı süreç KABUL (`INTEGRATION.md` güncellendi, `KARARLAR.md`
-karar #1), pencere başlığı düzeltildi, tek kanal artık gerçek depo. 4
-hatanın kodu HENÜZ yazılmadı - gerçek yama dosyası VisionCut'tan istendi.
-Yeni yanıt mesajı (`10`, 23 Eylül) hazır, kullanıcı onayından sonra
-gerçek depoya push edilecek. Detay: CHANGELOG_MEMORY.md üst giriş.
+**VisionCut mimari kararı KABUL EDİLDİ ve gerçek depoya İLETİLDİ
+(2026-09-23).** Kritik keşif: `gh` hesabımız gerçek paylaşılan depoya
+(`muratturan19/Brode_Vision_PLC`) push yetkili - ve önceki `06` mesajımız
+o depoya HİÇ ulaşmamıştı. Orada bizim görmediğimiz `07`/`08`/`09`
+(VisionCut, 20-21 Eylül) vardı: VisionCut sahaya gitmiş, programımızı
+kendi paketleyip 4 hata bulup yamalamış. Kullanıcıyla karar verdik: ayrı
+süreç KABUL (`INTEGRATION.md` güncellendi), pencere başlığı düzeltildi,
+tek kanal artık gerçek depo. Yanıt mesajı `10` + `KARARLAR.md` karar #1
+gerçek depoya push edildi (commit `c90fbba`, doğrulandı - GitHub'da canlı).
+4 hatanın kodu HENÜZ yazılmadı - gerçek yama dosyası VisionCut'tan
+istendi, cevap bekleniyor. Detay: CHANGELOG_MEMORY.md üst giriş.
 
 **YENİ, dokunulmamış PLC görevi bekliyor:** `.ai/Codex_Codesys.md`'ye
 otomatik düşen mesaj 19 (iptal) + **20 (C8 "Sıfır Referansı Belirle",
@@ -28,10 +28,8 @@ Bu oturumda İNCELENMEDİ/uygulanmadı.
 
 - [ ] **C8 Sıfır Referansı** (yeni, 20 numaralı görev) - henüz başlanmadı,
       `.ai/HMI_C8_SADE_SURUM_20260923.md`'yi oku, uygula.
-- [ ] Kullanıcı onayı bekliyor: `visioncut_message/mesajlar/2026-09-23_
-      10_bufera.md` + `KARARLAR.md` güncellemesi gerçek depoya (`Brode_
-      Vision_PLC`) push edilsin mi?
-- [ ] VisionCut'tan 4 hata için gerçek yama dosyası bekleniyor (08.1).
+- [ ] VisionCut'tan 4 hata için gerçek yama dosyası bekleniyor (08.1,
+      mesaj `10` gerçek depoya push edildi, commit `c90fbba`).
 - [ ] PLC tarafı: H12-H15/H20-H22/U06 (8 aday tag) online test bekliyor.
 - [ ] Kullanıcı: gerçek PLC'de A01-A06/hız sınırı değişikliklerini test etmeli.
 - [ ] PLC tarafı: MANUAL_RETURN_STOP (140) Reset kararı hâlâ açık (13).
