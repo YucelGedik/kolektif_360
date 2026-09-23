@@ -3,6 +3,53 @@
 Yeni girisleri en uste ekle. Eski ve uzun detaylari `CHANGELOG_ARCHIVE.md`
 dosyasina tasi.
 
+## 2026-09-23 - VisionCut mimari kararı: ayrı süreç KABUL EDİLDİ + gerçek mesaj kanalı keşfi
+
+Kullanıcı: "mesajın VisionCut'a gerçekten ulaşması için ne yapmamız gerek."
+Bu soruyu araştırırken kritik bir bulgu çıktı: `gh` hesabımız
+(`YucelGedik`) gerçek paylaşılan depoya (`muratturan19/Brode_Vision_PLC`)
+**push yetkisiyle** collaborator - ve dün yazdığımız `06` mesajı (endpoint/
+node haritası) o depoya HİÇ ulaşmamış, yalnız bizim yerel `visioncut_
+message/` aynamızda kalmış. VisionCut bunu kendi `09` mesajında zaten
+fark etmiş ("06'yı yalnızca kendi deponuza yazmıştınız, biz orayı
+okumuyorduk"). Gerçek depoda ayrıca bizim hiç görmediğimiz 3 mesaj vardı:
+`07`/`08`/`09` (VisionCut'tan, 20-21 Eylül) - **VisionCut zaten sahaya
+gitmiş, programımızı kendisi PyInstaller ile paketleyip 4 gerçek hata
+bulup yamalamış**, ve üç insan-kararı gerektiren açık soru bırakmış.
+
+Kullanıcıyla birlikte 07-09'u değerlendirdik, kararlar:
+- **07.1 KABUL:** İki program ayrı süreç/ayrı pencere olacak (VisionCut'ın
+  ölçümle desteklenen önerisi - kare hızı, GIL paylaşımı, arıza izolasyonu).
+  PLC tag'i gerekmiyor, karşılıklı öne getirme/küçültme ile geçiş.
+  `visioncut_message/KARARLAR.md`'ye yazıldı (karar #1).
+- **07.2:** Yer tutucu ilk kamera sayfası kaldırılabilir - onaylandı.
+- **08.1:** 4 hatanın (a/b: config yoksa çökme + paketlenince yazılamayan
+  yollar - mimariden bağımsız gerçek hatalar; c/d: yer tutucu sayfa/kamera
+  butonu - 07.1'in sonucu) kodu henüz YAZILMADI - kullanıcı önce gerçek
+  yama dosyasını istiyor, VisionCut'tan rica edildi. Kör kopyalamak yerine
+  kendi testlerimizle doğrulamak istiyoruz.
+- **08.2:** Pencere başlığı düzeltildi (`app/main.py`) - "Makine Ekran"
+  korunur, "(dev shell)" kaldırıldı.
+- **08.3 KABUL:** Bundan sonra ajanlar arası TEK kanal gerçek paylaşılan
+  depo (`Brode_Vision_PLC`) - kendi `visioncut_message/` klasörümüz artık
+  yalnız pasif yerel referans.
+- **09.1:** VisionCut build'e devam ediyor (şimdilik) - onaylandı.
+
+`INTEGRATION.md` yeni mimariyi yansıtacak şekilde güncellendi (eski
+"tek süreç gömme" planı artık geçersiz olarak işaretlendi, kod
+uygulaması `08.1`'deki yama dosyasını bekliyor). Yerel `visioncut_message/`
+aynası gerçek depodaki `07`/`08`/`09`'u da içerecek şekilde senkronlandı;
+yeni yanıt mesajı `10` (23 Eylül) hem yerel aynaya hem gerçek depoya
+yazılacak (kullanıcı onayından sonra push edilir).
+
+**Yan bulgu:** Aynı sırada `.ai/Codex_Codesys.md`'ye PLC tarafından iki
+yeni mesaj düşmüş (19 - C8 sıfır referansı, sonradan İPTAL; 20 - C8 sade
+sürüm, GÜNCEL/yetkili). Yeni bir HMI görevi - bu oturumda dokunulmadı,
+ayrı ele alınacak.
+
+Tam suite 306/306 (kod değişikliği yalnız pencere başlığı, davranış
+etkilenmedi). `data/bufera.db` pollution temizlendi.
+
 ## 2026-09-22 - Gün sonu: master push'landı, VisionCut/PLC tarafına bildirim yazıldı (kullanıcı talebi)
 
 Kullanıcı: "son halini commit push et. visioncut kısmınada mesaj gönder

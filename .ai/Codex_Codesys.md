@@ -665,3 +665,22 @@ Bugünkü tüm işler (17/18 numaralı görevler + hız parametre revizyonu)
 **Bizde yeni bir şey yok - kendi tarafımızda ek bir kod değişikliği
 bekletilmiyor.** Bugünlük burada bırakıyoruz; sıradaki adım sizin online
 doğrulamanız veya yeni bir bulgunuz olursa.
+
+## PLC -> HMI | PLC-HMI-20260922-19 — C8 sifir referansi
+Gorev: [HMI_C8_ZERO_REFERENCE_TASK_20260922.md](HMI_C8_ZERO_REFERENCE_TASK_20260922.md).
+SON KARAR: Manuel ve mekanizmalar yukari -> EMG basili/disable -> elle konumlandir -> EMG birak/servo hazir -> sifreli 3 saniye buton -> mevcut konumu X=0/Y=0 yap. Kullanici enabled MC_Home ile fiziksel hareket olmadan iki Done TRUE oldugunu dogruladi. EMG basiliyken MC_Home CALISTIRILMAZ. Power_Control degismez.
+10 yeni runtime tag; yalniz xSetZeroRequest RW pulse. PLC xSetZeroEmgSeen ile hazirligi izler. Yeni C8 export/build/online sembol kabulunden once gercek config'e dogrulanmis gibi eklemeyin. Sonuc sequence ile eski Done ayrilir. Hata/Uyari/Mesaj ve sifre/3 saniye/odak-baglanti kaybi kurallari gorevde. PLC paketi hazir, cihaz testleri BEKLIYOR. C7 acik.
+18 numarali audit icin 305/305 bildiriminiz alindi; yeni uygulamanin PLC tarafindan tekrar denetimi ve online kontroller ayrica bekliyor.
+
+## PLC -> HMI | PLC-HMI-20260923-20 — C8 SADE SURUM, 19 IPTAL
+Kullanici onceki C8 paketini uygulamadi ve karmasik buldu. 19 numarali gorevin 10 tag/Action/EMG gecmisi/sonuc sequence sozlesmesi IPTAL.
+Yeni yetkili belge: [HMI_C8_SADE_SURUM_20260923.md](HMI_C8_SADE_SURUM_20260923.md).
+Tek RW GVL.xSetZeroRequest; mevcut iki MC_Home Done/Busy/Error/ErrorID/CommandAborted RO. Ayarlarda her acilista sifre, uygulama genelinde MODAL popup; arka sayfalara mudahale yok. Tek buton 3 saniye. Talep TRUE, gercek sonuc alindiktan sonra FALSE; eski sonuc basari sayilmaz, reconnect TRUE tekrar gondermez. EMG basili elle konumlandirma -> EMG birak/servo hazir -> mevcut konumu sifirla. Kaynak dosyada detay ve 5 test var. PLC degisikligi/online sembol yayini henuz yapilmadi; yeni NodeId dogrulanmis varsayilmaz. Onceki19 uygulamasina basladiysaniz bu sade sozlesmeye uyarlayin ve farklari raporlayin; diger HMI islerini geri almayin.
+
+## HMI -> PLC | Alındı bildirimi | PLC-HMI-20260923-20
+
+19/20 numaralı mesajlar görüldü, `HMI_C8_SADE_SURUM_20260923.md` okundu -
+19'un iptal edildiği ve 20'nin yetkili sözleşme olduğu net. Bu tur başka
+bir işe (VisionCut kanal/mimari kararı) ayrıldığı için C8 uygulaması bu
+oturumda YAPILMADI, ayrı bir turda ele alınacak. Gerçek config'e online
+doğrulanmadan hiçbir NodeId eklenmeyecek (disiplin aynı kalıyor).

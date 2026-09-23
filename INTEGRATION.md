@@ -40,21 +40,45 @@ config/opcua.example.json  (referans; gerçek config VisionCut'ın kendi
                              deployment config mekanizmasına uyarlanabilir)
 ```
 
-`app/main.py` VisionCut'a taşınmaz — onun yerine VisionCut'ın kendi ana
-penceresine:
+### Mimari karar (2026-09-23) — ayrı süreç, TEK PENCERE DEĞİL
 
-1. Bir **"Makine Ekranı"** butonu eklenir (Vision ekranının navigasyonuna).
-2. Bu buton, `MachineService` örneğini oluşturup `.start()` çağırır ve
-   `ui.machine.machine_page.MachinePage(service)`'i gösterir.
-3. `MachinePage.navigateRequested` sinyali `"manual" | "settings" |
-   "alarms" | "camera"` değerleri yayar; VisionCut'ın navigasyon katmanı bu
-   sinyali dinleyip ilgili sayfaya (`ManualPage`, `SettingsPage`,
-   `AlarmPage`, ya da kendi kamera ekranına) geçmelidir.
+**Bu bölüm daha önce "VisionCut, `MachinePage`'i kendi penceresine gömer
+(tek süreç)" diyordu - bu plan artık geçerli değil.** VisionCut ajanı
+(mesaj 07, `visioncut_message/mesajlar/2026-09-20_07_visioncut.md`), tek
+süreçte kare hızı doğruluğunun (ölçüldü: 60→40 fps düşüşü hatayı %47
+artırıyor) ve GIL paylaşımının (ölçüldü: bizim ekranlarımız kaldırılınca
+26,9→35,1 fps) kendi kamera işleme performansını bozduğunu gösterdi; iki
+insan da (Murat Turan mesaj 08'de, Yücel Gedik 2026-09-23'te) **iki ayrı
+tam ekran süreç** kararını onayladı. Detay ve gerekçe: `visioncut_message/
+KARARLAR.md` + mesajlar `07`-`10`.
 
-`app/main.py`'deki `MainWindow` sınıfı, bu kablolamanın referans
-implementasyonudur — VisionCut'ın kendi navigasyon standardı farklıysa aynı
-mantık (servis oluştur → sayfaları oluştur → sinyalleri navigasyona bağla)
-korunarak kendi navigasyon sistemlerine taşınabilir.
+Yeni model:
+1. VisionCut'ın kendi programında **"Makine Ekranı"** butonu — bu repodan
+   derlenmiş ayrı bir `.exe`'yi başlatır (çalışmıyorsa) ya da öne getirir
+   (çalışıyorsa), kendini küçültür. PLC tag'i GEREKMEZ.
+2. Bizim tarafta (bu repoda) aynı mantığın tersi: "KAMERA EKRANI" butonu
+   VisionCut'ın exe'sini başlatır/öne getirir, biz küçülürüz. Pencere eşleme
+   başlıkla yapılır (bizim başlığımız "Makine Ekran" alt dizesini içermeye
+   devam etmeli - mesaj `08.2`).
+3. `app/main.py` artık yalnız bir "dev shell" değil - PyInstaller ile
+   paketlenen GERÇEK teslim programı. Mevcut yer tutucu kamera sayfası ve
+   `MachinePage.navigateRequested`'in `"camera"` değerini sayfa değişimi
+   olarak yorumlayan eski davranış (VisionCut mesaj `08`'de bulduğu 4
+   hatanın (c)/(d) maddeleri) bu karara göre değişmeli - **uygulama henüz
+   YAPILMADI**, VisionCut'ın gerçek yama dosyasını bekliyoruz (mesaj `08.1`
+   yanıtımız, 2026-09-23).
+4. Ayrıca online-doğrulanmamış iki gerçek paketleme hatası da düzeltilmeli
+   (VisionCut mesaj `08`, madde a/b): `plc/tag_map.py` config dosyası
+   yoksa çökmek yerine demo moda düşmeli; `persistence/db.py`/`plc/
+   tag_map.py`'deki `__file__`'e göreli yollar, paketlenmiş/frozen
+   çalışmada yazılabilir bir konuma (örn. `%ProgramData%`) taşınmalı. Bu
+   ikisi mimari kararından BAĞIMSIZ, her koşulda gerçek bir hata.
+
+Eski (artık geçersiz) plan referans için: VisionCut kendi ana penceresine
+bir "Makine Ekranı" butonu ekler, bu buton `MachineService`'i oluşturup
+`.start()` çağırır ve `MachinePage(service)`'i AYNI pencerede gösterirdi;
+`navigateRequested`'in `"camera"` değeri VisionCut'ın kendi kamera
+sayfasına dönmek için kullanılırdı. Bu artık uygulanmayacak.
 
 ## Eski ShowVisionScreen / VisionScreenRelease
 

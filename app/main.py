@@ -56,7 +56,10 @@ class CameraPlaceholderPage(QWidget):
 class MainWindow(QMainWindow):
     def __init__(self, service: MachineService):
         super().__init__()
-        self.setWindowTitle("Bufera — VisionCut / Makine Ekranı (dev shell)")
+        # VisionCut mesaj 08.2: kendi programları bizimkini pencere
+        # başlığında "Makine Ekran" alt dizesiyle buluyor - bu ifade
+        # KORUNMALI. "(dev shell)" kaldırıldı (görev notu, 2026-09-23).
+        self.setWindowTitle("Bufera — VisionCut / Makine Ekranı")
         self.resize(1024, 768)
 
         self._service = service

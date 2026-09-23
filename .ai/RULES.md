@@ -113,6 +113,13 @@ Detay: `.ai/memory/CHANGELOG_MEMORY.md`. Sirada plan dosyasinin SS12
 
 - [ ] VisionCut'i yapan sirkete teslim oncesi `INTEGRATION.md` son kontrolu.
 - [ ] Gercek PLC/OPC UA sunucusu erisilebilir oldugunda ucdan uca test.
+- [ ] **C8 - Sifir Referansi Belirle** (PLC-HMI-20260923-20, yeni/baslanmadi):
+      `.ai/HMI_C8_SADE_SURUM_20260923.md` - sifreli modal, EMG tabanli elle
+      konumlandirma, 3sn buton, tek yeni RW tag `xSetZeroRequest`, mevcut
+      MC_Home Done/Busy/Error RO izleme, 5 test isteniyor.
+- [ ] VisionCut mimari karari (ayri surec) kabul edildi (2026-09-23) - kod
+      uygulamasi (`app/main.py`, `plc/tag_map.py`, `persistence/db.py`)
+      VisionCut'in gercek yama dosyasini bekliyor (detay CHANGELOG_MEMORY.md).
 
 ### Tamamlananlar
 

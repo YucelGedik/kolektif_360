@@ -1,72 +1,73 @@
-# SESSION_BRIEF - Son guncelleme: 2026-09-22
+# SESSION_BRIEF - Son guncelleme: 2026-09-23
 
 > Bu dosya AI protokolunun birincil giris noktasidir.
 > Her anlamli kod degisikliginden sonra guncellenir. 40 satiri gecirme.
 
 ## Aktif Durum
 
-**GÜN SONU (2026-09-22) - tüm işler push'landı, oturum kapatıldı.**
-`master` GitHub'a push edildi (`kolektif_360`, `35d7aec`'e kadar). VisionCut
-tarafına repo güncellemesi bildirimi yazıldı (`visioncut_message/mesajlar/
-2026-09-22_10_bufera.md` - yalnız yerel ayna, gerçek dış repoya (`muratturan
-19/Brode_Vision_PLC`) senkron kullanıcı tarafından elle yapılmalı). PLC
-tarafına da `.ai/Codex_Codesys.md`'de gün sonu özeti yazıldı. Bekleyen HMI
-tarafı iş YOK - sıradaki adım PLC'nin online doğrulaması veya kullanıcının
-sahada test etmesi.
+**VisionCut mimari kararı KABUL EDİLDİ (2026-09-23): ayrı süreç.** Kritik
+keşif: `gh` hesabımız gerçek paylaşılan depoya (`muratturan19/Brode_
+Vision_PLC`) push yetkili - ve önceki `06` mesajımız o depoya HİÇ
+ulaşmamıştı (yalnız yerel aynamızda kalmıştı). Orada bizim görmediğimiz
+`07`/`08`/`09` (VisionCut, 20-21 Eylül) vardı: VisionCut sahaya gitmiş,
+programımızı kendi paketleyip 4 hata bulup yamalamış. Kullanıcıyla karar
+verdik: ayrı süreç KABUL (`INTEGRATION.md` güncellendi, `KARARLAR.md`
+karar #1), pencere başlığı düzeltildi, tek kanal artık gerçek depo. 4
+hatanın kodu HENÜZ yazılmadı - gerçek yama dosyası VisionCut'tan istendi.
+Yeni yanıt mesajı (`10`, 23 Eylül) hazır, kullanıcı onayından sonra
+gerçek depoya push edilecek. Detay: CHANGELOG_MEMORY.md üst giriş.
 
-**Bugün tamamlanan (kronolojik, detay CHANGELOG_MEMORY.md):** Hız
-parametre sınırları gerçek mekaniğe göre revize edildi (6 alan) ->
-PLC-HMI-20260922-18 (C06_1 audit, A01-A06: ayar yazma izni, restart alarm
-uzlaştırması, U10 sıralaması, eksik-tag banner'ı, M01-M09 canlı mesajlar,
-state 140/510 etiket düzeltmeleri - ikisi benim önceki hatalarımdı) ->
-manuel sayfa 8px yamukluk + U01-U11 canlı tablo -> H20-H22 (17).
+**YENİ, dokunulmamış PLC görevi bekliyor:** `.ai/Codex_Codesys.md`'ye
+otomatik düşen mesaj 19 (iptal) + **20 (C8 "Sıfır Referansı Belirle",
+GÜNCEL/yetkili)** - tek yeni tag `xSetZeroRequest`, şifreli modal + EMG
+tabanlı elle konumlandırma + 3sn buton + mevcut MC_Home Done/Busy/Error
+RO izleme, 5 test isteniyor. Kaynak: `.ai/HMI_C8_SADE_SURUM_20260923.md`.
+Bu oturumda İNCELENMEDİ/uygulanmadı.
 
 ## Siradaki Gorevler
 
-- [ ] PLC tarafı: H12-H15/H20-H22/U06 (8 aday tag, export'ta var) online
-      node/erişim testi yapmalı; sonra gerçek `config/opcua.json`'a
-      eklenecek (Alarmlar sayfasında artık bunları listeleyen canlı bir
-      banner var - A04).
-- [ ] Kullanıcı: gerçek PLC'de yeni HATA/UYARI/MESAJ davranışını ve A01-A06
-      düzeltmelerini test etmeli.
-- [ ] PLC tarafı: MANUAL_RETURN_STOP (140)'tan Reset ile çıkış kararı
-      hâlâ bekleniyor (13 numaralı bulgu).
-- [ ] VisionCut 07/08/09 mesajları bekliyor ("sonra ilgilenelim").
-- [ ] Kullanıcı: `visioncut_message/mesajlar/2026-09-22_10_bufera.md`
-      (repo güncelleme bildirimi) gerçek dış repoya (`muratturan19/Brode_
-      Vision_PLC`) elle senkronlanmalı - biz oraya doğrudan yazamıyoruz.
+- [ ] **C8 Sıfır Referansı** (yeni, 20 numaralı görev) - henüz başlanmadı,
+      `.ai/HMI_C8_SADE_SURUM_20260923.md`'yi oku, uygula.
+- [ ] Kullanıcı onayı bekliyor: `visioncut_message/mesajlar/2026-09-23_
+      10_bufera.md` + `KARARLAR.md` güncellemesi gerçek depoya (`Brode_
+      Vision_PLC`) push edilsin mi?
+- [ ] VisionCut'tan 4 hata için gerçek yama dosyası bekleniyor (08.1).
+- [ ] PLC tarafı: H12-H15/H20-H22/U06 (8 aday tag) online test bekliyor.
+- [ ] Kullanıcı: gerçek PLC'de A01-A06/hız sınırı değişikliklerini test etmeli.
+- [ ] PLC tarafı: MANUAL_RETURN_STOP (140) Reset kararı hâlâ açık (13).
 - [ ] `data/bufera.db` paylaşımlı-engine test-izolasyonu kararı bekliyor.
 - [ ] Gerçek kamera devrede: `vision_simulator_enabled` kapalı tutulmalı.
 
 ## Son Build/Test
 
-- `pytest`: 306/306 (2026-09-22).
+- `pytest`: 306/306 (2026-09-23).
 
 ## Son Degisiklikler
 
-- 2026-09-22 - Hız parametre sınırları gerçek mekaniğe göre revize edildi
-  (6 alan, kullanıcı onaylı nihai limitler - `core/parameters.py`).
-- 2026-09-22 - PLC-HMI-20260922-18 (C06_1 audit, A01-A06): ayar yazma izni,
-  restart alarm uzlaştırması, U10 sıralaması, eksik-tag banner'ı, M01-M09
-  canlı, state etiket düzeltmeleri (140/510 - kendi hatalarımdı).
-- 2026-09-22 - Manuel sayfa 8px yamukluk + U01-U11 canlı tablo satırları.
+- 2026-09-23 - VisionCut ayrı-süreç mimarisi kabul edildi, `INTEGRATION.md`
+  güncellendi, pencere başlığı düzeltildi (`app/main.py`), yerel mesaj
+  aynası gerçek depoyla senkronlandı.
+- 2026-09-22 - Hız parametre sınırları gerçek mekaniğe göre revize edildi.
+- 2026-09-22 - PLC-HMI-20260922-18 (C06_1 audit, A01-A06).
 
 ## Kisa Notlar
 
 - Oturum basinda sadece bu dosya okunur; detay gerekirse `RULES.md`.
 - `config/opcua.json` GERCEK PLC endpoint'i tutuyor - testler izole config
   kullanmali. `data/bufera.db` PAYLAŞIMLI - testler izole ETMİYOR; tam
-  suite tek çalıştırmada ~4 satır kirlilik üretiyor (DemoSimulator'ın
-  vision-heartbeat alarmı, kod=1201 - GERÇEK PLC verisi DEĞİL, saf test
-  yan etkisi). Test sonrası `DELETE FROM alarm_events` ile TAMAMI
-  temizlenebilir (code IS NULL/IS NOT NULL ayrımı yapmaya gerek yok -
-  ikisi de sentetik). `engineering_settings`'e DOKUNMA.
+  suite tek çalıştırmada birkaç satır kirlilik üretiyor (DemoSimulator'ın
+  vision-heartbeat alarmı - GERÇEK PLC verisi DEĞİL). Test sonrası
+  `DELETE FROM alarm_events` ile TAMAMI temizlenebilir.
+  `engineering_settings`'e DOKUNMA.
 - Vision simülatörü PLC state/sensör/motion/valf taglarına ASLA yazmaz.
 - Yeni, online doğrulanmamış PLC NodeId'sini gerçek `config/opcua.json`'a
   eklemeden önce PLC tarafının online doğrulamasını bekle (C0.4/C5 dersi).
 - Gerçek PLC export dosyaları proje dışında (`C:\Users\agedik\Documents\
   ChatGPT\Bufera Tekstil PLC\...\plc_export\`) - kullanıcı yolu verirse
   doğrudan incelenebilir (büyük XML, chunk ile).
-- VisionCut'ın gerçek mesaj kanalı `muratturan19/Brode_Vision_PLC` (dış
-  repo) - bizim `visioncut_message/` klasörümüz onun el ile senkronlanan
-  bir aynası, otomatik güncellenmiyor.
+- **VisionCut'ın gerçek mesaj kanalı `muratturan19/Brode_Vision_PLC`**
+  (dış repo, PUBLIC) - `gh` hesabımız buraya PUSH YETKİLİ (collaborator,
+  2026-09-23 doğrulandı). Bundan sonra ajanlar arası mesajlar BURAYA
+  yazılır (karar 08.3); bizim `visioncut_message/` klasörümüz artık yalnız
+  pasif yerel referans/ayna - önceki varsayım ("biz oraya yazamayız,
+  kullanıcı elle senkronlamalı") YANLIŞTI, düzeltildi.
