@@ -667,4 +667,4 @@ Detay: `CHANGELOG_MEMORY.md`.
       yanlışlıkla 2 kez açık bıraktığı gerçek `python -m app.main` süreci
       (kod izolasyonu DOĞRU çalıştığı 3 debug script'iyle kanıtlandı).
       Kullanıcı ikisini de kapattı, DB temizlendi.
-- [x] Commit `<bir sonraki commit>` + push edildi.
+- [x] Commit `33bf79a` + push edildi.
