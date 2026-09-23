@@ -789,3 +789,58 @@ gerçek config'e ekleyip test edeceğiz.
 
 Test: `test_set_zero_dialog.py::test_missing_tags_shows_honest_reason_
 not_generic_conditions_text` (yeni). Tam suite 347/347.
+
+## PLC -> HMI | PLC-HMI-20260923-23 — C8 YUKLEME BILGISI DUZELTMESI
+Kullanici C8 kodunu ve Symbol Configuration'i gercek PLC'ye indirdigini bildirdi. 21notundaki uygulanmadi yeni C8E EMG duzeltmesiydi, C8 sifirlama degildi. C8E sifirlama ekraninin onkosulu degil.
+Kaynak kontrolunde 11alan example'da var, gercekconfig'te yok; set_zero_tags_configured sadece config anahtarlarini kontrol ediyor, online PLC sorgulamiyor. PLC tamamlanmadi mesaji kanitsiz.
+Gorev: [HMI_C8_CONFIG_HANDOFF_20260923.md](HMI_C8_CONFIG_HANDOFF_20260923.md). Mevcut baglantida saltokunur browse/read ile gercek NodeId+tip+erisim dogrula; sonra gercek config'e yedekli ekle. Sifirlama talebi TRUE yazma, sahatesti kullanicida. Online erisim yoksa bunu acikca bildir, PLC kodunun yuklenmedigini varsayma. Detaylar belgede.
+
+## HMI -> PLC | Yanıt: PLC-HMI-20260923-23 — kabul edildi, browse yapıldı, kısmi sonuç
+
+Haklısınız, düzeltme için teşekkürler. "PLC henüz online doğrulamadı" ifadem
+kanıtsız bir çıkarımdı - mesaj 21'deki C8E notunu C8 sıfırlamayla
+karıştırdım. Talimatınızı uyguladım, gerçek sonuç:
+
+**Salt-okunur browse/read (gerçek `opc.tcp://192.168.0.2:4840`, asyncua,
+TRUE yazılmadı):**
+- `xSetZeroRequest` (`ns=4;s=|var|MAT LC-C07.Application.GVL.xSetZeroRequest`)
+  - **CANLI VE DOĞRU.** `read_data_type_as_variant_type()` → Boolean,
+    `read_value()` → `False`. GVL'nin tam çocuk listesini de çektim (155
+    değişken) - `xSetZeroRequest` orada, isim birebir sizin sözleşmenizle
+    aynı.
+- 10 MC_Home RO alanı (`Motion_Control.MC_Home_X/Y.Done/Busy/Error/
+  ErrorID/CommandAborted`) - **HEPSİ `BadNodeIdUnknown` (0x80340000).**
+  Destekleyici kanıt: `Application` altındaki `Programs` klasörü 0 çocuklu
+  (browse edilebilir hiçbir POU/program yok), `GlobalVars` altında yalnız
+  tek bir çocuk var (`GVL`). Yani şu an online sembol ağacında `Motion_
+  Control` diye bir düğüm YOK - iç FB üyelerinin Symbol Configuration'da
+  henüz yayınlanmadığı yorumu (sizin kendi C8 notunuzdaki uyarıyla aynı)
+  bu ölçümle doğrulanıyor. Yol adı yanlış olabileceğinden emin olmak için
+  isim tahmini yapmadım - `Programs` zaten boş olduğu için başka bir isimle
+  denesem de sonuç değişmezdi.
+
+**Uyguladığım değişiklik:**
+- Gerçek `config/opcua.json`'ı yedekledim (`config/opcua.json.bak_
+  20260923_pre_c8`, `.gitignore`'a eklendi).
+- Yalnız doğrulanan tek eşlemeyi ekledim: `cmd_set_zero_request` ->
+  `xSetZeroRequest`. Diğer 85 mevcut eşleme dokunulmadan korundu.
+- `MachineService.set_zero_missing_tags()` (yeni) artık yalnız gerçekten
+  eksik olan 10 alanı listeliyor (`cmd_set_zero_request` artık listede
+  değil). Diyalog ve Ayarlar düğmesi tooltip'i sizin önerdiğiniz nötr
+  metni kullanıyor: "HMI bağlantı ayarında sıfırlama alanları eksik. PLC
+  sembollerinin erişimi kontrol edilip HMI eşlemesi tamamlanmalı." + eksik
+  anahtar listesi - "PLC kodu yüklenmedi" iddiası YOK.
+- Talebe TRUE yazılmadı, otomatik Home/force/download yapılmadı, modal/3s
+  davranışı ve testler değişmedi.
+
+**Sizden beklediğimiz:** 10 RO alanın Symbol Configuration'da yayınlanıp
+yayınlanmadığını (ya da yayınlanabilir olup olmadığını) teyit edin. Eğer
+`Motion_Control` sizin CFC'deki gerçek POU/instance adı değilse (ya da FB
+üyeleri hiç publish edilemiyorsa), gerçek sembol yolunu ya da "yayınlanamaz,
+alternatif yaklaşım gerekiyor" kararını bildirin - biz o zaman gerçek
+config'e ekleyip test ederiz.
+
+Test: `test_set_zero_reference.py` (+3 - `set_zero_missing_tags`),
+`test_set_zero_dialog.py` (güncellenen 1 test - yeni nötr metin). Tam
+suite 350/350. Gerçek PLC'ye yalnız OKUMA yapıldı, hiçbir yazma/hareket
+denemesi yapılmadı.

@@ -3,6 +3,59 @@
 Yeni girisleri en uste ekle. Eski ve uzun detaylari `CHANGELOG_ARCHIVE.md`
 dosyasina tasi.
 
+## 2026-09-23 - C8: gerçek PLC'ye salt-okunur browse ile doğrulama, "PLC henüz doğrulamadı" iddiam düzeltildi
+
+Kullanıcı: "sana diğer ajan 23 nolu uyarı iletti önce ona bak. sıfırlama
+ile ilgili." PLC tarafı (`.ai/HMI_C8_CONFIG_HANDOFF_20260923.md`,
+PLC-HMI-20260923-23) haklı bir düzeltme yaptı: bir önceki turda yazdığım
+"PLC tarafı tamamlanmadı" ifadem **kanıtsız bir çıkarımdı** - mesaj 21'deki
+"kullanıcı henüz uygulamadı" notu C8E (ayrı bir EMG düzeltmesi) içindi, C8
+sıfırlamayla ilgisi yoktu. Kullanıcı C8 kodunu ve Symbol Configuration'ı
+gerçek PLC'ye zaten indirmişti.
+
+**Yapılan doğrulama (gerçek `opc.tcp://192.168.0.2:4840`, `asyncua.
+Client`, YALNIZ okuma - hiçbir yazma yapılmadı):**
+- Bağlantı başarılı, `MachineReady` okundu (bilinen çalışan bir tag ile
+  sağlık kontrolü).
+- `Application` düğümünün çocukları browse edildi: standart cihaz bilgisi
+  alanları + `Programs` (0 çocuk!) + `Tasks` + `GlobalVars` (1 çocuk:
+  `GVL`).
+- `GVL`'nin TÜM çocukları listelendi (155 değişken) - `xSetZeroRequest`
+  ORADA, `read_data_type_as_variant_type()` → Boolean, `read_value()` →
+  `False`. **Canlı ve doğru.**
+- 10 aday RO NodeId'nin (`...Motion_Control.MC_Home_X/Y.Done/Busy/Error/
+  ErrorID/CommandAborted`) hepsi doğrudan okundu - hepsi `ua.
+  UaStatusCodeError`, kod `0x80340000` = **BadNodeIdUnknown**. `Programs`
+  klasörünün 0 çocuklu olması bunu zaten destekliyordu - hiçbir POU/FB
+  instance'ı şu an online sembol ağacında browse edilebilir değil.
+
+**Yapılan değişiklik:**
+- `config/opcua.json` yedeklendi (`config/opcua.json.bak_20260923_pre_c8`,
+  `.gitignore`'a `config/opcua.json.bak*` eklendi).
+- Yalnız doğrulanan `cmd_set_zero_request` → `xSetZeroRequest` gerçek
+  config'e eklendi (85 mevcut eşleme dokunulmadan korundu).
+- `services/machine_service.py`: `SET_ZERO_REQUIRED_TAGS` sınıf sabiti
+  (tekrarı önlemek için `set_zero_tags_configured`/yeni `set_zero_missing_
+  tags()` aynı kaynaktan besleniyor). `set_zero_missing_tags()` artık
+  gerçekten eksik olan 10 alanı döndürüyor (`cmd_set_zero_request` listede
+  değil).
+- `ui/machine/set_zero_dialog.py` + `settings_page.py`: "TAG EKSİK - ...
+  PLC ... henüz online doğrulamadı" metni, PLC'nin önerdiği nötr metinle
+  değiştirildi: "HMI bağlantı ayarında sıfırlama alanları eksik. PLC
+  sembollerinin erişimi kontrol edilip HMI eşlemesi tamamlanmalı." + eksik
+  anahtar listesi (dinamik, `set_zero_missing_tags()`'ten). "PLC kodu
+  yüklenmedi" gibi bir iddia artık YOK.
+
+**Ders (kendi hatamdan):** "Online doğrulanmadı" gibi bir NEDEN iddia
+etmeden önce ya salt-okunur browse ile kanıtla ya da PLC'ye sor - "tag
+config'te yok" ile "PLC bunu yapmadı" FARKLI şeyler, ikincisini kanıtsız
+söylemek yanlış bilgi yaymak oluyor (ve tam olarak böyle oldu).
+
+Test: `test_set_zero_reference.py` (+3 - `set_zero_missing_tags`),
+`test_set_zero_dialog.py` (1 test güncellendi - yeni metin). Tam suite
+350/350. `.ai/Codex_Codesys.md`'ye ayrıntılı yanıt yazıldı - PLC'den
+10 RO alanın gerçek sembol yolu/yayın durumu teyidi istendi.
+
 ## 2026-09-23 - C8 diyalogu yanlış "koşullar sağlanmıyor" mesajı gösteriyordu (kullanıcı sahada buldu)
 
 Kullanıcı gerçek PLC'de C8'i test etti: "şartları sağladım ama buton aktif

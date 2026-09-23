@@ -214,19 +214,22 @@ class SetZeroReferenceDialog(QDialog):
         tags_configured = self._service.set_zero_tags_configured()
 
         if not tags_configured:
-            # PLC-HMI-20260923-22 (kullanıcı bulgusu, gerçek PLC testi):
-            # tag'ler config'te olmadığı sürece `ready` HER ZAMAN False -
-            # eskiden bu durumda da genel "koşullar sağlanmıyor" metni
-            # gösteriliyordu, operatörü kendi manuel/servo kurulumunu
-            # sorgulamaya yönlendiriyordu. Gerçek sebep (PLC henüz online
-            # doğrulamadı) artık AÇIKÇA söyleniyor (TAG EKSİK deseni,
-            # ManualPage'deki C5 ile aynı disiplin).
+            # PLC-HMI-20260923-22/23 (kullanıcı bulgusu + PLC düzeltmesi,
+            # gerçek PLC testi): eskiden bu durumda genel "koşullar
+            # sağlanmıyor" metni gösteriliyordu, operatörü kendi manuel/
+            # servo kurulumunu sorgulamaya yönlendiriyordu. Sonra "PLC
+            # henüz online doğrulamadı" dendi - bu da YANLIŞTI: salt-okunur
+            # browse ile `xSetZeroRequest`'in GERÇEKTEN canlı olduğu
+            # doğrulandı (23 numaralı mesaj), yalnız 10 MC_Home RO alanı
+            # Symbol Configuration'da yayınlanmamış (BadNodeIdUnknown).
+            # PLC'nin kendi düzeltme talebindeki AYNEN metin - "PLC kodu
+            # yüklenmedi" iddiası YAPILMIYOR, yalnız HMI eşlemesinin eksik
+            # olduğu söyleniyor.
+            missing = self._service.set_zero_missing_tags()
             self._condition_label.setText(
-                "TAG EKSİK - PLC bu özelliğin tag'lerini (xSetZeroRequest, "
-                "MC_Home_X/MC_Home_Y durum alanları) henüz online "
-                "doğrulamadı. Sıfırlama, PLC tarafı tamamlanıp gerçek "
-                "config'e eklenene kadar kullanılamaz - bu sizin makine "
-                "kurulumunuzdan kaynaklanmıyor."
+                "HMI bağlantı ayarında sıfırlama alanları eksik. PLC "
+                "sembollerinin erişimi kontrol edilip HMI eşlemesi "
+                "tamamlanmalı.\nEksik: " + ", ".join(missing)
             )
             self._condition_label.setStyleSheet(f"color: {COLORS['danger']};")
         elif snap.stale and busy:

@@ -68,6 +68,34 @@ def test_tags_not_configured_blocks_button_and_request(tmp_path):
     svc._worker.request_write.assert_not_called()
 
 
+def test_missing_tags_lists_exactly_what_is_absent(tmp_path):
+    """PLC-HMI-20260923-23: `cmd_set_zero_request` gerçek PLC'de salt-okunur
+    browse ile canlı doğrulandı - yalnız 10 MC_Home RO alanı Symbol
+    Configuration'da yayınlanmamış (BadNodeIdUnknown). Bu senaryoyu taklit
+    eder: RW var, 10 RO yok."""
+    svc = _real_service(tmp_path, nodes={"cmd_set_zero_request": "ns=4;s=|var|MAT LC-C07.Application.GVL.xSetZeroRequest"})
+
+    missing = svc.set_zero_missing_tags()
+
+    assert "cmd_set_zero_request" not in missing
+    assert len(missing) == 10
+    assert "x_home_done" in missing
+    assert "y_home_aborted" in missing
+    assert svc.set_zero_tags_configured() is False
+
+
+def test_missing_tags_empty_when_all_configured(tmp_path):
+    svc = _real_service(tmp_path)  # _FULL_SET_ZERO_NODES - hepsi var
+    assert svc.set_zero_missing_tags() == []
+
+
+def test_missing_tags_empty_in_demo_mode(tmp_path):
+    cfg = tmp_path / "opcua.json"
+    cfg.write_text(json.dumps({"endpoint": "", "nodes": {}}), encoding="utf-8")
+    svc = MachineService(config_path=cfg)
+    assert svc.set_zero_missing_tags() == []
+
+
 def test_demo_mode_ignores_tags_configured(tmp_path):
     cfg = tmp_path / "opcua.json"
     cfg.write_text(json.dumps({"endpoint": "", "nodes": {}}), encoding="utf-8")

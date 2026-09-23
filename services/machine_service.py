@@ -1152,27 +1152,44 @@ class MachineService(QObject):
 
     # -- C8 "Sıfır Referansı Belirle" (PLC-HMI-20260923-20, sade sürüm) ------
 
+    # PLC-HMI-20260923-23 (düzeltme): `cmd_set_zero_request` gerçek PLC'de
+    # salt-okunur browse ile DOĞRULANDI (canlı, BOOL, False okundu) - artık
+    # aday değil. Kalan 10 alan (`Motion_Control.MC_Home_X/Y` FB üyeleri)
+    # aynı browse'da BadNodeIdUnknown (0x80340000) döndü - PLC'nin kendi
+    # notundaki uyarı doğrulandı: iç FB üyeleri Symbol Configuration'da
+    # yayınlanmamış. Tek liste burada tutulur ki `set_zero_tags_configured`
+    # ve `set_zero_missing_tags` aynı kaynaktan beslensin.
+    SET_ZERO_REQUIRED_TAGS = (
+        "cmd_set_zero_request",
+        "x_home_done",
+        "x_home_busy",
+        "x_home_error",
+        "x_home_error_id",
+        "x_home_aborted",
+        "y_home_done",
+        "y_home_busy",
+        "y_home_error",
+        "y_home_error_id",
+        "y_home_aborted",
+    )
+
+    def set_zero_missing_tags(self) -> list[str]:
+        """PLC-HMI-20260923-23 (kullanıcı/PLC düzeltmesi): hangi C8
+        alanlarının gerçek config'te eksik olduğunu döndürür - diyalog
+        bunu teşhiste gösterir ("HMI bağlantı ayarında X eksik" - PLC'nin
+        kodu yüklenmedi İDDİASI DEĞİL, yalnız HMI eşlemesi tamamlanmadı).
+        Demo modda hep boş (anlamsız)."""
+        if self.demo_mode:
+            return []
+        return [name for name in self.SET_ZERO_REQUIRED_TAGS if name not in self._config.nodes]
+
     def set_zero_tags_configured(self) -> bool:
-        """C8 henüz online doğrulanmadı (aday sözleşme, sembol yayını dahi
-        teyitli değil) - demo modda anlamsız (her zaman True), gerçek modda
-        RW talebi + 10 salt okunur MC_Home durum tag'inin HEPSİ config'te
-        olmalı, yoksa buton hiç etkinleşmez (C0.4/C5 dersiyle aynı disiplin)."""
+        """Gerçek modda RW talebi + 10 salt okunur MC_Home durum tag'inin
+        HEPSİ config'te olmalı, yoksa buton hiç etkinleşmez (C0.4/C5
+        dersiyle aynı disiplin) - demo modda anlamsız (her zaman True)."""
         if self.demo_mode:
             return True
-        required = (
-            "cmd_set_zero_request",
-            "x_home_done",
-            "x_home_busy",
-            "x_home_error",
-            "x_home_error_id",
-            "x_home_aborted",
-            "y_home_done",
-            "y_home_busy",
-            "y_home_error",
-            "y_home_error_id",
-            "y_home_aborted",
-        )
-        return all(name in self._config.nodes for name in required)
+        return not self.set_zero_missing_tags()
 
     def set_zero_reference_allowed_now(self) -> bool:
         """3 saniyelik butonun ANLIK izni - `_set_zero_common_allowed()`

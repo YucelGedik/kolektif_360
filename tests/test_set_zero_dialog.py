@@ -146,12 +146,13 @@ def test_button_disabled_when_conditions_not_met(tmp_path):
 
 
 def test_missing_tags_shows_honest_reason_not_generic_conditions_text(tmp_path):
-    """PLC-HMI-20260923-22 (kullanıcı bulgusu, gerçek PLC testi): tag'ler
-    config'te yokken (henüz online doğrulanmadı) eskiden genel "koşullar
+    """PLC-HMI-20260923-22/23 (kullanıcı bulgusu + PLC düzeltmesi, gerçek
+    PLC testi): tag'ler config'te yokken eskiden genel "koşullar
     sağlanmıyor: manuel mod/servo/mekanizma" metni gösteriliyordu - operatör
-    kendi kurulumunu sorguluyordu, gerçek sebep (PLC tarafı eksik) hiç
-    söylenmiyordu. Artık "TAG EKSİK" açıkça gösteriliyor (ManualPage'deki
-    C5 deseniyle aynı disiplin)."""
+    kendi kurulumunu sorguluyordu. Sonra "PLC henüz online doğrulamadı"
+    dendi - bu da yanlıştı (salt-okunur browse `xSetZeroRequest`'in canlı
+    olduğunu doğruladı, yalnız 10 MC_Home RO alanı yayınlanmamış). Doğru,
+    nötr metin: "HMI bağlantı ayarında ... eksik" + hangi anahtarlar."""
     with _isolated_engine(tmp_path):
         # Koşulların hepsi sağlanıyor (manuel/servo/emergency) - ama tag'ler
         # config'te hiç yok (`nodes: {}`), gerçek PLC'deki durumu taklit eder.
@@ -170,8 +171,11 @@ def test_missing_tags_shows_honest_reason_not_generic_conditions_text(tmp_path):
         dialog = SetZeroReferenceDialog(svc)
 
         assert dialog._button.isEnabled() is False
-        assert "TAG EKSİK" in dialog._condition_label.text()
-        assert "manuel" not in dialog._condition_label.text().lower()
+        text = dialog._condition_label.text()
+        assert "HMI bağlantı ayarında sıfırlama alanları eksik" in text
+        assert "cmd_set_zero_request" in text  # eksik anahtarlar teşhiste görünür
+        assert "manuel" not in text.lower()
+        assert "PLC" not in text or "doğrulamadı" not in text  # "PLC henüz doğrulamadı" iddiası YOK
 
 
 def test_early_release_cancels_hold_without_sending_request(tmp_path):

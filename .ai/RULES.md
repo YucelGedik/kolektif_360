@@ -531,3 +531,19 @@ tamamlayalım." Detay: `CHANGELOG_MEMORY.md` üst giriş.
       dialog.py` (14, yeni). Tam suite 346/346. Gerçek render + demo 50ms
       tick döngüsüyle uçtan uca (hazır→basılı tutma→işlem sürüyor→X/Y=0/
       başarı) doğrulandı.
+
+### 2026-09-23 — C8: sahada test + gerçek PLC browse doğrulaması + iki UI hata düzeltmesi (tamamlandı)
+Kullanıcı sahada test etti, buton pasif kaldı. Detay: `CHANGELOG_MEMORY.md`
+üstteki 2 giriş.
+- [x] Diyalog TAG EKSİK durumunda yanlış "manuel/servo/mekanizma kontrol
+      edin" metni gösteriyordu - düzeltildi.
+- [x] Kendi hatam: "PLC henüz online doğrulamadı" diye KANITSIZ bir neden
+      yazmışım (PLC-HMI-20260923-23 ile düzeltildi). Gerçek `opc.tcp://
+      192.168.0.2:4840`'a salt-okunur `asyncua.Client` ile bağlanıp
+      browse/read yaptım: `xSetZeroRequest` CANLI doğrulandı (gerçek
+      config'e eklendi, yedekli) - 10 MC_Home RO alanı `BadNodeIdUnknown`
+      (`Motion_Control` online sembol ağacında yok).
+- [x] `set_zero_missing_tags()` (yeni) - diyalog/tooltip artık "PLC kodu
+      yüklenmedi" iddiası yapmayan nötr metin + gerçek eksik alan listesi
+      gösteriyor.
+- [x] Testler: +3/+1 güncelleme. Tam suite 350/350.

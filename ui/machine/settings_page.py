@@ -105,16 +105,21 @@ class SettingsPage(QWidget):
         header.addWidget(self._vision_sim_btn)
         # PLC-HMI-20260923-20 (C8, sade sürüm): aynı yetki deseni yeniden
         # kullanılır - Mühendislik Erişimi AÇIK olmalı, ayrıca her açılışta
-        # şifre. Tag'ler online doğrulanana kadar (bkz. tooltip) içerideki
-        # düğme her koşulda "koşullar sağlanmıyor" gösterir - buton kendisi
-        # görünür/tıklanabilir kalır (TAG EKSİK deseni yerine, çünkü bu bir
-        # nadir kullanılan servis penceresi - ana ekran göstergesi değil).
+        # şifre. Eksik HMI eşlemesi varken (bkz. tooltip) içerideki düğme
+        # bunu açıkça gösterir - buton kendisi görünür/tıklanabilir kalır
+        # (bu bir nadir kullanılan servis penceresi - ana ekran göstergesi
+        # değil, o yüzden ayrı bir "eksik" rozeti gerekmedi).
         self._set_zero_btn = touch_button("SIFIR REFERANSI BELİRLE ⚙", object_name="navButton")
         self._set_zero_btn.setEnabled(False)
         if not self._service.set_zero_tags_configured():
+            # PLC-HMI-20260923-23 (düzeltme): "PLC henüz online doğrulamadı"
+            # demek, PLC'nin kodu yüklemediğini ima ediyordu - salt-okunur
+            # browse'la `xSetZeroRequest`'in canlı olduğu doğrulandı, yalnız
+            # HMI eşlemesi (Symbol Configuration'da yayınlanmamış 10 FB
+            # üyesi) eksik. Metin bunu net ayırıyor.
             self._set_zero_btn.setToolTip(
-                "PLC'de xSetZeroRequest ve MC_Home_X/MC_Home_Y durum "
-                "alanları henüz online doğrulanmadı."
+                "HMI bağlantı ayarında sıfırlama alanları eksik: "
+                + ", ".join(self._service.set_zero_missing_tags())
             )
         self._set_zero_btn.clicked.connect(self._open_set_zero_dialog)
         header.addWidget(self._set_zero_btn)
