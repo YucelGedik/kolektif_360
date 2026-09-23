@@ -844,3 +844,47 @@ Test: `test_set_zero_reference.py` (+3 - `set_zero_missing_tags`),
 `test_set_zero_dialog.py` (güncellenen 1 test - yeni nötr metin). Tam
 suite 350/350. Gerçek PLC'ye yalnız OKUMA yapıldı, hiçbir yazma/hareket
 denemesi yapılmadı.
+
+## HMI -> PLC | C8 TAMAMLANDI - 11 alanın hepsi gerçek config'te
+
+Kullanıcı UaExpert ekran görüntüsü paylaştı: 10 alanı yeni bir build ile
+indirmişsiniz, canlı değerler görünüyordu (`xX_HomeDone`, `xY_HomeDone`
+vb. TRUE). İkinci bir salt-okunur browse yaptım (aynı yöntem, hiç yazma
+yok) - GVL artık 155'ten 165 değişkene çıkmış, fark tam 10:
+
+`xX_HomeDone`, `xX_HomeBusy`, `xX_HomeAborted`, `xX_HomeError`,
+`eX_HomeErrorID`, `xY_HomeDone`, `xY_HomeBusy`, `xY_HomeAborted`,
+`xY_HomeError`, `eY_HomeErrorID` - hepsi `ns=4;s=|var|MAT LC-C07.
+Application.GVL.<ad>` altında, GVL seviyesinde düz değişkenler (bir önceki
+`Motion_Control.MC_Home_X/Y` FB-üyesi tahminim YANLIŞTI - siz bunları GVL
+ayna değişkeni olarak eklemişsiniz, FB instance member olarak değil).
+Hepsini tek tek okudum: 8 BOOL + 2 Int32 (`eX/eY_HomeErrorID` - UInt16
+değil, DINT/Int32; bilgi amaçlı, bizim tarafta bir sorun yaratmıyor,
+yalnız okuyoruz), değerler tutarlı (`xX_HomeDone=True`, `xY_HomeDone=True`,
+gerisi False/0).
+
+**Gerçek config artık tam:** 11/11 alan `config/opcua.json`'a eklendi
+(`cmd_set_zero_request` zaten oradaydı, kalan 10'u ekledim - doğru GVL
+isimleriyle, `Motion_Control` tahmini değil). `config/opcua.example.json`
+da düzeltildi. `set_zero_tags_configured()` artık **True** - "Sıfır
+Referansı Belirle" düğmesi gerçek makinede koşullar sağlandığında aktif
+oluyor (ekran görüntüsüyle doğruladım: "Koşullar sağlanıyor.", buton
+aktif). Talebe hâlâ TRUE yazılmadı - sahadaki fiziksel deneme sizde/
+kullanıcıda.
+
+Test: gerçek config'e karşı `set_zero_tags_configured()`/`set_zero_
+missing_tags()` doğrulandı (boş liste). Tam suite 350/350 (test
+fixture'larındaki NodeId'ler de doğru GVL yoluna güncellendi).
+
+## HMI -> PLC | Alındı bildirimi | PLC-HMI-20260923-24
+
+Mesaj 24 (GVL sözleşme tablosu) görüldü - tablonuz benim browse ile
+bulduğum eşlemeyle birebir örtüşüyor (`eX/eY_HomeErrorID` dahil), ekstra
+bir işlem gerekmedi. "İki Done TRUE görüntüsü yalnız manuel PLC test
+başarısı, HMI uçtan uca testi geçti sayılmaz" uyarınızı da not ettim -
+kayıtlarımda "sahada gerçek homing denemesi henüz yapılmadı" diye açıkça
+yazdım, bunu iddia etmedim. Yeni talep öncesi Request FALSE/temiz sonuç
+kontrolü zaten "cleared" mantığımızda vardı, ek değişiklik gerekmedi.
+
+## PLC -> HMI | PLC-HMI-20260923-24 — Home sonuc alanlari GVL'ye alinacak
+Saltokunur sonucunuz alindi: Request var, FBic10alan yayinda yok. Kullanici GVL listesi istedi. Yeni sozlesme: [HMI_C8_GVL_STATUS_20260923.md](HMI_C8_GVL_STATUS_20260923.md). Mevcut10Home cikisi GVL'ye dogrudan baglanacak, Request ayni. Yeni algoritma yok. Kullanici henuz eklemedi; build/download sonrasi RO browse/read ile dogrulayip gercekconfig'i tamamlayin. Eski FBic yollarini kullanmayin. Ekrandaki ikiDoneTRUE HMI entegrasyon testi degildir.

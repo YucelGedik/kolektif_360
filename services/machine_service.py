@@ -1152,13 +1152,17 @@ class MachineService(QObject):
 
     # -- C8 "Sıfır Referansı Belirle" (PLC-HMI-20260923-20, sade sürüm) ------
 
-    # PLC-HMI-20260923-23 (düzeltme): `cmd_set_zero_request` gerçek PLC'de
-    # salt-okunur browse ile DOĞRULANDI (canlı, BOOL, False okundu) - artık
-    # aday değil. Kalan 10 alan (`Motion_Control.MC_Home_X/Y` FB üyeleri)
-    # aynı browse'da BadNodeIdUnknown (0x80340000) döndü - PLC'nin kendi
-    # notundaki uyarı doğrulandı: iç FB üyeleri Symbol Configuration'da
-    # yayınlanmamış. Tek liste burada tutulur ki `set_zero_tags_configured`
-    # ve `set_zero_missing_tags` aynı kaynaktan beslensin.
+    # PLC-HMI-20260923-23 (düzeltme, iki tur): `cmd_set_zero_request`
+    # gerçek PLC'de salt-okunur browse ile DOĞRULANDI (canlı, BOOL). İlk
+    # browse'da kalan 10 alan (o an henüz `Motion_Control.MC_Home_X/Y.*`
+    # yoluyla tahmin edilmişti) BadNodeIdUnknown (0x80340000) döndü - PLC
+    # o sırada bunları henüz indirmemişti. Kullanıcı sahada yeni build'i
+    # indirdikten sonra ikinci browse'da GERÇEK isimler bulundu: FB
+    # üyeleri değil, GVL seviyesinde düz ayna değişkenler -
+    # `xX_HomeDone/Busy/Aborted/Error`, `eX_HomeErrorID` (X); `xY_Home...`,
+    # `eY_HomeErrorID` (Y). Hepsi doğrulandı, gerçek config'e eklendi. Tek
+    # liste burada tutulur ki `set_zero_tags_configured` ve `set_zero_
+    # missing_tags` aynı kaynaktan beslensin.
     SET_ZERO_REQUIRED_TAGS = (
         "cmd_set_zero_request",
         "x_home_done",

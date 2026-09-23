@@ -22,16 +22,16 @@ CUTTING = 80  # CycleState.CUTTING, an AUTO_CYCLE_ACTIVE_STATE
 
 _FULL_SET_ZERO_NODES = {
     "cmd_set_zero_request": "ns=4;s=|var|MAT LC-C07.Application.GVL.xSetZeroRequest",
-    "x_home_done": "ns=4;s=|var|MAT LC-C07.Application.Motion_Control.MC_Home_X.Done",
-    "x_home_busy": "ns=4;s=|var|MAT LC-C07.Application.Motion_Control.MC_Home_X.Busy",
-    "x_home_error": "ns=4;s=|var|MAT LC-C07.Application.Motion_Control.MC_Home_X.Error",
-    "x_home_error_id": "ns=4;s=|var|MAT LC-C07.Application.Motion_Control.MC_Home_X.ErrorID",
-    "x_home_aborted": "ns=4;s=|var|MAT LC-C07.Application.Motion_Control.MC_Home_X.CommandAborted",
-    "y_home_done": "ns=4;s=|var|MAT LC-C07.Application.Motion_Control.MC_Home_Y.Done",
-    "y_home_busy": "ns=4;s=|var|MAT LC-C07.Application.Motion_Control.MC_Home_Y.Busy",
-    "y_home_error": "ns=4;s=|var|MAT LC-C07.Application.Motion_Control.MC_Home_Y.Error",
-    "y_home_error_id": "ns=4;s=|var|MAT LC-C07.Application.Motion_Control.MC_Home_Y.ErrorID",
-    "y_home_aborted": "ns=4;s=|var|MAT LC-C07.Application.Motion_Control.MC_Home_Y.CommandAborted",
+    "x_home_done": "ns=4;s=|var|MAT LC-C07.Application.GVL.xX_HomeDone",
+    "x_home_busy": "ns=4;s=|var|MAT LC-C07.Application.GVL.xX_HomeBusy",
+    "x_home_error": "ns=4;s=|var|MAT LC-C07.Application.GVL.xX_HomeError",
+    "x_home_error_id": "ns=4;s=|var|MAT LC-C07.Application.GVL.eX_HomeErrorID",
+    "x_home_aborted": "ns=4;s=|var|MAT LC-C07.Application.GVL.xX_HomeAborted",
+    "y_home_done": "ns=4;s=|var|MAT LC-C07.Application.GVL.xY_HomeDone",
+    "y_home_busy": "ns=4;s=|var|MAT LC-C07.Application.GVL.xY_HomeBusy",
+    "y_home_error": "ns=4;s=|var|MAT LC-C07.Application.GVL.xY_HomeError",
+    "y_home_error_id": "ns=4;s=|var|MAT LC-C07.Application.GVL.eY_HomeErrorID",
+    "y_home_aborted": "ns=4;s=|var|MAT LC-C07.Application.GVL.xY_HomeAborted",
 }
 
 

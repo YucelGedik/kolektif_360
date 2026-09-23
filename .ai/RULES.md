@@ -547,3 +547,20 @@ Kullanıcı sahada test etti, buton pasif kaldı. Detay: `CHANGELOG_MEMORY.md`
       yüklenmedi" iddiası yapmayan nötr metin + gerçek eksik alan listesi
       gösteriyor.
 - [x] Testler: +3/+1 güncelleme. Tam suite 350/350.
+
+### 2026-09-23 — C8 TAMAMLANDI: 11/11 tag gerçek config'te, buton gerçek makinede aktif (tamamlandı)
+Kullanıcı UaExpert ekran görüntüsü paylaştı - kalan 10 RO alan bir önceki
+browse'dan SONRA indirilmiş, artık canlı. Detay: `CHANGELOG_MEMORY.md`
+üst giriş.
+- [x] İkinci salt-okunur browse: GVL 155→165 (+10). Gerçek isimler
+      `xX_HomeDone/Busy/Aborted/Error`, `eX_HomeErrorID` (X) + `xY_Home...`,
+      `eY_HomeErrorID` (Y) - GVL düz değişkenler, `Motion_Control.*` FB
+      üyesi tahminim YANLIŞTI.
+- [x] `config/opcua.json`'a kalan 10 alan doğru isimlerle eklendi (11/11
+      tamam), `config/opcua.example.json` düzeltildi.
+- [x] Test fixture NodeId'leri düzeltildi (bir sed komutu `.Error`/
+      `.ErrorID` pattern çakışmasıyla 2 satırı yanlış yazmıştı - fark
+      edilip düzeltildi).
+- [x] Gerçek render edilmiş ekran görüntüsüyle doğrulandı: "Koşullar
+      sağlanıyor.", buton aktif. Tam suite 350/350. Sahada gerçek homing
+      denemesi henüz yapılmadı (kullanıcı yapacak).

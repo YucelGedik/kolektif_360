@@ -3,6 +3,50 @@
 Yeni girisleri en uste ekle. Eski ve uzun detaylari `CHANGELOG_ARCHIVE.md`
 dosyasina tasi.
 
+## 2026-09-23 - C8 TAMAMLANDI: ikinci browse'da 10 RO alan da bulundu, 11/11 tag gerçek config'te
+
+Kullanıcı, CODESYS IDE + UaExpert ekran görüntüsü paylaştı: "sıfır
+referansı" konusunda gerçek PLC'de 10 RO alanı canlı gösteriyordu
+(`xX_HomeDone=true`, `xY_HomeDone=true` vb.) - "PLC bu noktada gerekli
+veriyi üretiyor" dedi. Bu, kullanıcının C8 kodunu (yeniden) indirdiğini
+gösteriyordu - bir önceki browse'umdan (aynı gün, birkaç saat önce)
+SONRA.
+
+**İkinci salt-okunur browse (`opc.tcp://192.168.0.2:4840`, yalnız okuma):**
+GVL çocuk sayısı 155'ten **165**'e çıkmış (+10, tam beklenen sayı). Yeni
+isimler: `xX_HomeDone`, `xX_HomeBusy`, `xX_HomeAborted`, `xX_HomeError`,
+`eX_HomeErrorID`, `xY_HomeDone`, `xY_HomeBusy`, `xY_HomeAborted`,
+`xY_HomeError`, `eY_HomeErrorID` - **GVL seviyesinde düz ayna
+değişkenler**, `Motion_Control.MC_Home_X/Y` FB instance member DEĞİL (bir
+önceki turdaki tahminim buydu ve YANLIŞTI - PLC mühendisi FB çıkışlarını
+CFC'de ayrı GVL bool'larına atamış, muhtemelen tam da OPC UA publish
+edebilmek için). Hepsi tek tek okundu: 8 BOOL + 2 **Int32** (`eX/eY_
+HomeErrorID` - UInt16 değil DINT; yalnız okunduğu için sorun değil) -
+değerler tutarlı, canlı.
+
+**Yapılan değişiklik:**
+- `config/opcua.json`: kalan 10 alan doğru GVL isimleriyle eklendi (11/11
+  tamam, 96 toplam node). `config/opcua.example.json`'daki yanlış
+  `Motion_Control.*` tahmini de düzeltildi.
+- `tests/test_set_zero_reference.py`, `tests/test_set_zero_dialog.py`:
+  fixture NodeId'leri doğru yola güncellendi (bir `sed` komutu `.Error`
+  deseninin `.ErrorID`'yi de eşleyip "eX_HomeErrorID" yerine yanlışlıkla
+  "xX_HomeErrorID" yazmasına sebep oldu - fark edilip Edit ile düzeltildi,
+  ders: sed'te bir prefix pattern'in superset'ini ayrı bir `-e` ile
+  ARDINDAN eşleştirmek riskli, spesifik pattern'i önce koy ya da Edit
+  tool'u tercih et).
+- `services/machine_service.py`: `SET_ZERO_REQUIRED_TAGS` üstündeki yorum
+  iki-turluk gerçek hikâyeyi anlatacak şekilde güncellendi.
+
+**Sonuç:** `set_zero_tags_configured()` artık gerçek config'e karşı
+**True**. Gerçek render edilmiş ekran görüntüsüyle doğrulandı - diyalog
+artık "Koşullar sağlanıyor." (yeşil) gösteriyor, buton aktif. Sahada
+gerçek bir 3sn basılı tutuş/homing denemesi henüz YAPILMADI - talebe hâlâ
+TRUE yazılmadı, kullanıcı sahada deneyecek.
+
+Test: tam suite 350/350. `.ai/Codex_Codesys.md`'ye C8'in tamamlandığını
+bildiren yanıt yazıldı.
+
 ## 2026-09-23 - C8: gerçek PLC'ye salt-okunur browse ile doğrulama, "PLC henüz doğrulamadı" iddiam düzeltildi
 
 Kullanıcı: "sana diğer ajan 23 nolu uyarı iletti önce ona bak. sıfırlama
