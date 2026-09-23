@@ -113,13 +113,11 @@ Detay: `.ai/memory/CHANGELOG_MEMORY.md`. Sirada plan dosyasinin SS12
 
 - [ ] VisionCut'i yapan sirkete teslim oncesi `INTEGRATION.md` son kontrolu.
 - [ ] Gercek PLC/OPC UA sunucusu erisilebilir oldugunda ucdan uca test.
-- [ ] **C8 - Sifir Referansi Belirle** (PLC-HMI-20260923-20, yeni/baslanmadi):
-      `.ai/HMI_C8_SADE_SURUM_20260923.md` - sifreli modal, EMG tabanli elle
-      konumlandirma, 3sn buton, tek yeni RW tag `xSetZeroRequest`, mevcut
-      MC_Home Done/Busy/Error RO izleme, 5 test isteniyor.
 - [ ] VisionCut mimari karari (ayri surec) kabul edildi (2026-09-23) - kod
       uygulamasi (`app/main.py`, `plc/tag_map.py`, `persistence/db.py`)
       VisionCut'in gercek yama dosyasini bekliyor (detay CHANGELOG_MEMORY.md).
+- [ ] **PLC-HMI-20260923-21** (yeni, baslanmadi) - EMG basilinca bicak/
+      baski otomatik geri cekilsin + H16 (EMG Hata) metin guncellemesi.
 
 ### Tamamlananlar
 
@@ -510,3 +508,26 @@ SINIRLARA KARAR VERDİK" - artık tahmin değil, onaylı nihai mekanik limit.
 - [x] Test: `test_parameters.py::test_velocity_ranges_match_confirmed_
       mechanical_limits` (yeni, regresyonu kilitler). Demo modda uç
       değerler + bir üstü (reddedilmeli) elle doğrulandı. Tam suite 306/306.
+
+### 2026-09-23 — PLC-HMI-20260923-20: C8 "Sıfır Referansı Belirle" (sade sürüm, tamamlandı)
+Kaynak: `.ai/HMI_C8_SADE_SURUM_20260923.md` (19 numaralı 10-tag/EMG-
+geçmişi paketi İPTAL edilmişti). Kullanıcı: "C8 e geçelim o istekleri
+tamamlayalım." Detay: `CHANGELOG_MEMORY.md` üst giriş.
+- [x] 10 yeni RO alan (`x_home_*`/`y_home_*`, mevcut MC_Home FB üyeleri)
+      + tek RW `cmd_set_zero_request` - config'te eşleme olmadığı sürece
+      hep False (C0.4/C5 disiplini, NodeId yolu TAHMİN - PLC teyidi istendi).
+- [x] `_set_zero_common_allowed()`, `request_set_zero()` (LEVEL yazma),
+      `_update_set_zero_status()` - C5'teki "cleared" deseni + bağlantı
+      kaybında donma/reconnect'te TRUE tekrar göndermeme + 15sn zaman
+      aşımı. `_manual_allowed()`'a jog kilidi eklendi.
+- [x] `ui/machine/set_zero_dialog.py` (yeni) - şifreli, uygulama-genelinde
+      MODAL, 3sn `HoldButton`, işlem sürerken kapatılamaz.
+      `settings_page.py`'ye giriş düğmesi (Vision Sim'le aynı şifre).
+- [x] Demo modda tam simülasyon (`demo_simulator.py::_apply_set_zero`).
+- [x] Bilinçli kapsam: "Alarm Listesi" kataloğuna eklenmedi (H-kodu=kalıcı
+      alarm kuralını bozmamak için), pnömatik butonlar set-zero sürerken
+      kilitlenmedi (görev dosyası yalnız jog/feed formülüne dokunuyor).
+- [x] Testler: `test_set_zero_reference.py` (26, yeni), `test_set_zero_
+      dialog.py` (14, yeni). Tam suite 346/346. Gerçek render + demo 50ms
+      tick döngüsüyle uçtan uca (hazır→basılı tutma→işlem sürüyor→X/Y=0/
+      başarı) doğrulandı.

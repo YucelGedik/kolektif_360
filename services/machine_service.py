@@ -74,8 +74,16 @@ PNEUMATIC_COMMAND_TAGS = frozenset(
 )
 
 # PLC-HMI-20260921-10/11 (C5, "Başlangıç Konumuna Dön" tek buton, 3s basılı
-# tutuş): aynı "gerçek yazma sonucunu göster" ilkesi bu komut için de geçerli.
-MOTION_COMMAND_TAGS = frozenset({"cmd_move_to_start"})
+# tutuş) + PLC-HMI-20260923-20 (C8, "Sıfır Referansı Belirle"): aynı "gerçek
+# yazma sonucunu göster" ilkesi bu komutlar için de geçerli.
+MOTION_COMMAND_TAGS = frozenset({"cmd_move_to_start", "cmd_set_zero_request"})
+
+# PLC-HMI-20260923-20 (C8, sade sürüm): PLC'nin kendi okuma sonucu (Busy)
+# gelene kadar geçen kısa pencerede bile talep beklerken sonsuza dek
+# asılı kalmasın diye bir üst sınır - "sonuç bekleme süresi aşımında
+# Request FALSE ve açıklayıcı hata" (görev notu). Homing gerçek harekette
+# saniyeler sürebilir; cömert tutuldu, gerçek PLC testinde ayarlanabilir.
+SET_ZERO_RESULT_TIMEOUT_S = 15.0
 
 
 @dataclass(frozen=True)
@@ -226,6 +234,20 @@ class MachineService(QObject):
         self._move_to_start_cleared = False
         self._move_to_start_status = "idle"
 
+        # PLC-HMI-20260923-20 (C8, "Sıfır Referansı Belirle", sade sürüm):
+        # aynı "cleared" deseni - `xSetZeroRequest` bir LEVEL (pulse değil,
+        # sonuç alınana kadar TRUE tutulur) ama eski Done/Error/Aborted'ı
+        # yeni sonuç sanmama ilkesi C5 ile birebir aynı. `_set_zero_stale_
+        # since_sent`: bağlantı talep sürerken bayatladıysa TRUE - reconnect
+        # sonrası eski okumaya güvenmeden talebi iptal edip sıfırdan başlar
+        # (görev notu: "reconnect TRUE talebi tekrar yollamaz, bekleyen
+        # talep FALSE temizlenir").
+        self._set_zero_sent = False
+        self._set_zero_cleared = False
+        self._set_zero_status = "idle"
+        self._set_zero_sent_at = 0.0
+        self._set_zero_stale_since_sent = False
+
         # PLC-HMI-20260921-16 (C6.1): katalog kimliği -> o an açık olan
         # AlarmEvent'in id'si. Bir HATA koşulu ilk kez TRUE görüldüğünde
         # (rising edge) buraya eklenir ve AlarmRepository'ye bir kez yazılır;
@@ -302,6 +324,9 @@ class MachineService(QObject):
                     # kalmak yerine bunu da gerçek bir "error" say.
                     self._move_to_start_sent = False
                     self._move_to_start_status = "error"
+                elif key == "cmd_set_zero_request":
+                    self._set_zero_sent = False
+                    self._set_zero_status = "error"
                 self.commandWriteError.emit(key, reason)
 
     def _on_raw_snapshot(self, raw: dict) -> None:
@@ -378,6 +403,13 @@ class MachineService(QObject):
         snap.x_return_error = b("x_return_error", snap.x_return_error)
         snap.x_stop_error = b("x_stop_error", snap.x_stop_error)
         snap.x_axis_error = b("x_axis_error", snap.x_axis_error)
+        # PLC-HMI-20260923-20 (C8, sade sürüm): mevcut MC_Home_X FB'sinin RO
+        # üyeleri - online sembol yayını bekliyor.
+        snap.x_home_done = b("x_home_done", snap.x_home_done)
+        snap.x_home_busy = b("x_home_busy", snap.x_home_busy)
+        snap.x_home_error = b("x_home_error", snap.x_home_error)
+        snap.x_home_error_id = i("x_home_error_id", snap.x_home_error_id)
+        snap.x_home_aborted = b("x_home_aborted", snap.x_home_aborted)
 
         y_power_status = b("y_power_status", snap.y_servo_ready)
         y_power_error = b("y_power_error", snap.y_fault)
@@ -400,6 +432,13 @@ class MachineService(QObject):
         snap.alarm_blade_not_clear_during_return = b(
             "alarm_blade_not_clear_during_return", snap.alarm_blade_not_clear_during_return
         )
+        # PLC-HMI-20260923-20 (C8, sade sürüm): mevcut MC_Home_Y FB'sinin RO
+        # üyeleri - online sembol yayını bekliyor.
+        snap.y_home_done = b("y_home_done", snap.y_home_done)
+        snap.y_home_busy = b("y_home_busy", snap.y_home_busy)
+        snap.y_home_error = b("y_home_error", snap.y_home_error)
+        snap.y_home_error_id = i("y_home_error_id", snap.y_home_error_id)
+        snap.y_home_aborted = b("y_home_aborted", snap.y_home_aborted)
         snap.y_actual_pos = f("y_actual_pos", snap.y_actual_pos)
         snap.y_actual_vel = f("y_actual_vel", snap.y_actual_vel)
         snap.y_set_pos = f("y_set_pos", snap.y_set_pos)
@@ -480,6 +519,7 @@ class MachineService(QObject):
             # UI doesn't flicker back to the old value while we wait.
 
         self._update_alarm_conditions(snap)
+        self._update_set_zero_status(snap)
 
     def _update_alarm_conditions(self, snap: MachineSnapshot) -> None:
         """PLC-HMI-20260921-16 (C6.1): HATA sınıfı bildirimleri PLC'nin
@@ -640,11 +680,69 @@ class MachineService(QObject):
             return  # Busy az önce kalktı, henüz bir sonuç okunmadı - bekle.
         self._move_to_start_sent = False
 
+    def _update_set_zero_status(self, snap: MachineSnapshot) -> None:
+        """PLC-HMI-20260923-20 (C8, "Sıfır Referansı Belirle", sade sürüm):
+        C5'teki "cleared" deseninin aynısı, artı görev notundaki iki ek
+        kural: (1) bağlantı talep sürerken bayatlarsa sonuç BELİRSİZDİR -
+        eski okumaya güvenilmez; reconnect'te talep sıfırdan iptal edilir,
+        TRUE tekrar gönderilmez. (2) sonuç bekleme süresi bir üst sınırı
+        aşarsa (PLC hiç cevap vermedi) bu da HATA sayılır - operatör
+        sonsuza dek "işlem sürüyor" görmez."""
+        if not self._set_zero_sent:
+            return
+
+        if snap.stale:
+            self._set_zero_stale_since_sent = True
+            return  # mevcut durum donar - dialog `snap.stale`'i ayrıca okuyup "belirsiz" gösterir
+
+        if self._set_zero_stale_since_sent:
+            self._set_zero_stale_since_sent = False
+            if not self.demo_mode and self._worker is not None:
+                self._worker.request_write("cmd_set_zero_request", False)
+            self._set_zero_sent = False
+            self._set_zero_cleared = False
+            self._set_zero_status = "idle"
+            return
+
+        combined_busy = snap.x_home_busy or snap.y_home_busy
+        combined_done = snap.x_home_done and snap.y_home_done
+        combined_error = (
+            snap.x_home_error or snap.y_home_error or snap.x_home_aborted or snap.y_home_aborted
+        )
+        if not self._set_zero_cleared:
+            if combined_busy or not (combined_done or combined_error):
+                self._set_zero_cleared = True
+        if not self._set_zero_cleared:
+            return
+
+        timed_out = (time.monotonic() - self._set_zero_sent_at) > SET_ZERO_RESULT_TIMEOUT_S
+        if combined_busy:
+            self._set_zero_status = "busy"
+            if not timed_out:
+                return
+            # PLC hiç bir sonuca varmadı - "görev notu: sonuç bekleme süresi
+            # aşımında Request FALSE ve açıklayıcı hata; otomatik tekrar yok."
+            combined_error = True
+        elif combined_error:
+            pass
+        elif combined_done:
+            pass
+        elif timed_out:
+            combined_error = True  # Busy hiç TRUE görülmeden zaman aşımı
+        else:
+            return  # Busy az önce kalktı, henüz bir sonuç okunmadı - bekle.
+
+        self._set_zero_status = "error" if combined_error else "done"
+        if not self.demo_mode and self._worker is not None:
+            self._worker.request_write("cmd_set_zero_request", False)
+        self._set_zero_sent = False
+
     def _on_tick(self) -> None:
         if self.demo_mode and self._demo is not None:
             self._demo.tick(UI_TICK_MS / 1000.0, self._snapshot, self._alarms, self.alarmsChanged.emit)
             self._update_move_to_start_status(self._snapshot)
             self._update_alarm_conditions(self._snapshot)
+            self._update_set_zero_status(self._snapshot)
         else:
             age_ms = (time.monotonic() - self._snapshot.timestamp) * 1000
             self._snapshot.stale = age_ms > self._config.stale_timeout_ms
@@ -657,6 +755,10 @@ class MachineService(QObject):
         # DEĞİL (otomatik çevrim sayılmaz) - bu yüzden PLC'nin kendi cycle
         # kilidi bunu kapsamaz; HMI Busy'yi burada AYRICA kilitler.
         if self._snapshot.move_to_start_busy:
+            return False
+        # PLC-HMI-20260923-20 (C8, sade sürüm): "Request/Busy sırasında
+        # fiziksel besleme ve jog kilidi kontrol edilir" - aynı disiplin.
+        if self._set_zero_sent:
             return False
         try:
             state = CycleState(self._snapshot.cycle_state)
@@ -808,6 +910,45 @@ class MachineService(QObject):
         # bu satır online doğrulanana kadar hiçbir şeyi etkilemez, yalnız
         # tag geldiğinde otomatik aktive olur.
         if snap.operator_stop_active:
+            return False
+        return True
+
+    def _set_zero_common_allowed(self) -> bool:
+        """PLC-HMI-20260923-20 (C8, "Sıfır Referansı Belirle", sade sürüm):
+        3 saniyelik butonun erken/görsel izni - `_pneumatic_common_allowed`
+        ile aynı disiplin (HMI yalnız gördüğü koşulları kontrol eder; PLC'nin
+        kendi CFC AND zinciri - bıçak/baskı valf komutu, Stop/Reset gibi
+        HMI'nin görmediği bitler dahil - esastır, bu yalnız erken bir engel).
+        Ek olarak: bıçak/baskı YUKARIDA olmalı (görev talimatı) ve zaten
+        bekleyen bir talep varken ikinci bir talep başlatılamaz."""
+        snap = self._snapshot
+        if snap.stale:
+            return False
+        if not self.demo_mode and snap.connection_state != ConnectionState.CONNECTED:
+            return False
+        try:
+            state = CycleState(snap.cycle_state)
+        except ValueError:
+            return False
+        if state != CycleState.MANUAL or not snap.manual_mode:
+            return False
+        if not snap.emergency_ok or snap.alarm_stop_request or snap.motion_stop:
+            return False
+        if not snap.x_servo_ready or not snap.y_servo_ready:
+            return False
+        if abs(snap.x_actual_vel) > AXIS_STOPPED_VELOCITY_TOLERANCE:
+            return False
+        if abs(snap.y_actual_vel) > AXIS_STOPPED_VELOCITY_TOLERANCE:
+            return False
+        if snap.blade_down or snap.clamp_down:
+            return False
+        if self._jog_x_active or self._jog_y_active:
+            return False
+        if snap.cycle_active or snap.move_to_start_busy:
+            return False
+        if snap.operator_stop_active:
+            return False
+        if self._set_zero_sent:
             return False
         return True
 
@@ -1006,6 +1147,70 @@ class MachineService(QObject):
         elif self._worker is not None:
             self._worker.request_pulse("cmd_move_to_start")
         else:
+            return False
+        return True
+
+    # -- C8 "Sıfır Referansı Belirle" (PLC-HMI-20260923-20, sade sürüm) ------
+
+    def set_zero_tags_configured(self) -> bool:
+        """C8 henüz online doğrulanmadı (aday sözleşme, sembol yayını dahi
+        teyitli değil) - demo modda anlamsız (her zaman True), gerçek modda
+        RW talebi + 10 salt okunur MC_Home durum tag'inin HEPSİ config'te
+        olmalı, yoksa buton hiç etkinleşmez (C0.4/C5 dersiyle aynı disiplin)."""
+        if self.demo_mode:
+            return True
+        required = (
+            "cmd_set_zero_request",
+            "x_home_done",
+            "x_home_busy",
+            "x_home_error",
+            "x_home_error_id",
+            "x_home_aborted",
+            "y_home_done",
+            "y_home_busy",
+            "y_home_error",
+            "y_home_error_id",
+            "y_home_aborted",
+        )
+        return all(name in self._config.nodes for name in required)
+
+    def set_zero_reference_allowed_now(self) -> bool:
+        """3 saniyelik butonun ANLIK izni - `_set_zero_common_allowed()`
+        HMI'nin gördüğü ön koşulları kontrol eder; tag'ler henüz online
+        doğrulanmadıysa (bkz. `set_zero_tags_configured`) hep False."""
+        if not self.set_zero_tags_configured():
+            return False
+        return self._set_zero_common_allowed()
+
+    def set_zero_status(self) -> str:
+        """"idle" (hiç gönderilmedi) | "sent" | "busy" | "uncertain"
+        (bağlantı kaybı sırasında) | "done" | "error" - bkz.
+        `_update_set_zero_status`. "uncertain" bu metodun kendisinde değil,
+        `snap.stale and status in {"sent","busy"}` olarak arayüzde okunur -
+        servis "sent"/"busy" durumunu dondurur, çağıran bağlantı tazeliğini
+        ayrıca kontrol eder."""
+        return self._set_zero_status
+
+    def request_set_zero(self) -> bool:
+        """GVL.xSetZeroRequest: LEVEL yazma (pulse DEĞİL) - gerçek sonuç
+        alınana (Done/Error/zaman aşımı) kadar TRUE tutulur, ancak o zaman
+        FALSE'a çekilir. Çağıran (SetZeroReferenceDialog) 3 saniyelik basılı
+        tutuşu ve iptal koşullarını kendisi yönetir; burada yalnız TEK
+        talebin koşulları/gönderimi var - izin yoksa hiçbir şey göndermez."""
+        if not self.set_zero_reference_allowed_now():
+            return False
+        self._set_zero_sent = True
+        self._set_zero_cleared = False
+        self._set_zero_status = "sent"
+        self._set_zero_sent_at = time.monotonic()
+        self._set_zero_stale_since_sent = False
+        if self.demo_mode and self._demo is not None:
+            self._demo.request_set_zero()
+        elif self._worker is not None:
+            self._worker.request_write("cmd_set_zero_request", True)
+        else:
+            self._set_zero_sent = False
+            self._set_zero_status = "idle"
             return False
         return True
 

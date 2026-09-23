@@ -40,6 +40,7 @@ from core.models import MachineSnapshot
 from core.parameters import PARAMETER_SPECS
 from services.machine_service import MachineService
 from services.vision_simulator import VisionSimulatorService
+from ui.machine.set_zero_dialog import SetZeroReferenceDialog
 from ui.machine.theme import COLORS, base_font
 from ui.machine.vision_simulator_page import VisionSimulatorDialog
 from ui.machine.widgets import touch_button
@@ -50,6 +51,9 @@ from ui.machine.widgets import touch_button
 # alınmaz. Kaynak kodda düz metin - gerçek bir güvenlik sınırı değil, kazara
 # tıklamaya karşı ek bir engel (görev notu: hard-coded parola tek başına
 # "yetki" sayılmaz, bu yüzden Mühendislik Erişimi kapısı da korunuyor).
+# PLC-HMI-20260923-20 (C8): "Sıfır Referansı Belirle" de AYNI şifreyi
+# kullanır (görev notu: "mevcut mühendislik şifresi") - ayrı bir parola
+# icat edilmedi.
 VISION_SIM_PASSWORD = "90327"
 
 
@@ -99,6 +103,21 @@ class SettingsPage(QWidget):
         self._vision_sim_btn.setEnabled(False)
         self._vision_sim_btn.clicked.connect(self._open_vision_simulator)
         header.addWidget(self._vision_sim_btn)
+        # PLC-HMI-20260923-20 (C8, sade sürüm): aynı yetki deseni yeniden
+        # kullanılır - Mühendislik Erişimi AÇIK olmalı, ayrıca her açılışta
+        # şifre. Tag'ler online doğrulanana kadar (bkz. tooltip) içerideki
+        # düğme her koşulda "koşullar sağlanmıyor" gösterir - buton kendisi
+        # görünür/tıklanabilir kalır (TAG EKSİK deseni yerine, çünkü bu bir
+        # nadir kullanılan servis penceresi - ana ekran göstergesi değil).
+        self._set_zero_btn = touch_button("SIFIR REFERANSI BELİRLE ⚙", object_name="navButton")
+        self._set_zero_btn.setEnabled(False)
+        if not self._service.set_zero_tags_configured():
+            self._set_zero_btn.setToolTip(
+                "PLC'de xSetZeroRequest ve MC_Home_X/MC_Home_Y durum "
+                "alanları henüz online doğrulanmadı."
+            )
+        self._set_zero_btn.clicked.connect(self._open_set_zero_dialog)
+        header.addWidget(self._set_zero_btn)
         header.addWidget(back_btn)
         root.addLayout(header)
 
@@ -221,6 +240,7 @@ class SettingsPage(QWidget):
             self._endpoint_edit.setEnabled(False)
             self._endpoint_save_btn.setEnabled(False)
             self._vision_sim_btn.setEnabled(False)
+            self._set_zero_btn.setEnabled(False)
             vision_note = (
                 " Açık olan Vision simülatör penceresi kapanmadı, beslemeye "
                 "devam edebilirsiniz."
@@ -281,6 +301,7 @@ class SettingsPage(QWidget):
         self._endpoint_edit.setEnabled(checked)
         self._endpoint_save_btn.setEnabled(checked)
         self._vision_sim_btn.setEnabled(checked and self._service.vision_simulator_enabled)
+        self._set_zero_btn.setEnabled(checked)
         if not checked:
             self._close_vision_simulator()
 
@@ -378,6 +399,34 @@ class SettingsPage(QWidget):
             self,
             "Mühendislik Şifresi",
             "Vision simülatörünü açmak için 5 haneli şifreyi girin:",
+            QLineEdit.EchoMode.Password,
+        )
+        if not ok:
+            return False
+        if text != VISION_SIM_PASSWORD:
+            QMessageBox.warning(self, "Şifre Hatalı", "Girilen şifre yanlış.")
+            return False
+        return True
+
+    def _open_set_zero_dialog(self) -> None:
+        """PLC-HMI-20260923-20 (C8, sade sürüm): "Ayarlarda her açılışta
+        şifre, uygulama genelinde MODAL popup" - Vision simülatöründen
+        farklı olarak (armed/canlı besleme, tekil pencere) burada her
+        açılış TAMAMEN yeni bir diyalog; önbelleğe alınan bir örnek yok."""
+        if not self._unlocked:
+            return
+        if not self._prompt_set_zero_password():
+            return
+        dialog = SetZeroReferenceDialog(self._service, self)
+        dialog.exec()
+
+    def _prompt_set_zero_password(self) -> bool:
+        """Vision simülatörüyle AYNI mühendislik şifresi - her açılışta
+        yeniden sorulur, hiçbir yerde önbelleğe alınmaz (görev notu)."""
+        text, ok = QInputDialog.getText(
+            self,
+            "Mühendislik Şifresi",
+            "Sıfır Referansı Belirle'yi açmak için 5 haneli şifreyi girin:",
             QLineEdit.EchoMode.Password,
         )
         if not ok:

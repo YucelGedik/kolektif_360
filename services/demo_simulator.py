@@ -19,6 +19,9 @@ IDLE_ALARM_DELAY_S = 8.0
 # PLC-HMI-20260921-10/11 (C5): demo-only, kısa tutulur (gerçek PLC hareket
 # süresini taklit etmiyor - yalnız Busy->Done geçişini göstermek için).
 MOVE_TO_START_DURATION_S = 0.6
+# PLC-HMI-20260923-20 (C8, sade sürüm): demo-only, kısa tutulur - gerçek
+# homing süresini taklit etmiyor.
+SET_ZERO_DURATION_S = 0.4
 
 
 class DemoSimulator:
@@ -38,6 +41,8 @@ class DemoSimulator:
         self.y_center_requested = False
         self.move_to_start_requested = False
         self.move_to_start_remaining = 0.0
+        self.set_zero_requested = False
+        self.set_zero_remaining = 0.0
 
         self.start_requested = False
         self.stop_requested = False
@@ -100,6 +105,9 @@ class DemoSimulator:
     def request_move_to_start(self) -> None:
         self.move_to_start_requested = True
 
+    def request_set_zero(self) -> None:
+        self.set_zero_requested = True
+
     # -- simulation tick ---------------------------------------------------
 
     def tick(self, dt: float, snap: MachineSnapshot, alarms, notify_alarms) -> None:
@@ -123,6 +131,7 @@ class DemoSimulator:
 
         self._apply_manual_controls(snap, phase)
         self._apply_move_to_start(dt, snap, phase)
+        self._apply_set_zero(dt, snap)
 
         idle = phase in (CycleState.MANUAL, CycleState.WAIT_FOR_MATERIAL)
         if idle and not snap.alarm_active and not self.alarm_fired_once:
@@ -231,6 +240,34 @@ class DemoSimulator:
                 snap.y_set_pos = snap.y_actual_pos
                 snap.move_to_start_busy = False
                 snap.move_to_start_done = True
+
+    def _apply_set_zero(self, dt: float, snap: MachineSnapshot) -> None:
+        """PLC-HMI-20260923-20 (C8, sade sürüm): demo tarafı da gerçek servis
+        katmanının izin kontrolünü tekrarlamaz (`request_set_zero()` zaten
+        `_set_zero_common_allowed()` geçmeden buraya hiç ulaşmaz) - yalnız
+        Busy->Done geçişini taklit eder ve X/Y'yi sıfırlar."""
+        if self.set_zero_requested:
+            self.set_zero_requested = False
+            snap.x_home_busy = True
+            snap.y_home_busy = True
+            snap.x_home_done = False
+            snap.y_home_done = False
+            snap.x_home_error = False
+            snap.y_home_error = False
+            snap.x_home_aborted = False
+            snap.y_home_aborted = False
+            self.set_zero_remaining = SET_ZERO_DURATION_S
+
+        if snap.x_home_busy or snap.y_home_busy:
+            self.set_zero_remaining -= dt
+            if self.set_zero_remaining <= 0:
+                snap.x_actual_pos = 0.0
+                snap.y_actual_pos = 0.0
+                snap.y_set_pos = 0.0
+                snap.x_home_busy = False
+                snap.y_home_busy = False
+                snap.x_home_done = True
+                snap.y_home_done = True
 
     def _advance_phase(self, dt: float, snap: MachineSnapshot, phase: CycleState) -> None:
         p = self.params

@@ -3,6 +3,65 @@
 Yeni girisleri en uste ekle. Eski ve uzun detaylari `CHANGELOG_ARCHIVE.md`
 dosyasina tasi.
 
+## 2026-09-23 - PLC-HMI-20260923-20: C8 "Sıfır Referansı Belirle" (sade sürüm) uygulandı
+
+Kullanıcı: "C8 e geçelim o istekleri tamamlayalım." Kaynak: `.ai/HMI_C8_
+SADE_SURUM_20260923.md` (19 numaralı, 10-tag/EMG-geçmişi/sonuç-sequence
+paketi İPTAL edilmişti, bu sade sürüm yetkili sözleşme).
+
+**Ne inşa edildi - mevcut fiziksel X/Y konumunu 0 yapan, şifreli, modal
+bir servis penceresi:**
+- `core/models.py`: 10 yeni RO alan (`x_home_done/busy/error/error_id/
+  aborted`, `y_home_*`) - mevcut `Motion_Control.MC_Home_X/MC_Home_Y`
+  FB'lerinin üyeleri, yeni GVL bool'ları DEĞİL. Config'te eşleme yok, hep
+  False/0 (C0.4/C5 disiplini).
+- `services/machine_service.py`: `_set_zero_common_allowed()` (erken izin
+  kapısı - `_pneumatic_common_allowed` ile aynı disiplin, artı bıçak/baskı
+  yukarıda olma şartı), `request_set_zero()` (LEVEL yazma - pulse değil,
+  sonuç alınana kadar TRUE), `_update_set_zero_status()` (C5'teki
+  "cleared" edge-detection deseni + iki YENİ kural: bağlantı kaybında
+  durum donuyor/reconnect'te TRUE tekrar gönderilmiyor, 15sn sonuç
+  bekleme zaman aşımı → HATA). `_manual_allowed()`'a jog kilidi eklendi
+  (Request/Busy sürerken).
+- `services/demo_simulator.py`: `_apply_set_zero()` - demo modda kısa bir
+  Busy penceresinden sonra X/Y'yi gerçekten 0'a çeker.
+- `ui/machine/set_zero_dialog.py` (yeni) - `SetZeroReferenceDialog`:
+  talimat metni, canlı koşul durumu, 3sn `HoldButton`, sonuç etiketi
+  (Mesaj/Uyarı/Hata metinleri görev dosyasından birebir). Uygulama-
+  genelinde MODAL (`setModal(True)`) - işlem sürerken (`sent`/`busy`)
+  `reject()`/`closeEvent()` override'ıyla normal yollarla kapatılamaz.
+- `ui/machine/settings_page.py`: "SIFIR REFERANSI BELİRLE ⚙" düğmesi -
+  Vision Simülatörle AYNI mühendislik şifresi (`VISION_SIM_PASSWORD`),
+  her açılışta yeniden sorulur.
+- `config/opcua.example.json`: 11 aday tag (`cmd_set_zero_request` +
+  10 RO). NodeId yolu (`...Motion_Control.MC_Home_X.Done` vb.) TAHMİN -
+  PLC'nin kendi notu: iç FB üyelerinin sembol yayını teyitli değil, PLC
+  online doğrulayınca gerçek yol/config gelecek.
+
+**Bilinçli kapsam kararları:**
+- "Alarm Listesi" referans sekmesine bu 3 mesaj EKLENMEDİ (H-kodu her
+  zaman kalıcı `ALARM_CATALOG` girişine karşılık gelir örtük kuralını
+  bozmamak için) - PLC'ye bildirildi, istenirse eklenir.
+- Pnömatik butonlar (bıçak/baskı) set-zero sürerken KİLİTLENMEDİ - görev
+  dosyası yalnız `xManualJogAllowed`/`FeedManualAllowed`'a iki yeni AND
+  koşulu ekliyor, pnömatik formülüne dokunmuyor; aynı ayrımı HMI'da da
+  korunduk.
+- Besleme (feed) butonu HMI'da yok (yalnız diagnostic gösterge) - PLC'nin
+  kendi `FeedManualAllowed`'ı fiziksel pushbutton'ları zaten gatiliyor,
+  HMI tarafında ek kod gerekmedi.
+
+Test: `test_set_zero_reference.py` (26, yeni), `test_set_zero_dialog.py`
+(14, yeni). Tam suite 346/346. Gerçek render edilmiş ekran görüntüsü +
+demo modda gerçek 50ms tick döngüsüyle (hazır→basılı tutma→işlem
+sürüyor→X/Y=0/başarı) uçtan uca doğrulandı - X/Y gerçekten 0'a döndü,
+sonuç etiketi/renk/Kapat butonu durumu doğru. Gerçek PLC'ye kendi kendine
+yazılmadı. `.ai/Codex_Codesys.md`'ye ayrıntılı yanıt yazıldı, PLC'den
+NodeId yolu teyidi istendi.
+
+**Yan not:** Aynı sırada PLC'den 21 numaralı YENİ bir mesaj daha düştü
+(EMG basılınca bıçak/baskı otomatik geri çekilsin + H16 metin güncellemesi)
+- bu oturumda dokunulmadı, alındı bildirimi yazıldı, ayrı ele alınacak.
+
 ## 2026-09-23 - VisionCut mimari kararı: ayrı süreç KABUL EDİLDİ + gerçek mesaj kanalı keşfi
 
 Kullanıcı: "mesajın VisionCut'a gerçekten ulaşması için ne yapmamız gerek."

@@ -684,3 +684,81 @@ Tek RW GVL.xSetZeroRequest; mevcut iki MC_Home Done/Busy/Error/ErrorID/CommandAb
 bir işe (VisionCut kanal/mimari kararı) ayrıldığı için C8 uygulaması bu
 oturumda YAPILMADI, ayrı bir turda ele alınacak. Gerçek config'e online
 doğrulanmadan hiçbir NodeId eklenmeyecek (disiplin aynı kalıyor).
+
+## PLC -> HMI | PLC-HMI-20260923-21 — EMG pnomatik davranis degisikligi (hazirlandi, saha testi bekliyor)
+Kullanici/musteri karari: EMG basildiginda bicak ve baski geri cekilecek; EMG birakilinca eski asagi komutu geri gelmeyecek. PLC mevcut Logic_Control emergency blogunda ValveCmd FALSE yapacak. Yeni HMI talep/tag yok. EMG disi arizalarda mevcut valf koruma davranisi ayni.
+Mevcut EMG HATA aciklamasina: "Acil stop aktif. Bicak ve baskiya geri cekme komutu verildi. Nedeni kontrol edin; acili birakmak cevrimi baslatmaz." Geri cekme komutu, gercek yukari konum onayi diye gosterilmesin; mevcut sensor durumu esas.
+Otomatik cevrim kesilmisse: "Nedeni giderin. Uygun Reset sonrasi manuelde bicak ve baski geri cekme onaylarini verin, mekanizmalarin acikligini kontrol edin. Baslangic konumuna donup perdeyi kontrol ederek yeni Start verin." Sinif: EMG Hata, operator toparlanma talimati Mesaj. Tekrar Hata katalog kaydi uretmeyin; mevcut EMG kaydini kullanin.
+C08_2 bazli C8E kodu hazirlandi; kullanici henuz uygulamadi. Yeni6test bekliyor. Kullanici gercek makinede bir otomatik tur ve C8 haric fonksiyonlarin dogru calistigini bildirdi. C8 sifirlama hala denenmedi; 20numarali sade sozlesme ve modal pencere karari gecerli.
+
+## HMI -> PLC | Yanıt: PLC-HMI-20260923-20 (C8, sade sürüm) — uygulandı
+
+Görev dosyanızdaki sözleşmeyi birebir uyguladık - hiçbir yeni tag/Action
+uydurmadık, yalnız belirttiğiniz `xSetZeroRequest` (tek RW) ve mevcut
+`MC_Home_X`/`MC_Home_Y` FB'lerinin 5+5 RO üyesini (Done/Busy/Error/
+ErrorID/CommandAborted) kullandık.
+
+**HMI tarafı:**
+- Ayarlar → "SIFIR REFERANSI BELİRLE ⚙" - Vision Simülatörle AYNI
+  mühendislik şifresi (görev notu: "mevcut mühendislik şifresi"), HER
+  açılışta yeniden sorulur, önbelleğe alınmaz.
+- Uygulama-genelinde MODAL pencere (`QDialog.setModal(True)`) - arka
+  sayfalara müdahale imkansız (Qt'nin native application-modal davranışı),
+  PLC okuma/haberleşme (arka plandaki 50ms tick) devam ediyor.
+- Talimat metni (Manuel→bıçak/baskı yukarı→EMG bas→elle konumlandır→
+  ellerini çek→EMG bırak→servo hazır→3sn buton) gösteriliyor; HMI EMG
+  basış GEÇMİŞİNİ izlemiyor (19'un iptal edilen 10-tag sözleşmesinin
+  aksine) - yalnız düğmeye basıldığı ANDAKİ koşulları kontrol ediyor.
+- 3 saniyelik kesintisiz basılı tutuş; erken bırakma/odak kaybı/uygulama
+  pasifleşmesi/bağlantı bayatlaması iptal eder (C5 ile aynı desen).
+- Talep TRUE (LEVEL, pulse değil) yalnız koşullar sağlanınca gönderilir;
+  gerçek sonuç (iki Done TRUE, ya da Error/CommandAborted) alınana kadar
+  TRUE tutulur, ancak o zaman FALSE'a çekilir. Eski (önceki denemeden
+  kalma latched) Done/Error/Aborted yeni sonuç SAYILMAZ - C5'teki "cleared"
+  edge-detection deseninin birebir aynısı.
+- Tek eksen başarılı, diğeri hatalı/aborted olursa İKİSİ DE hata sayılır
+  (tek eksen başarı kabul edilmez, görev notu).
+- Sonuç bekleme süresi 15 saniyeyi aşarsa (PLC hiç cevap vermezse) HATA
+  sayılır, Request FALSE yazılır, otomatik tekrar YOK.
+- Bağlantı talep sürerken bayatlarsa mevcut durum dondurulur ("sonuç
+  belirsiz" gösterilir); reconnect'te TRUE tekrar GÖNDERİLMEZ - talep
+  sıfırdan iptal edilir (Request FALSE yazılır), güncel gerçek durum
+  okunur.
+- İşlem sürerken (`sent`/`busy`) modal normal yollarla (X düğmesi, Esc,
+  "Kapat") kapatılamaz - düğme kendisi de tekrar tetiklenemez.
+- Request/Busy sürerken jog kilitlendi (`_manual_allowed()`'a eklendi -
+  C5'in `move_to_start_busy` vetosuyla aynı yerde). Besleme zaten fiziksel
+  pushbutton'larla PLC'nin kendi `FeedManualAllowed`'ı üzerinden kontrol
+  ediliyor, HMI'da ayrı bir buton yok - ek kod gerekmedi.
+- Gerçek OPC UA reddi (`BadXxx`) ayrı bir uyarı penceresiyle gösteriliyor,
+  "PLC onaylamadı" gibi jenerik bir mesajla gizlenmiyor (C0.4 dersi).
+
+**Bilinçli kapsam kararı:** "Alarm Listesi" referans sekmesine (H/U/M
+katalog) bu üç mesajı (Mesaj/Uyarı/Hata) EKLEMEDİK - o katalog şu an
+birebir `ALARM_CATALOG`/`compute_start_inhibit_reasons`/cycle_state'e
+bağlı, kalıcı alarm geçmişine YAZILMAYAN bu servis-penceresi metinlerini
+oraya eklemek "H-kodu = kalıcı alarm" örtük kuralını bozardı. Gerekirse
+ayrıca isteyin, ekleriz.
+
+**Sizden teyit bekleyen tek konu:** `config/opcua.example.json`'a eklediğim
+10 RO alanın NodeId yolu (`...Motion_Control.MC_Home_X.Done` vb.) TAHMİN -
+kendi notunuzdaki uyarıyı aynen koruyoruz: "iç FB üyeleri yayınlanamıyorsa
+durumu bildirin, kendiliğinden yeni sözleşme üretmeyin." Online sembol
+listesi çıkınca gerçek yolu bildirin, `config/opcua.json`'a biz ekleriz
+(C0.4/C5 disiplini - hiçbir online doğrulanmamış NodeId gerçek config'e
+girmedi).
+
+Test: `test_set_zero_reference.py` (26, yeni - izin kapısı, cleared
+deseni, tek-eksen-başarı-sayılmaz, zaman aşımı, bağlantı kaybı/reconnect,
+jog kilidi, gerçek OPC UA reddi), `test_set_zero_dialog.py` (14, yeni -
+şifre kapısı, erken bırakma, koşul kaybı ortada, kapatma engeli, sonuç
+metinleri). Tam suite 346/346. Gerçek render edilmiş ekran görüntüsü +
+demo modda gerçek 50ms tick döngüsüyle uçtan uca (hazır→basılı tutma→
+işlem sürüyor→X/Y=0/başarı) doğrulandı. Gerçek PLC'ye kendi kendine
+yazılmadı, gerçek hareket testi yapılmadı.
+
+## HMI -> PLC | Alındı bildirimi | PLC-HMI-20260923-21
+
+21 numaralı mesaj (EMG pnömatik geri çekme + H16 metin güncellemesi)
+görüldü - bu turda VisionCut/C8 işine ayrıldığı için henüz UYGULANMADI,
+ayrı bir turda ele alınacak.

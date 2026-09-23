@@ -42,6 +42,18 @@
     "alarm_clamp_lost_during_cycle": "ns=4;s=|var|MAT LC-C07.Application.GVL.xAlarmClampLostDuringCycle",
     "alarm_blade_not_clear_during_return": "ns=4;s=|var|MAT LC-C07.Application.GVL.xAlarmBladeNotClearDuringReturn",
 
+    "cmd_set_zero_request": "ns=4;s=|var|MAT LC-C07.Application.GVL.xSetZeroRequest",
+    "x_home_done": "ns=4;s=|var|MAT LC-C07.Application.Motion_Control.MC_Home_X.Done",
+    "x_home_busy": "ns=4;s=|var|MAT LC-C07.Application.Motion_Control.MC_Home_X.Busy",
+    "x_home_error": "ns=4;s=|var|MAT LC-C07.Application.Motion_Control.MC_Home_X.Error",
+    "x_home_error_id": "ns=4;s=|var|MAT LC-C07.Application.Motion_Control.MC_Home_X.ErrorID",
+    "x_home_aborted": "ns=4;s=|var|MAT LC-C07.Application.Motion_Control.MC_Home_X.CommandAborted",
+    "y_home_done": "ns=4;s=|var|MAT LC-C07.Application.Motion_Control.MC_Home_Y.Done",
+    "y_home_busy": "ns=4;s=|var|MAT LC-C07.Application.Motion_Control.MC_Home_Y.Busy",
+    "y_home_error": "ns=4;s=|var|MAT LC-C07.Application.Motion_Control.MC_Home_Y.Error",
+    "y_home_error_id": "ns=4;s=|var|MAT LC-C07.Application.Motion_Control.MC_Home_Y.ErrorID",
+    "y_home_aborted": "ns=4;s=|var|MAT LC-C07.Application.Motion_Control.MC_Home_Y.CommandAborted",
+
     "x_power_status": "ns=4;s=|var|MAT LC-C07.Application.GVL.xX_PowerStatus",
     "x_power_error": "ns=4;s=|var|MAT LC-C07.Application.GVL.xX_PowerError",
     "x_actual_pos": "ns=4;s=|var|MAT LC-C07.Application.GVL.ActualX_mm",

@@ -144,3 +144,21 @@ class MachineSnapshot:
     alarm_mode_changed_during_cycle: bool = False
     alarm_clamp_lost_during_cycle: bool = False
     alarm_blade_not_clear_during_return: bool = False
+
+    # PLC-HMI-20260923-20 (C8, "Sıfır Referansı Belirle", sade sürüm): tek
+    # yeni RW `xSetZeroRequest` (yazma tarafı, snapshot alanı yok - diğer
+    # level-write tag'ler gibi `manual_mode` de ayrıca okunmuyor). Mevcut
+    # iki MC_Home_X/MC_Home_Y FB'sinin RO üyeleri - PLC henüz build/online
+    # sembol yayını yapmadı (export/build BEKLİYOR), config'te eşleme
+    # olmadığı sürece hep False/0 kalır (C0.4/C5 disiplini). Sembol yayını
+    # (iç FB üyeleri) teknik olarak mümkün olmayabilir - PLC teyidi bekliyor.
+    x_home_done: bool = False
+    x_home_busy: bool = False
+    x_home_error: bool = False
+    x_home_error_id: int = 0
+    x_home_aborted: bool = False
+    y_home_done: bool = False
+    y_home_busy: bool = False
+    y_home_error: bool = False
+    y_home_error_id: int = 0
+    y_home_aborted: bool = False
