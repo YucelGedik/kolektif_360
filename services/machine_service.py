@@ -29,8 +29,9 @@ from core.models import ConnectionState, MachineSnapshot
 from core.parameters import PARAMETER_SPECS
 from persistence.alarms import SEVERITY_ALARM, AlarmEvent, AlarmRepository
 from persistence.settings_store import SettingsStore
+from plc.models import OpcUaConfig
 from plc.opcua_client import OpcUaWorker
-from plc.tag_map import TagMap, load_config, save_config
+from plc.tag_map import TagMap, TagMapError, load_config, save_config
 
 logger = logging.getLogger(__name__)
 
@@ -194,7 +195,15 @@ class MachineService(QObject):
     def __init__(self, config_path=None, parent=None):
         super().__init__(parent)
         self._config_path = config_path
-        self._config = load_config(config_path)
+        try:
+            self._config = load_config(config_path)
+        except TagMapError as exc:
+            # VisionCut mesaj 08 (madde a, INTEGRATION.md): config dosyası
+            # yoksa/okunamıyorsa çökmek yerine Demo moda düşülmeli - paketli
+            # (frozen) bir dağıtımda ilk çalıştırmada veya config kaybında
+            # bu artık kritik (uygulama hiç açılmadan çökerdi).
+            logger.warning("OPC UA config yüklenemedi (%s) - Demo moda düşülüyor.", exc)
+            self._config = OpcUaConfig()
         self._tag_map = TagMap(self._config)
         self._snapshot = MachineSnapshot()
         self._alarms = AlarmRepository()

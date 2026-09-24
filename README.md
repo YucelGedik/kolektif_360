@@ -48,6 +48,22 @@ Bu sayede gerçek makine olmadan tüm ekranlar test edilebilir.
 pytest
 ```
 
+## Standalone .exe paketleme (IPC/üretim dağıtımı)
+
+Taşınabilir, kurulum gerektirmeyen bir `.exe` üretmek için (PyInstaller
+`.venv`e kurulu olmalı: `pip install pyinstaller`):
+
+```powershell
+.venv\Scripts\pyinstaller.exe packaging\BuferaMakineEkrani.spec
+```
+
+Çıktı: `dist\BuferaMakineEkrani\BuferaMakineEkrani.exe`. Dağıtım öncesi bu
+klasöre gerçek `config\opcua.json`'unuzu (bkz. yukarısı) ve boş bir `data\`
+klasörünü ekleyin - `dist\BuferaMakineEkrani\` klasörünün TAMAMINI hedef
+makineye kopyalayıp `.exe`ye çift tıklamak yeterlidir (kurulum/admin
+gerekmez). `config\opcua.json` bulunamazsa uygulama çökmez, otomatik Demo
+moda düşer.
+
 ## Proje yapısı
 
 ```

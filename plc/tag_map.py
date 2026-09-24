@@ -10,9 +10,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from core.app_paths import app_base_dir
 from plc.models import OpcUaConfig
 
-DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "opcua.json"
+DEFAULT_CONFIG_PATH = app_base_dir() / "config" / "opcua.json"
 
 
 class TagMapError(RuntimeError):
@@ -32,6 +33,11 @@ def load_config(path: Path | str | None = None) -> OpcUaConfig:
 
 def save_config(config: OpcUaConfig, path: Path | str | None = None) -> None:
     config_path = Path(path) if path is not None else DEFAULT_CONFIG_PATH
+    # Taşınabilir/paketli bir dağıtımda `config/` klasörü ilk çalıştırmada
+    # hiç yoksa (config dosyası eksikti, Demo moda düşüldü) Ayarlar'dan
+    # "Kaydet" tıklanınca burası olmadan write_text() FileNotFoundError
+    # verirdi.
+    config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(
         json.dumps(config.model_dump(), indent=2, ensure_ascii=False),
         encoding="utf-8",

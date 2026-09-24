@@ -9,7 +9,9 @@ from pathlib import Path
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+from core.app_paths import app_base_dir
+
+DATA_DIR = app_base_dir() / "data"
 DEFAULT_DB_PATH = DATA_DIR / "bufera.db"
 
 

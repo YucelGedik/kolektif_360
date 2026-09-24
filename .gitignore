@@ -7,3 +7,5 @@ config/opcua.json.bak*
 .pytest_cache/
 *.egg-info/
 .claude/settings.local.json
+build/
+dist/

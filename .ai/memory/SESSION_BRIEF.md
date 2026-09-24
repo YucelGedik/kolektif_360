@@ -1,95 +1,88 @@
-# SESSION_BRIEF - Son guncelleme: 2026-09-23
+# SESSION_BRIEF - Son guncelleme: 2026-09-24
 
 > Bu dosya AI protokolunun birincil giris noktasidir.
 > Her anlamli kod degisikliginden sonra guncellenir. 40 satiri gecirme.
 
 ## Aktif Durum
 
-**Ana ekran alarm panosu artık alt navigasyona kadar büyüyor (2026-09-23,
-kullanıcı isteği) + "gizemli DB sızıntısı" kaynağı bulundu: kullanıcının
-kendi YANLIŞLIKLA 2 kez açık bıraktığı `python -m app.main` süreciymiş,
-benim script'lerim/testler DEĞİL.** `machine_page.py`: alarm tablosunun
-`setMaximumHeight(150)` sınırı kaldırıldı, panoya/tabloya `stretch=1`
-verildi - altındaki boş alan artık kullanılıyor. Tam suite 366/366,
-gerçek render ile doğrulandı. Commit+push edildi (kullanıcı onayladı).
-Kullanıcı artık GERÇEK PLC ile çalışıyor (`python -m app.main`, demo değil).
+**Standalone `.exe` hazırlandı (2026-09-24, kullanıcı: "programı IPC'ye
+atacağım, direkt tıkla çalıştır exe hazırla").** PyInstaller ile
+paketlendi; bu sırada VisionCut mesaj 08 (madde a/b, `INTEGRATION.md`)'de
+zaten bilinen 2 gerçek paketleme hatası da düzeltildi:
+- **Yeni `core/app_paths.py::app_base_dir()`** - frozen (`.exe`) çalışırken
+  `.exe`nin bulunduğu klasörü, dev'de proje kökünü döndürür.
+  `persistence/db.py::DATA_DIR` ve `plc/tag_map.py::DEFAULT_CONFIG_PATH`
+  artık buna bağlı - önceden `__file__`e göreliydi, frozen'da geçici/
+  salt-okunur bir açılım dizinine düşerdi.
+- **Config dosyası yoksa/bozuksa artık çökmek yerine Demo moda düşülüyor**
+  (`MachineService.__init__`, `TagMapError` yakalanıyor).
+- `save_config()` artık `config/` klasörünü yoksa oluşturuyor (ilk
+  çalıştırmada "Kaydet" `FileNotFoundError` verirdi).
+- Çıktı: `dist/BuferaMakineEkrani/` (exe + gerçek `config/opcua.json` +
+  boş `data/`) - **taşınabilir, bu klasörü olduğu gibi IPC'ye kopyala.**
+  Build script: `packaging/BuferaMakineEkrani.spec` (`.venv\Scripts\
+  pyinstaller.exe packaging\BuferaMakineEkrani.spec`, proje kökünden).
+- 3 gerçek senaryoda test edildi (screenshot ile): config yokken Demo
+  moda düşüyor + `data/` klasörünü kendi yanında oluşturuyor; gerçek
+  config ile **GERÇEK PLC'ye bağlandı** ("PLC: BAĞLI" doğrulandı).
+5 yeni test (`test_frozen_packaging.py` + `test_tag_map.py`+1). Tam suite
+371/371. `dist/`/`build/` `.gitignore`'a eklendi (exe repoya commit
+edilmedi, yalnız kaynak kod + spec dosyası).
 
-**Önceki (2026-09-23) - PLC-HMI-20260923-25 (PLC'nin kaynak incelemesi):
-C8'in sonuç takibinde 2 gerçek P1 kusur bulundu ve düzeltildi + H16 metni
-güncellendi.** Detay: `CHANGELOG_MEMORY.md`, PLC yanıtı
-`.ai/Codex_Codesys.md` sonu. Özet:
-- "Hızlı Done / sonsuz bekleme": PLC çok hızlı tamamlarsa Busy hiç
-  görülmeden Done gelebiliyordu, eski kod bunu sonsuza dek "sent"te
-  bırakıyordu (timeout kontrolüne bile ulaşmadan). `request_set_zero()`
-  artık gönderim anındaki temiz/kirli durumu kaydediyor.
-- "Gerçek Busy bırakılmadan modal kapanabiliyor": zaman aşımı/reconnect
-  anında `combined_busy` hâlâ True olsa bile eskiden hemen "error"e geçip
-  kilidi açıyordu - yeni `_set_zero_timeout_latched` bayrağı, eksen
-  GERÇEKTEN durana kadar kilidi açmıyor.
-- H16 metni mesaj 21'e göre güncellendi ("Acil stop aktif. Bıçak ve
-  baskıya geri çekme komutu verildi...").
-5 yeni/güncellenen test, tam suite 366/366, gerçek render ile doğrulandı.
-
-**Kayıt düzeltmeleri (PLC talebiyle):** "MANUAL_RETURN_STOP(140) Reset
-kararı açık" maddesi KALDIRILDI - PLC'nin C5.1/C6 kaynak kararı var,
-kullanıcı da fiziksel testte geçti bildirdi. "C8E henüz başlanmadı" iddiası
-da YANLIŞTI - PLC C08_2 bazlı C8E kodunu zaten hazırlamış (saha testi
-bekliyor, HMI tarafı henüz test edilmedi).
+**Bilinen, HENÜZ TEMİZLENMEMİŞ DB kirliliği:** proje `data/bufera.db`'de
+4 sahipsiz demo-alarm kaydı var (bugünkü `pytest` koşumlarından - aynı
+eski desen). Kullanıcının GERÇEK `python -m app.main` oturumu şu an AÇIK
+(10:56'dan beri) - temizlik için önce kapatması istenecek, kendiliğinden
+DOKUNULMADI.
 
 ## Siradaki Gorevler
 
+- [ ] Kullanıcı: exe'yi IPC'ye kopyalayıp gerçek ortamda deneyecek.
+- [ ] `data/bufera.db`'deki 4 sahipsiz kayıt - kullanıcı uygulamayı
+      kapatınca temizlenecek.
 - [ ] Kullanıcı: C8 (5 fiziksel test) + C8E (6 fiziksel test) sahada
-      denenecek - PLC'nin genel "bir tur geçti" bildirimi bu SON
-      değişikliklerden ÖNCEydi, hepsini değil yalnız değişen senaryoları
-      tekrarla.
+      denenecek.
 - [ ] PLC tarafı: X/Y fiziksel limit sensörleri - uç/polarite/durdurma
-      davranışı henüz belirlenmedi, varsayılmıyor.
-- [ ] VisionCut'tan 4 paketleme hatası için gerçek yama dosyası bekleniyor.
+      davranışı henüz belirlenmedi.
+- [ ] VisionCut'tan 4 paketleme hatası için gerçek yama dosyası bekleniyor
+      (mesaj 13 ile "son push'u aldınız mı" diye soruldu, henüz yanıt yok).
 - [ ] PLC tarafı: C7 test kayıtları kullanıcının genel bildirimiyle
-      uzlaştırılacak (henüz yapılmadı).
-- [ ] "Otomatik çevrim kesilmişse" toparlanma MESAJ'ı (mesaj 21'in ikinci
-      kısmı) bilinçli olarak ERTELENDİ - yeni cause-tracking gerektiriyor,
-      C8E saha testi beklerken şimdi eklemek riskli görüldü.
-- [ ] `data/bufera.db` paylaşımlı-engine test-izolasyonu: PLC de bunu
-      flagledi ("gerçek bufera.db üzerinden test/sonradan kayıt silme
-      yapılmamalı") - kendi doğrulama betiklerimiz artık izole
-      `init_engine()` kullanacak; TÜM `tests/*.py` için tam izolasyon hâlâ
-      açık bakım işi.
-- [ ] Gerçek kamera devrede: `vision_simulator_enabled` kapalı tutulmalı.
+      uzlaştırılacak.
+- [ ] `data/bufera.db` paylaşımlı-engine TAM test-suite izolasyonu hâlâ
+      açık bakım işi (yalnız benim ad-hoc betiklerim değil, `pytest`in
+      kendisi de sızdırıyor - bkz. Kısa Notlar).
+- [ ] "Otomatik çevrim kesilmişse" toparlanma MESAJ'ı (mesaj 21) bilinçli
+      ERTELENDİ.
+- [ ] DPI ölçek-yuvarlama düzeltmesi kullanıcı tarafından HENÜZ
+      doğrulanmadı (laptop panelinde tam ekran testi).
 
 ## Son Build/Test
 
-- `pytest`: 366/366 (2026-09-23). Tüm değişiklikler commit+push edildi.
+- `pytest`: 371/371 (2026-09-24).
 
 ## Kisa Notlar
 
 - Oturum basinda sadece bu dosya okunur; detay gerekirse `RULES.md`/`CHANGELOG_MEMORY.md`.
-- `config/opcua.json` GERCEK PLC endpoint'i tutuyor - degistirmeden once yedekle
-  (`config/opcua.json.bak*`, `.gitignore`'da).
-- **`data/bufera.db` PAYLAŞIMLI, testler/doğrulama betikleri izole DEĞİL -
-  bu birkaç kez gerçek karışıklığa yol açtı.** Kendi ad-hoc doğrulama
-  betiklerinde ARTIK `persistence.db.init_engine(<izole tmp yol>)` kullan
-  (mevcut `tests/test_set_zero_dialog.py::_isolated_engine` deseniyle
-  aynı) - gerçek DB'ye asla yazma. PLC de bunu flagledi, manuel silme YAPMA
-  (yalnız uygulama KAPALIYKEN, kullanıcı onayıyla temizlendi).
-  **Kök neden araştırmasında önemli ders:** "gizemli" tekrarlayan sızıntı
-  aslında kullanıcının YANLIŞLIKLA 2 kez açık bıraktığı gerçek `python -m
-  app.main` süreciydi (Windows'ta `Get-CimInstance Win32_Process -Filter
-  "name='python.exe'" | Select CommandLine` ile teşhis edildi) - kod
-  izolasyonu doğru çalışıyordu, DB'ye şüpheli yazı görülünce önce çalışan
-  orphan `app.main` süreci var mı diye bak, hemen kod hatası sanma.
+- `config/opcua.json` GERCEK PLC endpoint'i tutuyor - degistirmeden once yedekle.
+- **`data/bufera.db` PAYLAŞIMLI - `pytest`in KENDİSİ bile izole değil**
+  (demo_simulator testleri gerçek DB'ye yazıyor, bugün 2026-09-24'te de
+  tekrar oldu). Kendi ad-hoc betiklerimde `persistence.db.init_engine(
+  <izole tmp yol>)` kullanıyorum ama bu TESTLERİ kapsamıyor - tam çözüm
+  hâlâ açık. DB'ye şüpheli yazı görülünce önce çalışan orphan `python -m
+  app.main`/`pytest` süreci var mı diye bak (`Get-CimInstance Win32_
+  Process -Filter "name='python.exe'" | Select CommandLine`). Manuel
+  silme yalnız uygulama KAPALIYKEN, kullanıcı onayıyla.
 - **Gerçek PLC'nin OPC UA sunucusu `MaxNodesPerRead=MaxNodesPerBrowse=
-  MaxNodesPerWrite=100`** - toplam config node sayısı bunu aşarsa TÜM
-  bağlantı kopar. `_read_loop` artık otomatik chunk'lıyor.
+  MaxNodesPerWrite=100`** - `_read_loop` otomatik chunk'lıyor.
 - Yeni PLC NodeId'sini gerçek config'e eklemeden önce salt-okunur browse ile
-  doğrula (kanıtsız "PLC yapmadı" iddia etme).
+  doğrula.
 - Demo modda `MachineService.start()` çağrılmadan `snapshot.stale` hep True
-  kalır - smoke test'te `svc.snapshot.stale = False` elle set edilmeli.
+  kalır - smoke test'te elle `False` set edilmeli.
 - `QFont.setFeature()` PySide6 6.11.1/Windows'ta resize'da glif bozulmasına
-  yol açabiliyor - kullanma. DPI ölçek-yuvarlama politikası (PassThrough)
-  da eklendi (2026-09-23) - ekranlar arası farklı-DPI glif bozulması
-  şüphesiyle, KULLANICI TARAFINDAN HENÜZ DOĞRULANMADI.
-- UI ekran görüntüsü alırken `app.setStyleSheet(STYLESHEET)` çağrılmazsa tema
-  hiç uygulanmaz, yanıltıcı görünür.
+  yol açabiliyor - kullanma. DPI PassThrough politikası KULLANICI
+  TARAFINDAN HENÜZ DOĞRULANMADI.
+- Frozen (`.exe`) çalışırken config/data yolları `core/app_paths.py::
+  app_base_dir()`e bağlı (`.exe`nin klasörü) - `__file__`e göre YENİ yol
+  ekleme, bu helper'ı kullan.
 - **VisionCut'ın gerçek mesaj kanalı `muratturan19/Brode_Vision_PLC`** (dış
   repo, PUBLIC) - `gh` hesabımız buraya PUSH YETKİLİ.

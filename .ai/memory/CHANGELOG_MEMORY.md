@@ -3,6 +3,71 @@
 Yeni girisleri en uste ekle. Eski ve uzun detaylari `CHANGELOG_ARCHIVE.md`
 dosyasina tasi.
 
+## 2026-09-24 - Standalone .exe paketlendi; 2 bilinen gerçek paketleme hatası düzeltildi
+
+Kullanıcı: "Programı IPC'ye atacağım bana exe hazırla direkt tıkla çalıştır
+yapayım dosyaları atıp." Tam bu senaryo, `INTEGRATION.md`'de VisionCut
+mesaj 08'den beri kayıtlı olan 2 gerçek (mimari kararından bağımsız)
+paketleme hatasının tam olarak ortaya çıkacağı an - ikisi de düzeltildi.
+
+**(a) `__file__`e göreli yollar frozen'da kırılıyordu:** `persistence/
+db.py::DATA_DIR` ve `plc/tag_map.py::DEFAULT_CONFIG_PATH` her ikisi de
+`Path(__file__).resolve().parent.parent` kullanıyordu - PyInstaller
+`--onefile` ile paketlenince bu, geçici/salt-okunur bir açılım (extraction)
+dizinine düşer: config asla bulunamaz, db asla yazılamaz. **Yeni `core/
+app_paths.py::app_base_dir()`**: `sys.frozen` True ise `Path(sys.
+executable).resolve().parent` (yani `.exe`nin bulunduğu klasör - taşınabilir/
+xcopy dağıtım için doğru seçim, kullanıcının "dosyaları atıp çalıştır"
+modeliyle birebir uyumlu), değilse eski davranış (proje kökü). İki dosya
+da bu helper'a taşındı.
+
+**(b) Config dosyası yoksa/bozuksa uygulama çöküyordu:** `MachineService.
+__init__`deki `self._config = load_config(config_path)` hiç try/except
+içinde değildi - `TagMapError` (dosya yok ya da geçersiz JSON) doğrudan
+`QApplication` hiç kurulmadan `MachineService()` construction'ını
+patlatıyordu. Artık `TagMapError` yakalanıp `logger.warning` + `OpcUaConfig()`
+(boş/varsayılan → `is_configured=False` → Demo mod) ile devam ediliyor -
+ilk çalıştırmada (config henüz yok) veya config kaybında uygulama hâlâ
+açılıyor, yalnız Demo modda.
+
+**Yan düzeltme (aynı kod yolunda bulundu):** `save_config()` hedef
+`config/` klasörü yoksa (`.exe` ilk kez çalıştırılıp Demo moda düşülmüşse)
+`FileNotFoundError` veriyordu - `parent.mkdir(parents=True, exist_ok=True)`
+eklendi.
+
+**Build:** `pip install pyinstaller` (venv'e), `packaging/BuferaMakineEkrani.
+spec` (`--onefile --windowed`, `SPECPATH`e göre proje kökünü kendi bulur -
+nereden çalıştırılırsa çalıştırılsın doğru). Çıktı `dist/
+BuferaMakineEkrani/BuferaMakineEkrani.exe` yanına gerçek `config/opcua.json`
+(kullanıcının çalışan config'i) ve boş `data/` konularak taşınabilir bir
+teslimat klasörü oluşturuldu - `dist/BuferaMakineEkrani/`ı olduğu gibi
+IPC'ye kopyalamak yeterli. `.gitignore`'a `build/`/`dist/` eklendi (exe
+repoya asla commit edilmedi, yalnız ~63MB kaynak+bağımlılık).
+
+**Doğrulama (3 gerçek senaryo, PowerShell ile pencere ekran görüntüsü
+alınarak):** (1) temiz klasörde (config yok) - Demo moda düşüyor, `data/`
+klasörünü kendi yanında oluşturuyor, GUI tam render oluyor, çökmüyor; (2)
+windowed (konsolsuz) build aynı şekilde çalışıyor; (3) **gerçek
+`config/opcua.json` ile GERÇEK PRODÜKSİYON PLC'ye bağlandı** ("PLC: BAĞLI",
+"VISION: HAZIR", "MOD: AUTO" - canlı ekran görüntüsüyle doğrulandı). Her
+test sonrası süreç kapatıldı.
+
+5 yeni test: `tests/test_frozen_packaging.py` (config-yok/bozuk → Demo mod
+fallback x2, `app_base_dir()` frozen/dev davranışı x2),
+`tests/test_tag_map.py`+1 (`save_config` eksik klasörü oluşturuyor). Tam
+suite 371/371.
+
+**Bilinçli KAPSAM DIŞI:** VisionCut mesaj 08'in geri kalan 2 maddesi
+((c)/(d) - placeholder kamera sayfası, "KAMERA EKRANI" buton davranışı)
+hâlâ onların yama dosyasını bekliyor, bu paketleme işine dahil edilmedi
+(ayrı mimari karar).
+
+**Yan not:** Build/test sürecinde `pytest` yine `data/bufera.db`'ye sahipsiz
+demo-alarm kaydı sızdırdı (4 kayıt) - kullanıcının GERÇEK `python -m
+app.main` oturumu o sırada açık olduğu için TEMİZLENMEDİ (uygulama
+kapanınca temizlenecek). Bu, "yalnız ad-hoc betiklerim" değil `pytest`in
+KENDİSİNİN de izole olmadığını bir kez daha doğruladı - hâlâ açık bir görev.
+
 ## 2026-09-23 - Ana ekran alarm panosu alt navigasyona kadar büyüyor + "gizemli DB sızıntısı" kaynağı çözüldü
 
 Kullanıcı ekran görüntüsü: alarm listesi ile alt nav arasında büyük boş

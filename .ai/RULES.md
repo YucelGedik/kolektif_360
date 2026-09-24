@@ -667,4 +667,22 @@ Detay: `CHANGELOG_MEMORY.md`.
       yanlışlıkla 2 kez açık bıraktığı gerçek `python -m app.main` süreci
       (kod izolasyonu DOĞRU çalıştığı 3 debug script'iyle kanıtlandı).
       Kullanıcı ikisini de kapattı, DB temizlendi.
-- [x] Commit `33bf79a` + push edildi.
+- [x] Commit `33bf79a`, `9c1be03` + push edildi.
+
+### 2026-09-24 — Standalone .exe paketlendi + 2 bilinen paketleme hatası düzeltildi (kullanıcı isteği, tamamlandı)
+Kullanıcı: "Programı IPC'ye atacağım... direkt tıkla çalıştır exe hazırla."
+Detay: `CHANGELOG_MEMORY.md`.
+- [x] `core/app_paths.py::app_base_dir()` (yeni) - frozen'da `.exe`nin
+      klasörü, dev'de proje kökü. `persistence/db.py`/`plc/tag_map.py`
+      buna taşındı (VisionCut mesaj 08 madde b).
+- [x] Config dosyası yoksa/bozuksa artık çökmek yerine Demo moda düşülüyor
+      (`MachineService.__init__`, VisionCut mesaj 08 madde a).
+- [x] `save_config()` eksik `config/` klasörünü oluşturuyor.
+- [x] `packaging/BuferaMakineEkrani.spec` + build; `dist/
+      BuferaMakineEkrani/` (exe + gerçek config + boş data) taşınabilir
+      teslimat klasörü. `.gitignore`'a `build/`/`dist/` eklendi.
+- [x] 3 gerçek senaryo ekran görüntüsüyle doğrulandı: config-yok→Demo mod,
+      windowed build çalışıyor, **gerçek config ile GERÇEK PLC'ye bağlandı**.
+- [x] 5 yeni test (`test_frozen_packaging.py`, `test_tag_map.py`+1). Tam
+      suite 371/371.
+- [ ] Kullanıcı: exe'yi IPC'ye kopyalayıp gerçek ortamda deneyecek.

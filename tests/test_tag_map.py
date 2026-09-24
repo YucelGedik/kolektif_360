@@ -39,3 +39,18 @@ def test_invalid_json_raises(tmp_path):
     bad.write_text("{not valid json", encoding="utf-8")
     with pytest.raises(TagMapError):
         load_config(bad)
+
+
+def test_save_config_creates_missing_parent_directory(tmp_path):
+    """Taşınabilir/paketli bir dağıtımda `config/` klasörü ilk çalıştırmada
+    hiç yoksa (config eksik -> Demo moda düşüldü), Ayarlar'dan "Kaydet"
+    burada olmadan FileNotFoundError verirdi."""
+    from plc.tag_map import save_config
+
+    target = tmp_path / "fresh_config_dir" / "opcua.json"
+    assert not target.parent.exists()
+
+    save_config(OpcUaConfig(endpoint="opc.tcp://192.168.0.2:4840"), target)
+
+    assert target.exists()
+    assert "192.168.0.2" in target.read_text(encoding="utf-8")
