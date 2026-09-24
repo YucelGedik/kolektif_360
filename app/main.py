@@ -1,11 +1,14 @@
-"""Standalone development/demo host shell.
+"""Makine Ekranı — application entry point.
 
-This is NOT the real VisionCut application — VisionCut belongs to another
-company and its source is not available to us (see INTEGRATION.md). This
-shell exists only so the Makine Ekranı can be built, run and demoed without
-it: a placeholder "Kamera Ekranı" page stands in for VisionCut's real camera
-UI, with a single "Makine Ekranı" button, matching the navigation contract
-described in the integration brief (section 5 & 29).
+VisionCut is a SEPARATE PROGRAM in a separate process (KARARLAR.md #1), not a
+page inside this one. The placeholder "Kamera Ekranı" page that used to stand
+in for it is gone: in a two-process panel there is nothing for it to stand in
+for, and a fake camera screen beside a real one is the kind of placeholder
+that lights a green light nobody earned.
+
+"KAMERA EKRANI" therefore hands the panel over instead of switching pages —
+see `app/companion.py` for why it launches as well as raises, and why this
+window minimises itself on the way out.
 """
 
 from __future__ import annotations
@@ -13,8 +16,10 @@ from __future__ import annotations
 import logging
 import sys
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QApplication, QLabel, QMainWindow, QPushButton, QStackedWidget, QVBoxLayout, QWidget
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QApplication, QMainWindow, QStackedWidget, QVBoxLayout, QWidget
+
+from app.companion import SingleInstance, raise_existing_instance, show_vision_screen
 
 from persistence.db import init_engine
 from services.machine_service import MachineService
@@ -24,34 +29,6 @@ from ui.machine.manual_page import ManualPage
 from ui.machine.settings_page import SettingsPage
 from ui.machine.theme import STYLESHEET
 from ui.machine.widgets import MachineStatusBar, SectionTabs
-
-
-class CameraPlaceholderPage(QWidget):
-    """Stand-in for VisionCut's real camera screen (not ours to build)."""
-
-    navigateRequested = Signal(str)  # "machine_main"
-
-    def __init__(self, parent: QWidget | None = None):
-        super().__init__(parent)
-        layout = QVBoxLayout(self)
-        layout.setAlignment(layout.alignment())
-        title = QLabel("VisionCut — Kamera Ekranı (yer tutucu)")
-        title.setStyleSheet("font-size: 18px; font-weight: 600;")
-        subtitle = QLabel(
-            "Gerçek VisionCut uygulaması bu makinede mevcut değil.\n"
-            "Bu ekran yalnızca geliştirme/test amaçlı bir yer tutucudur."
-        )
-        subtitle.setStyleSheet("color: #9FADC4;")
-        button = QPushButton("Makine Ekranı")
-        button.setObjectName("cameraButton")
-        button.setMinimumHeight(64)
-        button.clicked.connect(lambda: self.navigateRequested.emit("machine_main"))
-
-        layout.addStretch(1)
-        layout.addWidget(title)
-        layout.addWidget(subtitle)
-        layout.addWidget(button)
-        layout.addStretch(1)
 
 
 class MainWindow(QMainWindow):
@@ -102,14 +79,13 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(central)
 
-        self._camera_page = CameraPlaceholderPage()
         self._machine_page = MachinePage(service)
         self._manual_page = ManualPage(service)
         self._settings_page = SettingsPage(service)
         self._alarm_page = AlarmPage(service)
 
+        # "camera" is deliberately absent: it is an action, not a page.
         self._pages = {
-            "camera": self._camera_page,
             "machine_main": self._machine_page,
             "manual": self._manual_page,
             "settings": self._settings_page,
@@ -118,13 +94,32 @@ class MainWindow(QMainWindow):
         for page in self._pages.values():
             self._stack.addWidget(page)
 
-        self._camera_page.navigateRequested.connect(self._navigate)
-
-        self._navigate("camera")
+        # Opens on the machine's own main page. It used to open on the
+        # placeholder camera page, which in a two-process panel showed the
+        # operator a fake version of a program running next door.
+        self._navigate("machine_main")
 
     def _navigate(self, key: str) -> None:
+        if key == "camera":
+            self._hand_over_to_vision()
+            return
         self._stack.setCurrentWidget(self._pages[key])
         self._nav.set_active(key)
+
+    def _hand_over_to_vision(self) -> str:
+        """Put VisionCut in front of the operator and step aside.
+
+        ⚠️ The order matters. Windows will usually refuse SetForegroundWindow
+        to a process that does not own the foreground, so raising VisionCut is
+        only a request; minimising OURSELVES is what actually reveals it. We
+        minimise only when there is something to reveal -- if VisionCut is not
+        installed, stepping aside would leave the operator looking at the
+        desktop with no way back on a kiosk with no taskbar.
+        """
+        outcome = show_vision_screen(self._service.config.vision_exe)
+        if outcome in ("raised", "launched"):
+            self.showMinimized()
+        return outcome
 
     def closeEvent(self, event) -> None:  # noqa: N802 (Qt override)
         self._service.shutdown()
@@ -147,6 +142,14 @@ def main() -> int:
     # Qt topluluğunda standart düzeltmedir.
     QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
 
+    # One copy only: a second would open a second OPC UA session and write
+    # the same tags. The second launch raises the first window and exits.
+    instance = SingleInstance()
+    if not instance.is_first:
+        logging.warning("Makine Ekranı zaten çalışıyor; var olan pencere öne alındı.")
+        raise_existing_instance()
+        return 0
+
     app = QApplication(sys.argv)
     app.setStyleSheet(STYLESHEET)
 
@@ -160,7 +163,10 @@ def main() -> int:
     # snapshotUpdated emissions (e.g. entering Demo mode) aren't missed.
     service.start()
 
-    return app.exec()
+    try:
+        return app.exec()
+    finally:
+        instance.release()
 
 
 if __name__ == "__main__":

@@ -10,10 +10,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from core.app_paths import app_base_dir
+from app.paths import config_dir
 from plc.models import OpcUaConfig
 
-DEFAULT_CONFIG_PATH = app_base_dir() / "config" / "opcua.json"
+#: Resolved on each access, not at import: a test that points
+#: BUFERA_CONFIG_DIR somewhere else must be able to do so after import.
+def default_config_path() -> Path:
+    return config_dir() / "opcua.json"
 
 
 class TagMapError(RuntimeError):
@@ -21,9 +24,17 @@ class TagMapError(RuntimeError):
 
 
 def load_config(path: Path | str | None = None) -> OpcUaConfig:
-    config_path = Path(path) if path is not None else DEFAULT_CONFIG_PATH
+    config_path = Path(path) if path is not None else default_config_path()
     if not config_path.exists():
-        raise TagMapError(f"OPC UA config not found: {config_path}")
+        # ⚠️ Deliberately NOT an error. A machine that has never been
+        # commissioned has no config file, and refusing to open leaves the
+        # operator with a traceback instead of a screen. An empty config has
+        # no endpoint, so `is_configured` is False and the HMI opens in Demo
+        # mode and says so.
+        #
+        # A file that EXISTS but is malformed still raises: that one somebody
+        # edited, and silently ignoring their mistake would be worse.
+        return OpcUaConfig()
     try:
         raw = json.loads(config_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
@@ -32,7 +43,7 @@ def load_config(path: Path | str | None = None) -> OpcUaConfig:
 
 
 def save_config(config: OpcUaConfig, path: Path | str | None = None) -> None:
-    config_path = Path(path) if path is not None else DEFAULT_CONFIG_PATH
+    config_path = Path(path) if path is not None else default_config_path()
     # Taşınabilir/paketli bir dağıtımda `config/` klasörü ilk çalıştırmada
     # hiç yoksa (config dosyası eksikti, Demo moda düşüldü) Ayarlar'dan
     # "Kaydet" tıklanınca burası olmadan write_text() FileNotFoundError

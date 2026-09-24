@@ -9,10 +9,12 @@ from pathlib import Path
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
-from core.app_paths import app_base_dir
+from app.paths import data_dir
 
-DATA_DIR = app_base_dir() / "data"
-DEFAULT_DB_PATH = DATA_DIR / "bufera.db"
+
+def default_db_path() -> Path:
+    """Where the alarm history lives. Writable in a frozen install too."""
+    return data_dir() / "bufera.db"
 
 
 class Base(DeclarativeBase):
@@ -25,7 +27,7 @@ _SessionFactory: sessionmaker[Session] | None = None
 
 def init_engine(db_path: Path | str | None = None):
     global _engine, _SessionFactory
-    path = Path(db_path) if db_path is not None else DEFAULT_DB_PATH
+    path = Path(db_path) if db_path is not None else default_db_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     _engine = create_engine(f"sqlite:///{path}", future=True)
 

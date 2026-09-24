@@ -25,6 +25,10 @@ class OpcUaConfig(BaseModel):
     # görünmez/aktif olmaz. Gerçek kamera devreye alındığında kapatılıp
     # kaldırılabilir olması gerektiğinden ayrı bir mimari parça, tek bayrak.
     vision_simulator_enabled: bool = False
+    # Ayri surec karari (KARARLAR.md #1): "KAMERA EKRANI" artik sayfa
+    # degistirmiyor, VisionCut'in kendi exe'sini one aliyor/baslatiyor.
+    # Bos birakilirsa buton yalnizca calisan pencereyi one alabilir.
+    vision_exe: str = ""
     nodes: dict[str, str] = Field(default_factory=dict)
 
     @property

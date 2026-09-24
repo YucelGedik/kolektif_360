@@ -28,10 +28,31 @@ def test_endpoint_present_means_configured():
     assert OpcUaConfig(endpoint="opc.tcp://192.168.0.2:4840").is_configured is True
 
 
-def test_missing_file_raises(tmp_path):
+def test_missing_file_falls_back_to_demo_mode(tmp_path):
+    """A machine that was never commissioned must still open a window.
+
+    This replaces `test_missing_file_raises`. The old behaviour was found on a
+    packaged build on a clean PC: no config file, so the first thing the
+    customer saw was a traceback box and no screen at all. An absent file now
+    means "not commissioned yet" -- an empty config, no endpoint, Demo mode.
+    """
     missing = tmp_path / "nope.json"
+    config = load_config(missing)
+    assert config.is_configured is False
+    assert config.nodes == {}
+
+
+def test_invalid_json_still_raises(tmp_path):
+    """A file somebody edited and broke is NOT the same as no file.
+
+    Swallowing this one would hide a typo in a real deployment config behind a
+    silent Demo mode, which is how a machine ends up disconnected with nobody
+    knowing why.
+    """
+    broken = tmp_path / "broken.json"
+    broken.write_text("{endpoint: missing quotes}", encoding="utf-8")
     with pytest.raises(TagMapError):
-        load_config(missing)
+        load_config(broken)
 
 
 def test_invalid_json_raises(tmp_path):

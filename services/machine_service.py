@@ -331,6 +331,16 @@ class MachineService(QObject):
     def endpoint(self) -> str:
         return self._config.endpoint
 
+    @property
+    def config(self) -> OpcUaConfig:
+        """The loaded OPC UA config, for callers that need a plain setting.
+
+        Read-only by convention: the UI reads `vision_exe` from here. Writing
+        to the machine's configuration still goes through the settings screen,
+        which validates and saves it.
+        """
+        return self._config
+
     # -- PLC state ingestion (real mode) -----------------------------------
 
     def _on_connection_state(self, state: str) -> None:
