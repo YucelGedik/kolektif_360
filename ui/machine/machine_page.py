@@ -3,7 +3,8 @@
 
 from __future__ import annotations
 
-from PySide6.QtGui import QColor
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QColor, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QFrame,
@@ -27,6 +28,7 @@ from persistence.alarms import (
     AlarmEvent,
 )
 from services.machine_service import MachineService
+from services.vision_feed import VisionFeedReader, VisionFeedState
 from ui.machine.theme import COLORS, base_font
 from ui.machine.widgets import ProcessStatusCard, Readout, touch_button
 
@@ -177,9 +179,16 @@ def compute_active_state_message(snap: MachineSnapshot) -> str | None:
 
 
 class MachinePage(QWidget):
-    def __init__(self, service: MachineService, parent: QWidget | None = None):
+    def __init__(self, service: MachineService, parent: QWidget | None = None,
+                 vision_feed: VisionFeedReader | None = None):
         super().__init__(parent)
         self._service = service
+        # VisionCut canlı kare + Start kararı (kanal mesajı 19, 22 §8). Karar
+        # VisionCut'ın; burada yalnız okunur ve Start'a eklenir.
+        self._vision_feed = vision_feed or VisionFeedReader()
+        self._vision_state: VisionFeedState | None = None
+        self._picture_mtime = -1.0
+        self._last_snap: MachineSnapshot | None = None
         # U01-U11 (Start engelleri) - kullanıcı isteği (2026-09-22): "tabloda
         # yazılsın ama banner gibi kalıcı olmasın... resete bağlı değil, şu
         # an hangi mantıkla çalışıyorsa tablonun içinde de o mantıkla
@@ -194,6 +203,12 @@ class MachinePage(QWidget):
         self._live_message_texts: list[str] = []
         self._move_to_start_was_done = False
         self._build_ui()
+
+        self._vision_timer = QTimer(self)
+        self._vision_timer.setInterval(250)
+        self._vision_timer.timeout.connect(self._poll_vision_feed)
+        self._vision_timer.start()
+        self._poll_vision_feed()
 
         service.snapshotUpdated.connect(self._on_snapshot)
         service.alarmsChanged.connect(self._refresh_alarm_table)
@@ -237,6 +252,23 @@ class MachinePage(QWidget):
             process_row.addWidget(card)
         root.addLayout(process_row)
 
+        # VisionCut canlı kare: operatör Start'a basmadan önce kesim çizgisinin
+        # kamera çerçevesinde olduğunu görsün (mesaj 19). Çerçeve ve çizgiler
+        # VisionCut tarafından çizilmiş gelir.
+        vision_row = QHBoxLayout()
+        vision_row.setSpacing(10)
+        self._vision_picture = QLabel("VisionCut görüntüsü yok")
+        self._vision_picture.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._vision_picture.setFixedSize(300, 229)
+        self._vision_picture.setStyleSheet(
+            f"background-color: #000000; color: {COLORS['text_secondary']};")
+        self._vision_reason = QLabel("")
+        self._vision_reason.setWordWrap(True)
+        self._vision_reason.setFont(base_font(12, bold=True))
+        vision_row.addWidget(self._vision_picture)
+        vision_row.addWidget(self._vision_reason, stretch=1)
+        root.addLayout(vision_row)
+
         command_row = QHBoxLayout()
         command_row.setSpacing(10)
         self._start_btn = touch_button("START", object_name="startButton", primary=True)
@@ -262,6 +294,51 @@ class MachinePage(QWidget):
         # kadar büyüsün, çok alarm olduğunda kaydırmaya gerek kalmadan
         # görünsün.
         root.addWidget(self._build_alarm_panel(), stretch=1)
+
+    # -- VisionCut canlı kare ------------------------------------------------
+
+    def _vision_start_reason(self, snap: MachineSnapshot) -> str | None:
+        """[U12] - VisionCut Start'a izin vermiyorsa nedeni. Çevrimde yok."""
+        if snap.cycle_active:
+            return None
+        state = self._vision_state
+        if state is not None and state.allowed:
+            return None
+        reason = state.reason if state is not None else "VisionCut görüntüsü yok."
+        return f"[U12] Kamera: {reason}"
+
+    def _apply_start_enable(self) -> None:
+        """START = PLC izni VE güncel veri VE VisionCut onayı.
+
+        Yalnız bu ekrandaki düğmeyi tutar; paneldeki fiziksel START'ı
+        kapsamaz. PLC'nin state 40 kamera kontrolü her iki yolda da geçerli.
+        """
+        snap = self._last_snap
+        if snap is None:
+            return
+        vision_ok = self._vision_state is not None and self._vision_state.allowed
+        self._start_btn.setEnabled(snap.start_permitted and not snap.stale and vision_ok)
+
+    def _poll_vision_feed(self) -> None:
+        state = self._vision_feed.read()
+        self._vision_state = state
+        if state.picture is not None and state.picture_mtime != self._picture_mtime:
+            pixmap = QPixmap(str(state.picture))
+            if not pixmap.isNull():
+                self._picture_mtime = state.picture_mtime
+                self._vision_picture.setPixmap(pixmap.scaled(
+                    self._vision_picture.size(), Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation))
+        elif state.picture is None and self._picture_mtime != -1.0:
+            self._picture_mtime = -1.0
+            self._vision_picture.clear()
+            self._vision_picture.setText("VisionCut görüntüsü yok")
+        colour = COLORS["success"] if state.allowed else COLORS["warning"]
+        text = ("Kamera: " + state.reason) if not state.cutting else "Kamera: kesim sürüyor."
+        if self._vision_reason.text() != text:
+            self._vision_reason.setText(text)
+            self._vision_reason.setStyleSheet(f"color: {colour};")
+        self._apply_start_enable()
 
     def _build_alarm_panel(self) -> QFrame:
         """Alarm/Uyarı/Mesaj panosu (kullanıcı isteği, 2026-09-18): H4'ün
@@ -369,13 +446,17 @@ class MachinePage(QWidget):
             "ok" if snap.feed_manual_allowed else "inactive",
         )
 
-        self._start_btn.setEnabled(snap.start_permitted and not stale)
+        self._last_snap = snap
+        self._apply_start_enable()
 
         reasons = compute_start_inhibit_reasons(
             snap,
             self._service.get_parameter_value("lr_x_cut_start_pos"),
             self._service.get_parameter_value("lr_y_center_position"),
         )
+        vision_reason = self._vision_start_reason(snap)
+        if vision_reason is not None:
+            reasons = [*reasons, vision_reason]
         if reasons:
             self._start_inhibit_label.setText("Start engelli: " + " ".join(reasons))
             self._start_inhibit_label.setVisible(True)

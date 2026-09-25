@@ -33,8 +33,16 @@ def _page(tmp_path) -> tuple[MachinePage, MachineService]:
     cfg = tmp_path / "opcua.json"
     cfg.write_text(json.dumps({"endpoint": "opc.tcp://192.168.0.2:4840", "nodes": {}}), encoding="utf-8")
     svc = MachineService(config_path=cfg)
-    page = MachinePage(svc)
+    # Bu testler PLC kaynaklı Uxx'leri sayar; VisionCut onayı (U12) ayrı,
+    # tests/test_vision_feed_start_lock.py'de.
+    page = MachinePage(svc, vision_feed=_AllowingFeed())
     return page, svc
+
+
+class _AllowingFeed:
+    def read(self):
+        from services.vision_feed import VisionFeedState
+        return VisionFeedState(True, True, "test", False, None, 0.0)
 
 
 def _emit(svc: MachineService, **overrides) -> None:
