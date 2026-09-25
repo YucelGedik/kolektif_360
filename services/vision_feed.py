@@ -44,6 +44,11 @@ class VisionFeedState:
     cutting: bool            # VisionCut kesimde diyor
     picture: Path | None     # gösterilecek kare, yoksa None
     picture_mtime: float     # kare değişti mi diye bakmak için
+    # VisionCut arızası: {"kod", "baslik", "cozum", "ayrinti", "zaman"} ya da
+    # None. `last_fault` arıza temizlendikten sonra da bir sonraki kesime
+    # kadar durur - operatör neyin durdurduğunu sonradan okuyabilsin.
+    fault: dict | None = None
+    last_fault: dict | None = None
 
 
 class VisionFeedReader:
@@ -75,5 +80,7 @@ class VisionFeedReader:
         allowed = bool(state.get("baslat_izni", False))
         reason = str(state.get("neden") or ("Kamera onayı var." if allowed
                                             else "Kamera onayı yok."))
+        fault = state.get("ariza") if isinstance(state.get("ariza"), dict) else None
+        last = state.get("son_ariza") if isinstance(state.get("son_ariza"), dict) else None
         return VisionFeedState(True, allowed, reason, bool(state.get("kesimde", False)),
-                               picture, picture_mtime)
+                               picture, picture_mtime, fault, last)

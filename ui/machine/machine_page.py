@@ -154,6 +154,8 @@ def compute_start_inhibit_reasons(
 # 510 manuel hazırlık,500 otomatik Stop devam yolu". M08 burada YOK - tek
 # seferlik "yeni sonuç" olduğu için ayrı, geçiş (edge) tabanlı üretilir.
 _CYCLE_STATE_MESSAGE_MAP: dict[int, str] = {
+    # 22 §9: "state 20'de uygun 'Start bekleniyor' açıklaması".
+    int(CycleState.WAIT_FOR_MATERIAL): "[M10] Start bekleniyor: perdeyi yerleştirip START'a basın.",
     int(CycleState.WAIT_VISION): "[M01] Kamera verisi bekleniyor.",
     int(CycleState.WAIT_BLADE_REQUEST): "[M02] Bıçak talebi / geçerli yörünge bekleniyor.",
     int(CycleState.CLAMP_DOWN): "[M03] Baskı/bıçak aşağı sensörü bekleniyor.",
@@ -176,6 +178,16 @@ def compute_active_state_message(snap: MachineSnapshot) -> str | None:
     if snap.stale:
         return None
     return _CYCLE_STATE_MESSAGE_MAP.get(snap.cycle_state)
+
+
+def _clock(stamp: str | None) -> str:
+    """UTC ISO damgasını yerel HH:MM:SS'e çevirir; okunamazsa "ŞİMDİ"."""
+    from datetime import datetime
+
+    try:
+        return datetime.fromisoformat(stamp).astimezone().strftime("%H:%M:%S")
+    except (TypeError, ValueError):
+        return "ŞİMDİ"
 
 
 class MachinePage(QWidget):
@@ -201,6 +213,10 @@ class MachinePage(QWidget):
         # status() İLK KEZ "done" olduğu tick'te bir kez gösterilir (aynı
         # durum sonraki tick'lerde sürse bile tekrar eklenmez).
         self._live_message_texts: list[str] = []
+        # VisionCut arızası (kod + açıklama + çözüm), durum dosyasından. H17
+        # yalnız "Vision uygulaması arıza bildiriyor" diyordu; neyin arıza
+        # verdiği görülemiyordu (Murat, 2026-09-26). (saat, metin)
+        self._live_error_rows: list[tuple[str, str]] = []
         self._move_to_start_was_done = False
         self._build_ui()
 
@@ -335,9 +351,27 @@ class MachinePage(QWidget):
             self._vision_picture.setText("VisionCut görüntüsü yok")
         colour = COLORS["success"] if state.allowed else COLORS["warning"]
         text = ("Kamera: " + state.reason) if not state.cutting else "Kamera: kesim sürüyor."
+        if state.fault:
+            colour = COLORS["danger"]
+            text = (f"VisionCut arızası {state.fault.get('kod')}: {state.fault.get('baslik', '')}\n"
+                    f"Çözüm: {state.fault.get('cozum', '')}")
+            if state.fault.get("ayrinti"):
+                text += f"\n({state.fault['ayrinti']})"
+        elif state.last_fault:
+            text = (f"Son VisionCut arızası ({_clock(state.last_fault.get('zaman'))}): "
+                    f"{state.last_fault.get('baslik', '')}\n" + text)
         if self._vision_reason.text() != text:
             self._vision_reason.setText(text)
             self._vision_reason.setStyleSheet(f"color: {colour};")
+
+        rows = []
+        if state.fault:
+            rows.append((_clock(state.fault.get("zaman")),
+                         f"[V{state.fault.get('kod')}] VisionCut: {state.fault.get('baslik', '')} "
+                         f"Çözüm: {state.fault.get('cozum', '')}"))
+        if rows != self._live_error_rows:
+            self._live_error_rows = rows
+            self._refresh_alarm_table()
         self._apply_start_enable()
 
     def _build_alarm_panel(self) -> QFrame:
@@ -393,6 +427,9 @@ class MachinePage(QWidget):
         # göster. Bunlar `AlarmRepository`'de KAYITLI DEĞİL - "ŞİMDİ" ile
         # işaretlenir (gerçek bir olay zaman damgası değil, canlı durumdur),
         # Reset'ten etkilenmez, koşul geçince satır anında kaybolur.
+        if SEVERITY_ALARM in selected:
+            for occurred, message in self._live_error_rows:
+                rows.append((occurred, SEVERITY_ALARM, "VISION", message))
         if SEVERITY_WARNING in selected:
             for message in self._live_warning_messages:
                 rows.append(("ŞİMDİ", SEVERITY_WARNING, "PLC", message))

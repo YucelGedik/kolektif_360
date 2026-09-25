@@ -121,5 +121,9 @@ NOTIFICATION_CATALOG: tuple[NotificationCatalogEntry, ...] = (
     NotificationCatalogEntry("M06", SEVERITY_MESSAGE, "\"Başlangıca Dönüş Durduruluyor\" durumunda", "Dönüş durduruluyor; talepleri bırakın."),
     NotificationCatalogEntry("M07", SEVERITY_MESSAGE, "\"Manuel Hazırlık Bekleniyor\" durumunda", "Manuel modu seçerek hazırlığı yapın."),
     NotificationCatalogEntry("M08", SEVERITY_MESSAGE, "\"Başlangıç Konumuna Dön\" tamamlanınca", "Başlangıç konumuna dönüş tamamlandı."),
+    NotificationCatalogEntry("M10", SEVERITY_MESSAGE, "\"Perde Bekliyor\" (20) durumunda", "Start bekleniyor: perdeyi yerleştirip START'a basın."),
+    NotificationCatalogEntry("U12", SEVERITY_WARNING, "Çevrim dışında, VisionCut Start'a izin vermiyorken", "Kamera: <VisionCut'ın nedeni> - örn. kesim çizgisi bulunamadı / çerçevenin dışında / VisionCut görüntüsü yok. Yalnız bu ekrandaki START'ı tutar."),
+    NotificationCatalogEntry("V400", SEVERITY_ALARM, "Kesim sırasında (VisionCut arızası)", "Kesim sırasında kamera kesim çizgisini ölçemedi; bıçak körlemesine ilerlemesin diye kesim durduruldu. Çözüm: kumaşı ve ışığı kontrol edin; eksenler başlangıca dönünce yeni kesim başlatılabilir."),
+    NotificationCatalogEntry("V600", SEVERITY_ALARM, "Her an (VisionCut arızası)", "Acil durum aktif. Çözüm: acil stop butonunu ve kapıları kontrol edin, acil durumu çözüp makineyi resetleyin."),
     NotificationCatalogEntry("M09", SEVERITY_MESSAGE, "\"Durduruluyor\" durumunda", "Otomatik çevrim durduruluyor; mevcut devam yolu bıçak yukarı/eksen dönüşü."),
 )

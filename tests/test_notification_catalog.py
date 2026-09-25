@@ -29,5 +29,8 @@ def test_covers_all_h_u_m_ids_from_the_20260921_task():
         {f"H{n:02d}" for n in range(1, 23)}
         | {f"U{n:02d}" for n in range(1, 12)}
         | {f"M{n:02d}" for n in range(1, 10)}
+        # 2026-09-26 (VisionCut entegrasyonu, mesaj 22 §8-§9): Start bekleniyor,
+        # kamera Start kilidi, VisionCut arızaları.
+        | {"M10", "U12", "V400", "V600"}
     )
     assert ids == expected

@@ -114,3 +114,54 @@ def test_the_page_reads_a_real_file_pair(tmp_path):
     _emit(page, svc)
     assert page._start_btn.isEnabled()
     assert "çerçevede" in page._vision_reason.text()
+
+
+# -- VisionCut arızası burada da açıklanır (Murat, 2026-09-26) -----------------
+
+_FAULT = {"kod": 400, "baslik": "Kesim sırasında kamera kesim çizgisini ölçemedi.",
+          "cozum": "Kumaşı ve ışığı kontrol edin.",
+          "ayrinti": "X=1902.3 mm için tamponlanmış hedef yok",
+          "zaman": "2026-09-26T08:15:00+00:00"}
+
+
+def test_a_vision_fault_is_explained_with_its_remedy(tmp_path):
+    feed = _Feed(allowed=False, reason="VisionCut arızada")
+    feed.state = VisionFeedState(True, False, "VisionCut arızada", False, None, 0.0,
+                                 _FAULT, _FAULT)
+    page, svc = _page(tmp_path, feed)
+    page._poll_vision_feed()
+    _emit(page, svc, cycle_active=True, start_permitted=False)
+
+    label = page._vision_reason.text()
+    assert "VisionCut arızası 400" in label and "Çözüm:" in label and "1902.3" in label
+
+    rows = [(page._alarm_table.item(r, 1).text(), page._alarm_table.item(r, 2).text(),
+             page._alarm_table.item(r, 3).text())
+            for r in range(page._alarm_table.rowCount())]
+    assert any(source == "VISION" and message.startswith("[V400]") for _sev, source, message in rows), rows
+
+
+def test_the_last_fault_stays_readable_after_it_clears(tmp_path):
+    feed = _Feed(allowed=True)
+    feed.state = VisionFeedState(True, True, "Kesim çizgisi çerçevede: +0.4 mm.", False,
+                                 None, 0.0, None, _FAULT)
+    page, _svc = _page(tmp_path, feed)
+    page._poll_vision_feed()
+    assert "Son VisionCut arızası" in page._vision_reason.text()
+    assert not page._live_error_rows, "temizlenmiş arıza hâlâ aktif hata satırı"
+
+
+def test_state_20_says_start_is_awaited(tmp_path):
+    from core.cycle_state import CycleState
+
+    page, svc = _page(tmp_path, _Feed(allowed=True))
+    _emit(page, svc, cycle_state=int(CycleState.WAIT_FOR_MATERIAL))
+    assert any(m.startswith("[M10] Start bekleniyor") for m in page._live_message_texts)
+
+
+def test_the_screen_opens_full_screen():
+    import inspect
+
+    import app.main as main_module
+
+    assert "window.showMaximized()" in inspect.getsource(main_module)

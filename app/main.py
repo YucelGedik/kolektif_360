@@ -156,7 +156,8 @@ def main() -> int:
     service = MachineService()
 
     window = MainWindow(service)
-    window.show()
+    # 22 §9: her zaman tam ekran açılsın (VisionCut'ın da açılışı böyle).
+    window.showMaximized()
 
     # Started only after the pages exist and have subscribed to the
     # service's signals, so the very first connectionStateChanged/
