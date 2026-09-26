@@ -43,7 +43,7 @@ from services.vision_simulator import (
     sensor_hint,
 )
 from ui.machine.theme import COLORS, base_font
-from ui.machine.widgets import touch_button
+from ui.machine.widgets import touch_button, restyle
 
 
 class VisionSimulatorDialog(QDialog):
@@ -307,7 +307,7 @@ class VisionSimulatorDialog(QDialog):
         auto_active = self._sim.auto_camera_active
         self._source_label.setText(f"Kaynak: {self._sim.source}")
         self._armed_label.setText("Durum: ARMED" if armed else "Durum: DISARMED")
-        self._armed_label.setStyleSheet(
+        restyle(self._armed_label, 
             f"color: {COLORS['success'] if armed else COLORS['text_muted']}; font-weight: 600;"
         )
         self._arm_btn.setEnabled(not armed)
@@ -411,10 +411,10 @@ class VisionSimulatorDialog(QDialog):
             d["auto_camera_status"].setText(
                 f"Otomatik Kamera: AKTİF ({scenario_txt}, periyot {self._sim.auto_camera_period_ms} ms){target_txt}"
             )
-            d["auto_camera_status"].setStyleSheet(f"color: {COLORS['success']}; font-weight: 600;")
+            restyle(d["auto_camera_status"], f"color: {COLORS['success']}; font-weight: 600;")
         else:
             d["auto_camera_status"].setText("Otomatik Kamera: KAPALI (manuel modda)")
-            d["auto_camera_status"].setStyleSheet(f"color: {COLORS['text_muted']};")
+            restyle(d["auto_camera_status"], f"color: {COLORS['text_muted']};")
         d["sensor_hint"].setText(f"Şimdi: {sensor_hint(snap.cycle_state)}")
         d["cycle_state"].setText(f"Durum: {cycle_state_label(snap.cycle_state)}")
         d["cycle_active"].setText(f"Çevrim Aktif: {snap.cycle_active} | Manuel: {snap.manual_mode}")

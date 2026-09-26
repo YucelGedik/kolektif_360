@@ -22,7 +22,7 @@ from PySide6.QtWidgets import QApplication, QDialog, QLabel, QMessageBox, QVBoxL
 from core.models import MachineSnapshot
 from services.machine_service import MachineService
 from ui.machine.theme import COLORS, base_font
-from ui.machine.widgets import HoldButton, touch_button
+from ui.machine.widgets import HoldButton, touch_button, restyle
 
 HOLD_MS = 3000
 
@@ -231,22 +231,22 @@ class SetZeroReferenceDialog(QDialog):
                 "sembollerinin erişimi kontrol edilip HMI eşlemesi "
                 "tamamlanmalı.\nEksik: " + ", ".join(missing)
             )
-            self._condition_label.setStyleSheet(f"color: {COLORS['danger']};")
+            restyle(self._condition_label, f"color: {COLORS['danger']};")
         elif snap.stale and busy:
             self._condition_label.setText(
                 "Bağlantı kesildi - sonuç belirsiz. Bağlantı geri gelince "
                 "güncel durum okunacak; talep otomatik tekrar gönderilmeyecek."
             )
-            self._condition_label.setStyleSheet(f"color: {COLORS['warning']};")
+            restyle(self._condition_label, f"color: {COLORS['warning']};")
         elif busy:
             self._condition_label.setText("İşlem sürüyor - bekleyin.")
-            self._condition_label.setStyleSheet(f"color: {COLORS['warning']};")
+            restyle(self._condition_label, f"color: {COLORS['warning']};")
         elif ready:
             self._condition_label.setText("Koşullar sağlanıyor.")
-            self._condition_label.setStyleSheet(f"color: {COLORS['success']};")
+            restyle(self._condition_label, f"color: {COLORS['success']};")
         else:
             self._condition_label.setText(_CONDITIONS_NOT_MET_TEXT)
-            self._condition_label.setStyleSheet(f"color: {COLORS['warning']};")
+            restyle(self._condition_label, f"color: {COLORS['warning']};")
 
         self._button.setEnabled(ready and not busy)
 
@@ -257,7 +257,7 @@ class SetZeroReferenceDialog(QDialog):
                 if error_id:
                     text = f"{text} (HataID: {error_id})"
             self._result_label.setText(text)
-            self._result_label.setStyleSheet(f"color: {COLORS[_MOOD_COLOR[mood]]};")
+            restyle(self._result_label, f"color: {COLORS[_MOOD_COLOR[mood]]};")
         else:
             self._result_label.setText("")
 

@@ -44,7 +44,7 @@ from services.vision_simulator import VisionSimulatorService
 from ui.machine.set_zero_dialog import SetZeroReferenceDialog
 from ui.machine.theme import COLORS, base_font
 from ui.machine.vision_simulator_page import VisionSimulatorDialog
-from ui.machine.widgets import touch_button
+from ui.machine.widgets import touch_button, restyle
 
 # Kullanıcı talebi (2026-09-18): Vision simülatörü butonuna ek bir şifre
 # kapısı - Mühendislik Erişimi zaten açık olsa bile, HER açılışta (pencere
@@ -301,7 +301,7 @@ class SettingsPage(QWidget):
             if spec.key not in self._confirmed_shown and self._service.is_parameter_confirmed(spec.key):
                 self._confirmed_shown.add(spec.key)
                 status_label.setText("")
-                status_label.setStyleSheet("")
+                restyle(status_label, "")
                 self._update_row_enabled(spec.key)
 
             # Live-sync from the PLC; never fight a genuine unsaved user
@@ -361,7 +361,7 @@ class SettingsPage(QWidget):
         except ValueError as exc:
             QMessageBox.warning(self, "Geçersiz Değer", str(exc))
             status_label.setText("HATA")
-            status_label.setStyleSheet(f"color: {COLORS['danger']};")
+            restyle(status_label, f"color: {COLORS['danger']};")
             return
         # Do NOT claim success yet - wait for the PLC to actually echo the
         # written value back (or time out). A premature "✓ UYGULANDI" here
@@ -369,7 +369,7 @@ class SettingsPage(QWidget):
         # the next 100ms read tick would silently revert the value while the
         # status label kept saying it worked.
         status_label.setText("Yazılıyor…")
-        status_label.setStyleSheet(f"color: {COLORS['text_muted']};")
+        restyle(status_label, f"color: {COLORS['text_muted']};")
 
     def _on_write_confirmed(self, key: str) -> None:
         row = self._rows.get(key)
@@ -379,7 +379,7 @@ class SettingsPage(QWidget):
         self._dirty.discard(key)
         self._param_last_error.pop(key, None)
         status_label.setText("✓ UYGULANDI")
-        status_label.setStyleSheet(f"color: {COLORS['success']};")
+        restyle(status_label, f"color: {COLORS['success']};")
 
     def _on_write_error(self, key: str, reason: str) -> None:
         """2026-09-18 bug report: jenerik "PLC onaylamadı" mesajı gerçek OPC
@@ -414,7 +414,7 @@ class SettingsPage(QWidget):
                 "Yazma sırasında OPC UA hatası görülmedi; olası neden: PLC "
                 "değeri kendi mantığıyla geri değiştiriyor."
             )
-        status_label.setStyleSheet(f"color: {COLORS['danger']};")
+        restyle(status_label, f"color: {COLORS['danger']};")
 
     def _open_vision_simulator(self) -> None:
         if not self._unlocked or not self._service.vision_simulator_enabled:

@@ -25,6 +25,19 @@ from core.models import ConnectionState, MachineSnapshot
 from ui.machine.theme import COLORS, MIN_TOUCH_HEIGHT, PRIMARY_ACTION_HEIGHT, base_font, tabular_font
 
 
+def restyle(widget: QWidget, sheet: str) -> None:
+    """setStyleSheet, yalnız stil gerçekten değiştiyse.
+
+    Qt her çağrıda - aynı metin olsa bile - widget'ı yeniden stillendirir ve
+    çizer. Durum kartları her PLC snapshot'ında (10 Hz) rengini yeniden
+    yazıyordu: 2026-09-26 ölçümü, Demo'da 15 s'de 5655 çağrı; süreç tek
+    çekirdeğin %78'ini kullanıyordu. IPC'de aynı işlemciyi kesim sırasında
+    VisionCut'ın görüntü işlemesiyle paylaşıyor.
+    """
+    if widget.styleSheet() != sheet:
+        widget.setStyleSheet(sheet)
+
+
 class Card(QFrame):
     """A titled panel with a dark navy surface, per the VisionCut palette."""
 
@@ -72,7 +85,7 @@ class Readout(Card):
         self._value_label.setText(text)
 
     def set_color(self, color_hex: str) -> None:
-        self._value_label.setStyleSheet(f"color: {color_hex};")
+        restyle(self._value_label, f"color: {color_hex};")
 
 
 class StatusChip(QFrame):
@@ -103,10 +116,11 @@ class StatusChip(QFrame):
 
     def set_state(self, state: str, text: str | None = None) -> None:
         color = self.STATE_COLORS.get(state, COLORS["text_muted"])
-        self._dot.setStyleSheet(f"color: {color}; font-size: 12px;")
+        restyle(self._dot, f"color: {color}; font-size: 12px;")
         if text is not None:
             self._text.setText(text)
-        self.setStyleSheet(
+        restyle(
+            self,
             f"QFrame {{ background-color: {COLORS['navy']}; border: 1px solid {COLORS['border']};"
             f" border-radius: 14px; }}"
         )
@@ -210,7 +224,7 @@ class ProcessStatusCard(Card):
     def set_status(self, text: str, state: str) -> None:
         color = StatusChip.STATE_COLORS.get(state, COLORS["text_muted"])
         self._label.setText(text)
-        self._label.setStyleSheet(f"color: {color};")
+        restyle(self._label, f"color: {color};")
 
 
 def touch_button(

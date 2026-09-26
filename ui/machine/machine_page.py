@@ -217,6 +217,7 @@ class MachinePage(QWidget):
         # yalnız "Vision uygulaması arıza bildiriyor" diyordu; neyin arıza
         # verdiği görülemiyordu (Murat, 2026-09-26). (saat, metin)
         self._live_error_rows: list[tuple[str, str]] = []
+        self._last_live_rows: tuple = ((), ())
         self._move_to_start_was_done = False
         self._build_ui()
 
@@ -517,4 +518,10 @@ class MachinePage(QWidget):
         self._move_to_start_was_done = move_to_start_done_now
         self._live_message_texts = messages
 
-        self._refresh_alarm_table()
+        # Tablo her snapshot'ta (10 Hz) veritabanı sorgusuyla sıfırdan
+        # kuruluyordu. Canlı satırlar değişmediyse gerek yok; kayıtlı alarmlar
+        # değişince `alarmsChanged` zaten ayrıca tazeliyor (2026-09-26).
+        live = (tuple(reasons), tuple(messages))
+        if live != self._last_live_rows:
+            self._last_live_rows = live
+            self._refresh_alarm_table()
