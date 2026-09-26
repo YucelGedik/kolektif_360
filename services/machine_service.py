@@ -18,6 +18,7 @@ whatever this service reports (brief section 32).
 from __future__ import annotations
 
 import logging
+import sys
 import re
 import time
 from dataclasses import dataclass
@@ -211,7 +212,17 @@ class MachineService(QObject):
         self._worker: OpcUaWorker | None = None
 
         self.demo_mode = not self._config.is_configured
-        self.vision_simulator_enabled = self._config.vision_simulator_enabled
+        # Sahte kamera (Vision simülatörü) sahaya giden pakette HİÇ açılmaz
+        # (2026-09-26, Yücel: "sahte kamera sim iptal etsin"). Gerçek
+        # VisionCut aynı PLC alanlarını yazıyor; simülatör de açılırsa PLC'ye
+        # iki yazar olur (mesaj 12: tek yazar). Ayar dosyası ne derse desin
+        # derlenmiş exe'de kapalı; kaynaktan geliştirme/testte eskisi gibi.
+        requested = self._config.vision_simulator_enabled
+        if requested and getattr(sys, "frozen", False):
+            logger.warning("Vision simülatörü paketli sürümde kapalı: gerçek VisionCut "
+                           "PLC'ye yazıyor, iki yazar olmasın.")
+            requested = False
+        self.vision_simulator_enabled = requested
 
         stored_params = self._settings_store.get_all()
         self._param_cache: dict[str, float] = {
