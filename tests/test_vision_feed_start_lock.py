@@ -165,3 +165,27 @@ def test_the_screen_opens_full_screen():
     import app.main as main_module
 
     assert "window.showMaximized()" in inspect.getsource(main_module)
+
+
+# -- OK / OK DEĞİL ışığı (Yücel, 2026-09-26) ------------------------------------
+
+def test_the_light_reads_at_a_glance():
+    from ui.machine.machine_page import vision_light
+
+    ok = VisionFeedState(True, True, "çerçevede", False, None, 0.0)
+    out = VisionFeedState(True, False, "dışında", False, None, 0.0)
+    cut = VisionFeedState(True, False, "Kesim sürüyor.", True, None, 0.0)
+    fault = VisionFeedState(True, False, "arızada", False, None, 0.0, _FAULT, _FAULT)
+    gone = VisionFeedState(False, False, "yok", False, None, 0.0)
+
+    assert vision_light(ok)[:2] == ("✓", "HAZIR")
+    assert vision_light(out)[:2] == ("✗", "HAZIR DEĞİL")
+    assert vision_light(cut)[:2] == ("●", "KESİMDE")
+    assert vision_light(fault)[:2] == ("✗", "ARIZA")
+    assert vision_light(gone)[:2] == ("✗", "VISIONCUT YOK")
+
+
+def test_the_light_is_on_the_page(tmp_path):
+    page, _svc = _page(tmp_path, _Feed(allowed=True))
+    page._poll_vision_feed()
+    assert page._vision_light.text() == "✓\nHAZIR"

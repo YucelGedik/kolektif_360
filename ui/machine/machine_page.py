@@ -30,7 +30,7 @@ from persistence.alarms import (
 from services.machine_service import MachineService
 from services.vision_feed import VisionFeedReader, VisionFeedState
 from ui.machine.theme import COLORS, base_font
-from ui.machine.widgets import ProcessStatusCard, Readout, touch_button
+from ui.machine.widgets import ProcessStatusCard, Readout, restyle, touch_button
 
 SEVERITY_ROW_COLOR = {
     SEVERITY_ALARM: COLORS["danger"],
@@ -180,6 +180,19 @@ def compute_active_state_message(snap: MachineSnapshot) -> str | None:
     return _CYCLE_STATE_MESSAGE_MAP.get(snap.cycle_state)
 
 
+def vision_light(state: VisionFeedState | None) -> tuple[str, str, str]:
+    """(sembol, kelime, renk): kamera durumunun tek bakışlık özeti."""
+    if state is None or not state.fresh:
+        return "✗", "VISIONCUT YOK", COLORS["text_muted"]
+    if state.fault:
+        return "✗", "ARIZA", COLORS["danger"]
+    if state.cutting:
+        return "●", "KESİMDE", COLORS["brand_cyan"]
+    if state.allowed:
+        return "✓", "HAZIR", COLORS["success"]
+    return "✗", "HAZIR DEĞİL", COLORS["danger"]
+
+
 def _clock(stamp: str | None) -> str:
     """UTC ISO damgasını yerel HH:MM:SS'e çevirir; okunamazsa "ŞİMDİ"."""
     from datetime import datetime
@@ -282,7 +295,14 @@ class MachinePage(QWidget):
         self._vision_reason = QLabel("")
         self._vision_reason.setWordWrap(True)
         self._vision_reason.setFont(base_font(12, bold=True))
+        # Tek bakışta okunan OK / OK DEĞİL ışığı (Yücel, 2026-09-26): operatör
+        # kareyi incelemeden de perde beslemeyi durdurabilsin.
+        self._vision_light = QLabel("")
+        self._vision_light.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._vision_light.setFixedSize(190, 229)
+        self._vision_light.setWordWrap(True)
         vision_row.addWidget(self._vision_picture)
+        vision_row.addWidget(self._vision_light)
         vision_row.addWidget(self._vision_reason, stretch=1)
         root.addLayout(vision_row)
 
@@ -364,6 +384,14 @@ class MachinePage(QWidget):
         if self._vision_reason.text() != text:
             self._vision_reason.setText(text)
             self._vision_reason.setStyleSheet(f"color: {colour};")
+
+        symbol, word, light = vision_light(state)
+        light_text = f"{symbol}\n{word}"
+        if self._vision_light.text() != light_text:
+            self._vision_light.setText(light_text)
+        restyle(self._vision_light,
+                f"background-color: {light}; color: #FFFFFF; border-radius: 12px;"
+                f" font-size: 30px; font-weight: 800;")
 
         rows = []
         if state.fault:
